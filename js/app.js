@@ -1,0 +1,2082 @@
+(function () {
+  const data = Storage.load();
+
+  // ---------- Utilities ----------
+  function save() { Storage.save(data); }
+  function euros(n) { return Documents.fmtEUR(n) + ' €'; }
+  function byId(id) { return document.getElementById(id); }
+
+  function bienById(id) { return data.biens.find((b) => b.id === id); }
+  function locataireById(id) { return data.locataires.find((l) => l.id === id); }
+
+  const MAX_DOC_PAGES = 10;
+  // Un document (bail / état des lieux) peut regrouper plusieurs pages scannées.
+  // Compatible avec l'ancien format à fichier unique (fileId/fileName).
+  function filesOf(record) {
+    if (Array.isArray(record.files)) return record.files;
+    if (record.fileId) return [{ fileId: record.fileId, fileName: record.fileName || '' }];
+    return [];
+  }
+
+  function fileLinksHTML(record) {
+    const files = filesOf(record);
+    if (files.length === 0) return '<span class="file-empty">—</span>';
+    return files.map((f, i) => `<button type="button" class="file-link" data-view-file="${f.fileId}" title="${escapeHTML(f.fileName || '')}">Page ${i + 1}</button>`).join(' ');
+  }
+
+  async function deleteRecordFiles(record) {
+    const files = filesOf(record);
+    for (const f of files) {
+      try { await FilesDb.deleteFile(f.fileId); } catch (e) { console.error(e); }
+    }
+  }
+
+  function nl2brLocal(str) {
+    return escapeHTML(str).replace(/\n/g, '<br>');
+  }
+
+  function isHtmlEmpty(html) {
+    return !html || !html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim();
+  }
+
+  const DOC_LABELS = {
+    quittance: 'Quittance de loyer',
+    'recu-partiel': 'Reçu partiel',
+    relance: 'Relance',
+    avenant: 'Avenant au bail',
+    libre: 'Courrier libre',
+  };
+
+  const AVENANT_DEFAULT_LINES = [
+    { libelle: 'Prestation tonte', montant: '', note: '/mois (contractuel)' },
+    { libelle: 'Entretien obligatoire chaudière', montant: '', note: '/mois (contractuel)' },
+    { libelle: 'Electricité et eau des communs (barrière, éclairage, nettoyage)', montant: '', note: '(prévisionnel)' },
+    { libelle: 'Ordures Ménagères', montant: '', note: 'de provisions pour charges (prévisionnel)' },
+  ];
+
+  const CHARGE_CATEGORIES = {
+    tontes: 'Tontes jardinet',
+    chaudiere: 'Entretien chaudière',
+    clim: 'Entretien clim',
+    ordures: 'Ordures ménagères',
+    edf: 'EDF communs',
+  };
+  const MONTHS_SHORT = ['Janv', 'Févr', 'Mars', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sept', 'Oct', 'Nov', 'Déc'];
+  let currentChargeCategory = null;
+
+  const ADMIN_DOC_CATEGORIES = {
+    dpe: 'DPE',
+    conformites: 'Conformités électrique, gaz et eau',
+    daact: 'DAACT',
+    kbis: 'Kbis',
+    bilans: 'Bilans',
+    clims: 'Contrats Clims Bellevue et rue Alfred',
+    prm: 'Nums PRM eau et gaz',
+    notices: 'Notices',
+    rib: 'RIB',
+    assurances: 'Assurances',
+    cartepro: 'Num carte Impar',
+  };
+  let currentDocsAdminCategory = null;
+
+  const CREDIT_CATEGORIES = {
+    bpaca: 'BPACA',
+    caissedepargne: "Caisse d'Épargne",
+    autre: 'Autre',
+  };
+  let currentCreditCategory = null;
+
+  const FACTURES_TRAVAUX_CATEGORIES = {
+    factures: 'Factures SCI',
+    travaux: 'Travaux SCI',
+  };
+  let currentFacturesTravauxCategory = null;
+
+  // ---------- Navigation ----------
+  document.querySelectorAll('.nav-btn').forEach((btn) => {
+    btn.addEventListener('click', () => showView(btn.dataset.view));
+  });
+
+  document.querySelectorAll('.nav-group-toggle').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const subgroup = document.getElementById(`nav-subgroup-${btn.dataset.toggleGroup}`);
+      if (!subgroup) return;
+      const collapsed = subgroup.classList.toggle('collapsed');
+      btn.classList.toggle('collapsed', collapsed);
+    });
+  });
+
+  function showView(view) {
+    const isCharges = view.indexOf('charges-') === 0;
+    const isDocsAdmin = view.indexOf('docsadmin-') === 0;
+    const isCredits = view.indexOf('credits-') === 0;
+    const isFacturesTravaux = view.indexOf('facturestravaux-') === 0;
+    const sectionId = isCharges ? 'view-charges' : isDocsAdmin ? 'view-docsadmin' : isCredits ? 'view-credits' : isFacturesTravaux ? 'view-facturestravaux' : 'view-' + view;
+    document.querySelectorAll('.nav-btn').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
+    document.querySelectorAll('.view').forEach((v) => v.classList.toggle('active', v.id === sectionId));
+    if (view === 'dashboard') renderDashboard();
+    if (view === 'locataires') renderLocataires();
+    if (view === 'anciens-locataires') renderAnciensLocatairesView();
+    if (view === 'biens') renderBiens();
+    if (view === 'historique') renderHistorique();
+    if (view === 'generer') renderGenererOptions();
+    if (view === 'redaction-bail') renderRedactionBailView();
+    if (view === 'parametres') fillSciForm();
+    if (isCharges) renderChargesView(view.slice('charges-'.length));
+    if (view === 'bail') renderBailView();
+    if (view === 'etatslieux') renderEtatsLieuxView();
+    if (isDocsAdmin) renderDocsAdminView(view.slice('docsadmin-'.length));
+    if (isCredits) renderCreditsView(view.slice('credits-'.length));
+    if (isFacturesTravaux) renderFacturesTravauxView(view.slice('facturestravaux-'.length));
+  }
+
+  document.querySelectorAll('[data-action="quick-quittance"]').forEach((b) => b.addEventListener('click', () => showView('generer')));
+  document.querySelectorAll('[data-action="quick-locataire"], [data-action="new-locataire"]').forEach((b) => b.addEventListener('click', () => openLocataireModal()));
+  document.querySelectorAll('[data-action="quick-bien"], [data-action="new-bien"]').forEach((b) => b.addEventListener('click', () => openBienModal()));
+
+  // ---------- Dashboard ----------
+  function renderDashboard() {
+    byId('stat-biens').textContent = data.biens.length;
+    byId('stat-locataires').textContent = data.locataires.filter((l) => l.actif !== false).length;
+
+    const now = new Date();
+    const ym = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+    const moisTotal = data.documents
+      .filter((d) => d.periode === ym && (d.type === 'quittance' || d.type === 'recu-partiel'))
+      .reduce((sum, d) => sum + (Number(d.montant) || 0), 0);
+    byId('stat-mois').textContent = euros(moisTotal);
+    byId('stat-docs').textContent = data.documents.length;
+
+    const tbody = document.querySelector('#dashboard-recent tbody');
+    tbody.innerHTML = '';
+    const recent = [...data.documents].sort((a, b) => b.createdAt - a.createdAt).slice(0, 6);
+    if (recent.length === 0) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="5">Aucun document généré pour le moment.</td></tr>';
+    } else {
+      recent.forEach((d) => {
+        tbody.innerHTML += `<tr>
+          <td>${d.dateLabel}</td>
+          <td>${DOC_LABELS[d.type] || d.type}</td>
+          <td>${escapeHTML(d.locataireNom)}</td>
+          <td>${escapeHTML(d.periodeLabel || '—')}</td>
+          <td>${d.montant != null ? euros(d.montant) : '—'}</td>
+        </tr>`;
+      });
+    }
+  }
+
+  function escapeHTML(str) {
+    return String(str == null ? '' : str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  // ---------- Biens ----------
+  function renderBiens() {
+    const tbody = document.querySelector('#table-biens tbody');
+    tbody.innerHTML = '';
+    if (data.biens.length === 0) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="5">Aucun bien enregistré. Ajoutez votre premier bien.</td></tr>';
+      return;
+    }
+    data.biens.forEach((b) => {
+      tbody.innerHTML += `<tr>
+        <td>${escapeHTML(b.nom)}</td>
+        <td>${escapeHTML(b.adresse).replace(/\n/g, ', ')}</td>
+        <td>${euros(b.loyer)}</td>
+        <td>${euros(b.charges)}</td>
+        <td class="actions-cell">
+          <button class="btn btn-sm" data-edit-bien="${b.id}">Modifier</button>
+          <button class="btn btn-sm btn-danger" data-del-bien="${b.id}">Supprimer</button>
+        </td>
+      </tr>`;
+    });
+    tbody.querySelectorAll('[data-edit-bien]').forEach((btn) => btn.addEventListener('click', () => openBienModal(bienById(btn.dataset.editBien))));
+    tbody.querySelectorAll('[data-del-bien]').forEach((btn) => btn.addEventListener('click', () => {
+      const id = btn.dataset.delBien;
+      const used = data.locataires.some((l) => l.bienId === id);
+      if (used) { alert("Impossible de supprimer ce bien : un ou plusieurs locataires y sont rattachés."); return; }
+      if (confirm('Supprimer ce bien ?')) {
+        data.biens = data.biens.filter((b) => b.id !== id);
+        save(); renderBiens();
+      }
+    }));
+  }
+
+  function openBienModal(existing) {
+    const isEdit = !!existing;
+    openModal(isEdit ? 'Modifier le bien' : 'Nouveau bien', `
+      <div class="field"><label>Désignation</label><input type="text" id="m-bien-nom" placeholder="Appartement T2 - Rue de la Paix"></div>
+      <div class="field"><label>Adresse</label><textarea id="m-bien-adresse" rows="3" placeholder="12 rue de la Paix&#10;75002 Paris"></textarea></div>
+      <div class="field"><label>Loyer mensuel (€)</label><input type="number" step="0.01" id="m-bien-loyer"></div>
+      <div class="field"><label>Charges mensuelles (€)</label><input type="number" step="0.01" id="m-bien-charges"></div>
+      <button class="btn btn-primary" id="m-bien-save">${isEdit ? 'Enregistrer' : 'Ajouter'}</button>
+    `);
+    if (isEdit) {
+      byId('m-bien-nom').value = existing.nom || '';
+      byId('m-bien-adresse').value = existing.adresse || '';
+      byId('m-bien-loyer').value = existing.loyer || 0;
+      byId('m-bien-charges').value = existing.charges || 0;
+    }
+    byId('m-bien-save').addEventListener('click', () => {
+      const nom = byId('m-bien-nom').value.trim();
+      const adresse = byId('m-bien-adresse').value.trim();
+      if (!nom || !adresse) { alert('Merci de renseigner au moins la désignation et l\'adresse.'); return; }
+      const record = {
+        id: isEdit ? existing.id : Storage.uid(),
+        nom,
+        adresse,
+        loyer: parseFloat(byId('m-bien-loyer').value) || 0,
+        charges: parseFloat(byId('m-bien-charges').value) || 0,
+      };
+      if (isEdit) {
+        Object.assign(existing, record);
+      } else {
+        data.biens.push(record);
+      }
+      save(); closeModal(); renderBiens(); renderGenererOptions();
+    });
+  }
+
+  // ---------- Locataires ----------
+  function renderLocataires() {
+    const tbody = document.querySelector('#table-locataires tbody');
+    tbody.innerHTML = '';
+    if (data.locataires.length === 0) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="6">Aucun locataire enregistré.</td></tr>';
+      return;
+    }
+    data.locataires.forEach((l) => {
+      const bien = bienById(l.bienId);
+      tbody.innerHTML += `<tr>
+        <td>${escapeHTML(l.nom)}${l.designation ? ` <span class="badge badge-inactive">${escapeHTML(l.designation)}</span>` : ''}</td>
+        <td>${bien ? escapeHTML(bien.nom) : '<em>Bien supprimé</em>'}</td>
+        <td>${euros(l.loyer)}</td>
+        <td>${euros(l.charges)}</td>
+        <td><span class="badge ${l.actif === false ? 'badge-inactive' : 'badge-active'}">${l.actif === false ? 'Inactif' : 'Actif'}</span></td>
+        <td class="actions-cell">
+          <button class="btn btn-sm" data-edit-loc="${l.id}">Modifier</button>
+          <button class="btn btn-sm btn-danger" data-del-loc="${l.id}">Supprimer</button>
+        </td>
+      </tr>`;
+    });
+    tbody.querySelectorAll('[data-edit-loc]').forEach((btn) => btn.addEventListener('click', () => openLocataireModal(locataireById(btn.dataset.editLoc))));
+    tbody.querySelectorAll('[data-del-loc]').forEach((btn) => btn.addEventListener('click', () => {
+      const id = btn.dataset.delLoc;
+      if (confirm('Supprimer ce locataire ?')) {
+        data.locataires = data.locataires.filter((l) => l.id !== id);
+        save(); renderLocataires();
+      }
+    }));
+  }
+
+  function openLocataireModal(existing) {
+    const isEdit = !!existing;
+    if (data.biens.length === 0) {
+      alert("Ajoutez d'abord un bien avant de créer un locataire.");
+      return;
+    }
+    const bienOptions = data.biens.map((b) => `<option value="${b.id}">${escapeHTML(b.nom)}</option>`).join('');
+    openModal(isEdit ? 'Modifier le locataire' : 'Nouveau locataire', `
+      <div class="field"><label>Nom du locataire</label><input type="text" id="m-loc-nom" placeholder="Mme et Mr Nouqueret"></div>
+      <div class="field"><label>Bien loué</label><select id="m-loc-bien">${bienOptions}</select></div>
+      <div class="field"><label>Désignation (optionnel)</label><input type="text" id="m-loc-designation" placeholder="MAISON 2"></div>
+      <div class="field"><label>Adresse de correspondance (si différente de l'adresse du bien)</label><textarea id="m-loc-adresse" rows="2" placeholder="Laisser vide pour utiliser l'adresse du bien"></textarea></div>
+      <div class="field"><label>Loyer mensuel (€)</label><input type="number" step="0.01" id="m-loc-loyer"></div>
+      <div class="field"><label>Charges mensuelles (€)</label><input type="number" step="0.01" id="m-loc-charges"></div>
+      <div class="field"><label>Date d'entrée</label><input type="date" id="m-loc-date"></div>
+      <div class="field"><label>Lieu de naissance (pour avenants/baux)</label><input type="text" id="m-loc-lieu-naissance" placeholder="Bordeaux"></div>
+      <div class="field"><label>Date de naissance (pour avenants/baux)</label><input type="date" id="m-loc-date-naissance"></div>
+      <div class="field"><label>E-mail 1</label><input type="email" id="m-loc-email1" placeholder="locataire@exemple.fr"></div>
+      <div class="field"><label>E-mail 2 (optionnel, si couple)</label><input type="email" id="m-loc-email2" placeholder="conjoint@exemple.fr"></div>
+      <div class="field"><label>Téléphone portable 1</label><input type="tel" id="m-loc-tel1" placeholder="06 12 34 56 78"></div>
+      <div class="field"><label>Téléphone portable 2 (optionnel, si couple)</label><input type="tel" id="m-loc-tel2" placeholder="06 98 76 54 32"></div>
+      <div class="field"><label><input type="checkbox" id="m-loc-actif" style="width:auto;margin-right:6px;">Locataire actif</label></div>
+      <button class="btn btn-primary" id="m-loc-save">${isEdit ? 'Enregistrer' : 'Ajouter'}</button>
+    `);
+    byId('m-loc-actif').checked = isEdit ? existing.actif !== false : true;
+    if (isEdit) {
+      byId('m-loc-nom').value = existing.nom || '';
+      byId('m-loc-bien').value = existing.bienId || '';
+      byId('m-loc-designation').value = existing.designation || '';
+      byId('m-loc-adresse').value = existing.adresseDestinataire || '';
+      byId('m-loc-loyer').value = existing.loyer || 0;
+      byId('m-loc-charges').value = existing.charges || 0;
+      byId('m-loc-date').value = existing.dateEntree || '';
+      byId('m-loc-lieu-naissance').value = existing.lieuNaissance || '';
+      byId('m-loc-date-naissance').value = existing.dateNaissance || '';
+      byId('m-loc-email1').value = existing.email1 || existing.email || '';
+      byId('m-loc-email2').value = existing.email2 || '';
+      byId('m-loc-tel1').value = existing.tel1 || existing.tel || '';
+      byId('m-loc-tel2').value = existing.tel2 || '';
+    } else {
+      const b = data.biens[0];
+      byId('m-loc-loyer').value = b.loyer || 0;
+      byId('m-loc-charges').value = b.charges || 0;
+    }
+    byId('m-loc-bien').addEventListener('change', () => {
+      const b = bienById(byId('m-loc-bien').value);
+      if (b && !isEdit) {
+        byId('m-loc-loyer').value = b.loyer || 0;
+        byId('m-loc-charges').value = b.charges || 0;
+      }
+    });
+    byId('m-loc-save').addEventListener('click', () => {
+      const nom = byId('m-loc-nom').value.trim();
+      if (!nom) { alert('Merci de renseigner le nom du locataire.'); return; }
+      const record = {
+        id: isEdit ? existing.id : Storage.uid(),
+        nom,
+        bienId: byId('m-loc-bien').value,
+        designation: byId('m-loc-designation').value.trim(),
+        adresseDestinataire: byId('m-loc-adresse').value.trim(),
+        loyer: parseFloat(byId('m-loc-loyer').value) || 0,
+        charges: parseFloat(byId('m-loc-charges').value) || 0,
+        dateEntree: byId('m-loc-date').value,
+        lieuNaissance: byId('m-loc-lieu-naissance').value.trim(),
+        dateNaissance: byId('m-loc-date-naissance').value,
+        email1: byId('m-loc-email1').value.trim(),
+        email2: byId('m-loc-email2').value.trim(),
+        tel1: byId('m-loc-tel1').value.trim(),
+        tel2: byId('m-loc-tel2').value.trim(),
+        actif: byId('m-loc-actif').checked,
+      };
+      if (isEdit) {
+        Object.assign(existing, record);
+      } else {
+        data.locataires.push(record);
+      }
+      save(); closeModal(); renderLocataires(); renderGenererOptions();
+    });
+  }
+
+  // ---------- Historique ----------
+  function renderHistorique() {
+    const tbody = document.querySelector('#table-historique tbody');
+    tbody.innerHTML = '';
+    if (data.documents.length === 0) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="6">Aucun document dans l\'historique.</td></tr>';
+      return;
+    }
+    const sorted = [...data.documents].sort((a, b) => b.createdAt - a.createdAt);
+    sorted.forEach((d) => {
+      tbody.innerHTML += `<tr>
+        <td>${d.dateLabel}</td>
+        <td>${DOC_LABELS[d.type] || d.type}</td>
+        <td>${escapeHTML(d.locataireNom)}</td>
+        <td>${escapeHTML(d.periodeLabel || '—')}</td>
+        <td>${d.montant != null ? euros(d.montant) : '—'}</td>
+        <td class="actions-cell">
+          <button class="btn btn-sm" data-view-doc="${d.id}">Télécharger le PDF</button>
+          <button class="btn btn-sm btn-danger" data-del-doc="${d.id}">Supprimer</button>
+        </td>
+      </tr>`;
+    });
+    tbody.querySelectorAll('[data-view-doc]').forEach((btn) => btn.addEventListener('click', () => {
+      const doc = data.documents.find((d) => d.id === btn.dataset.viewDoc);
+      if (doc && doc.ctx) downloadPdf(doc.type, doc.ctx);
+    }));
+    tbody.querySelectorAll('[data-del-doc]').forEach((btn) => btn.addEventListener('click', () => {
+      if (confirm('Supprimer ce document de l\'historique ?')) {
+        data.documents = data.documents.filter((d) => d.id !== btn.dataset.delDoc);
+        save(); renderHistorique(); renderDashboard();
+      }
+    }));
+  }
+
+  function downloadPdf(type, ctx) {
+    const doc = PdfBuilder.generate(type, ctx);
+    doc.save(PdfBuilder.filename(type, ctx));
+  }
+
+  // ---------- Parametres (Mon SCI) ----------
+  function fillSciForm() {
+    byId('sci-nom').value = data.sci.nom || '';
+    byId('sci-adresse').value = data.sci.adresse || '';
+    byId('sci-ville').value = data.sci.ville || '';
+    byId('sci-siret').value = data.sci.siret || '';
+    byId('sci-capital').value = data.sci.capitalSocial || '';
+    byId('sci-gerant').value = data.sci.gerant || '';
+    byId('sci-email').value = data.sci.email || '';
+    byId('sci-tel').value = data.sci.tel || '';
+    renderSignaturePreview();
+  }
+  byId('btn-save-sci').addEventListener('click', () => {
+    data.sci.nom = byId('sci-nom').value.trim();
+    data.sci.adresse = byId('sci-adresse').value.trim();
+    data.sci.ville = byId('sci-ville').value.trim();
+    data.sci.siret = byId('sci-siret').value.trim();
+    data.sci.capitalSocial = byId('sci-capital').value.trim();
+    data.sci.gerant = byId('sci-gerant').value.trim();
+    data.sci.email = byId('sci-email').value.trim();
+    data.sci.tel = byId('sci-tel').value.trim();
+    save();
+    alert('Informations enregistrées.');
+  });
+
+  function renderSignaturePreview() {
+    const hasSignature = !!data.sci.signature;
+    byId('sci-signature-preview').hidden = !hasSignature;
+    if (hasSignature) byId('sci-signature-preview').src = data.sci.signature;
+    byId('sci-signature-empty').hidden = hasSignature;
+    byId('btn-signature-remove').hidden = !hasSignature;
+  }
+
+  byId('btn-signature-upload').addEventListener('click', () => byId('sci-signature-file').click());
+  byId('sci-signature-file').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      data.sci.signature = reader.result;
+      save();
+      renderSignaturePreview();
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  });
+  byId('btn-signature-remove').addEventListener('click', () => {
+    if (!confirm('Supprimer la signature enregistrée ?')) return;
+    data.sci.signature = '';
+    save();
+    renderSignaturePreview();
+  });
+
+  // ---------- Generer un document ----------
+  const typeSelect = byId('doc-type');
+  const locSelect = byId('doc-locataire');
+
+  typeSelect.addEventListener('change', updateDocFieldsVisibility);
+  locSelect.addEventListener('change', prefillFromLocataire);
+
+  function updateDocFieldsVisibility() {
+    const type = typeSelect.value;
+    byId('fields-quittance').hidden = type !== 'quittance';
+    byId('fields-recu-partiel').hidden = type !== 'recu-partiel';
+    byId('fields-relance').hidden = type !== 'relance';
+    byId('fields-avenant').hidden = type !== 'avenant';
+    byId('fields-libre').hidden = type !== 'libre';
+    byId('field-periode').hidden = type === 'libre' || type === 'avenant';
+    if (type === 'avenant') {
+      byId('avenant-date-effet').value = byId('avenant-date-effet').value || new Date().toISOString().slice(0, 10);
+      renderAvenantChargesEditor(AVENANT_DEFAULT_LINES);
+    }
+    resetPreview();
+  }
+
+  function renderGenererOptions() {
+    const current = locSelect.value;
+    locSelect.innerHTML = data.locataires.map((l) => `<option value="${l.id}">${escapeHTML(l.nom)}</option>`).join('');
+    if (data.locataires.length === 0) {
+      locSelect.innerHTML = '<option value="">Aucun locataire — ajoutez-en un</option>';
+    } else if (current && locataireById(current)) {
+      locSelect.value = current;
+    }
+    byId('doc-ville').value = byId('doc-ville').value || data.sci.ville || '';
+    const now = new Date();
+    byId('doc-periode').value = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+    updateDocFieldsVisibility();
+    prefillFromLocataire();
+  }
+
+  function prefillFromLocataire() {
+    const l = locataireById(locSelect.value);
+    if (!l) return;
+    byId('doc-loyer').value = l.loyer;
+    byId('doc-charges').value = l.charges;
+    byId('doc-total-du').value = (Number(l.loyer) || 0) + (Number(l.charges) || 0);
+    byId('doc-montant-paye').value = '';
+    byId('doc-montant-impaye').value = '';
+    if (!byId('doc-ville').value) byId('doc-ville').value = data.sci.ville || '';
+  }
+
+  function createChargeRowElement(line) {
+    const div = document.createElement('div');
+    div.className = 'avenant-charge-row';
+    div.innerHTML = `
+      <input type="text" class="avenant-charge-libelle" placeholder="Libellé">
+      <input type="number" step="0.01" class="avenant-charge-montant" placeholder="€/mois">
+      <input type="text" class="avenant-charge-note" placeholder="Note (contractuel, prévisionnel...)">
+      <button type="button" class="btn btn-sm btn-danger avenant-charge-remove">Supprimer</button>
+    `;
+    div.querySelector('.avenant-charge-libelle').value = line.libelle || '';
+    div.querySelector('.avenant-charge-montant').value = line.montant === '' || line.montant == null ? '' : line.montant;
+    div.querySelector('.avenant-charge-note').value = line.note || '';
+    div.querySelectorAll('input').forEach((input) => input.addEventListener('input', updateAvenantTotal));
+    div.querySelector('.avenant-charge-remove').addEventListener('click', () => {
+      div.remove();
+      updateAvenantTotal();
+    });
+    return div;
+  }
+
+  function renderAvenantChargesEditor(lines) {
+    const container = byId('avenant-charges-list');
+    container.innerHTML = '';
+    lines.forEach((line) => container.appendChild(createChargeRowElement(line)));
+    updateAvenantTotal();
+  }
+
+  function updateAvenantTotal() {
+    let total = 0;
+    document.querySelectorAll('#avenant-charges-list .avenant-charge-montant').forEach((input) => {
+      total += parseFloat(input.value) || 0;
+    });
+    byId('avenant-charges-total').textContent = euros(total);
+  }
+
+  function collectAvenantChargeLines() {
+    const rows = document.querySelectorAll('#avenant-charges-list .avenant-charge-row');
+    return [...rows].map((row) => ({
+      libelle: row.querySelector('.avenant-charge-libelle').value.trim(),
+      montant: parseFloat(row.querySelector('.avenant-charge-montant').value) || 0,
+      note: row.querySelector('.avenant-charge-note').value.trim(),
+    })).filter((line) => line.libelle || line.montant);
+  }
+
+  byId('btn-avenant-add-line').addEventListener('click', () => {
+    byId('avenant-charges-list').appendChild(createChargeRowElement({ libelle: '', montant: '', note: '' }));
+    updateAvenantTotal();
+  });
+
+  function resetPreview() {
+    byId('doc-preview').className = 'doc-empty';
+    byId('doc-preview').innerHTML = "L'aperçu du document apparaîtra ici.";
+    byId('btn-download-pdf').disabled = true;
+    lastGenerated = null;
+  }
+
+  let lastGenerated = null;
+
+  byId('btn-generate').addEventListener('click', () => {
+    const l = locataireById(locSelect.value);
+    if (!l) { alert('Sélectionnez un locataire.'); return; }
+    const bien = bienById(l.bienId);
+    if (!bien) { alert('Le bien associé à ce locataire est introuvable.'); return; }
+
+    const type = typeSelect.value;
+    const periode = byId('doc-periode').value;
+    const periodeLabel = type === 'libre' ? '' : Documents.periodLabel(periode);
+
+    const bailleurBlock = [data.sci.nom, data.sci.adresse, data.sci.siret ? `SIRET : ${data.sci.siret}` : '']
+      .filter(Boolean).join('\n');
+    const locataireBlock = [l.nom, l.designation, l.adresseDestinataire || bien.adresse].filter(Boolean).join('\n');
+
+    const ctx = {
+      bailleurNom: data.sci.nom || '(Nom du bailleur non renseigné)',
+      bailleurBlock,
+      locataireNom: l.nom,
+      locataireBlock,
+      locationAdresse: bien.adresse,
+      periodeLabel,
+      ville: byId('doc-ville').value.trim() || data.sci.ville || '',
+      signatureDataUrl: data.sci.signature || '',
+    };
+
+    let montant = null;
+
+    if (type === 'quittance') {
+      ctx.loyer = parseFloat(byId('doc-loyer').value) || 0;
+      ctx.charges = parseFloat(byId('doc-charges').value) || 0;
+      montant = ctx.loyer + ctx.charges;
+    } else if (type === 'recu-partiel') {
+      ctx.totalDu = parseFloat(byId('doc-total-du').value) || 0;
+      ctx.montantPaye = parseFloat(byId('doc-montant-paye').value) || 0;
+      montant = ctx.montantPaye;
+    } else if (type === 'relance') {
+      ctx.montantImpaye = parseFloat(byId('doc-montant-impaye').value) || 0;
+      montant = ctx.montantImpaye;
+    } else if (type === 'avenant') {
+      ctx.sciNom = data.sci.nom || '';
+      ctx.sciCapital = data.sci.capitalSocial || '';
+      ctx.sciRcsVille = data.sci.ville || '';
+      ctx.sciSiret = data.sci.siret || '';
+      ctx.sciAdresse = data.sci.adresse || '';
+      ctx.gerant = data.sci.gerant || '';
+      ctx.locataireNaissanceLieu = l.lieuNaissance || '';
+      ctx.locataireNaissanceDate = l.dateNaissance ? new Date(`${l.dateNaissance}T00:00:00`).toLocaleDateString('fr-FR') : '';
+      ctx.locataireAdresse = l.adresseDestinataire || bien.adresse;
+      ctx.dateContratInitial = l.dateEntree ? new Date(`${l.dateEntree}T00:00:00`).toLocaleDateString('fr-FR') : '';
+      ctx.dateEffet = byId('avenant-date-effet').value ? new Date(`${byId('avenant-date-effet').value}T00:00:00`).toLocaleDateString('fr-FR') : '';
+      ctx.chargeLines = collectAvenantChargeLines();
+      ctx.totalCharges = ctx.chargeLines.reduce((sum, line) => sum + (Number(line.montant) || 0), 0);
+      montant = ctx.totalCharges;
+    } else if (type === 'libre') {
+      ctx.objet = byId('doc-objet').value.trim();
+      ctx.message = byId('doc-message').value;
+    }
+
+    if (!ctx.bailleurNom || data.sci.nom === '') {
+      if (!confirm("Les informations de votre SCI (nom du bailleur) ne sont pas renseignées dans 'Ma SCI'. Continuer quand même ?")) return;
+    }
+
+    const html = Documents.build(type, ctx);
+    const preview = byId('doc-preview');
+    preview.className = '';
+    preview.innerHTML = html;
+    byId('btn-download-pdf').disabled = false;
+
+    lastGenerated = { type, locataireId: l.id, locataireNom: l.nom, periode, periodeLabel, montant, ctx };
+  });
+
+  byId('btn-download-pdf').addEventListener('click', () => {
+    if (!lastGenerated) return;
+    downloadPdf(lastGenerated.type, lastGenerated.ctx);
+
+    const now = new Date();
+    data.documents.push({
+      id: Storage.uid(),
+      createdAt: now.getTime(),
+      dateLabel: now.toLocaleDateString('fr-FR'),
+      ...lastGenerated,
+    });
+    save();
+    renderDashboard();
+  });
+
+  // ---------- Charges locatives ----------
+  function renderChargesView(cat, preferredYear) {
+    currentChargeCategory = cat;
+    byId('charges-title').textContent = CHARGE_CATEGORIES[cat] || 'Charges locatives';
+    byId('charges-subtitle').textContent = 'Suivi annuel et justificatifs par logement';
+
+    populateChargeBienSelect();
+    byId('charge-date').value = new Date().toISOString().slice(0, 10);
+    byId('charge-montant').value = '';
+    byId('charge-libelle').value = '';
+    byId('charge-fichier').value = '';
+
+    populateChargesYearSelect(cat, preferredYear);
+    renderChargesTables(cat);
+  }
+
+  function populateChargeBienSelect() {
+    const sel = byId('charge-bien');
+    const prev = sel.value;
+    if (data.biens.length === 0) {
+      sel.innerHTML = '<option value="">Aucun bien enregistré</option>';
+      return;
+    }
+    sel.innerHTML = data.biens.map((b) => `<option value="${b.id}">${escapeHTML(b.nom)}</option>`).join('');
+    if (prev && bienById(prev)) sel.value = prev;
+  }
+
+  function populateChargesYearSelect(cat, preferredYear) {
+    const currentYear = String(new Date().getFullYear());
+    const years = new Set(
+      data.charges.filter((c) => c.categorie === cat && c.date).map((c) => c.date.slice(0, 4))
+    );
+    years.add(currentYear);
+    const sorted = [...years].sort((a, b) => b - a);
+    const sel = byId('charges-year');
+    const prev = sel.value;
+    sel.innerHTML = sorted.map((y) => `<option value="${y}">${y}</option>`).join('');
+    if (preferredYear && sorted.includes(String(preferredYear))) {
+      sel.value = String(preferredYear);
+    } else if (prev && sorted.includes(prev)) {
+      sel.value = prev;
+    } else {
+      sel.value = currentYear;
+    }
+  }
+
+  byId('charges-year').addEventListener('change', () => renderChargesTables(currentChargeCategory));
+
+  function renderChargesTables(cat) {
+    const year = byId('charges-year').value;
+    renderChargesAnnualTable(cat, year);
+    renderChargesDetailTable(cat, year);
+  }
+
+  function renderChargesAnnualTable(cat, year) {
+    const entries = data.charges.filter((c) => c.categorie === cat && c.type === 'facture' && c.date && c.date.slice(0, 4) === String(year));
+
+    const matrix = {};
+    data.biens.forEach((b) => { matrix[b.id] = new Array(12).fill(0); });
+    entries.forEach((c) => {
+      const monthIndex = parseInt(c.date.slice(5, 7), 10) - 1;
+      if (!matrix[c.bienId]) matrix[c.bienId] = new Array(12).fill(0);
+      if (monthIndex >= 0 && monthIndex < 12) matrix[c.bienId][monthIndex] += Number(c.montant) || 0;
+    });
+
+    const orphanIds = Object.keys(matrix).filter((id) => !bienById(id));
+    const rows = [
+      ...data.biens.map((b) => ({ id: b.id, nom: b.nom })),
+      ...orphanIds.map((id) => ({ id, nom: '(bien supprimé)' })),
+    ];
+
+    const thead = document.querySelector('#charges-annual-table thead');
+    const tbody = document.querySelector('#charges-annual-table tbody');
+    const tfoot = document.querySelector('#charges-annual-table tfoot');
+
+    thead.innerHTML = `<tr><th>Logement</th>${MONTHS_SHORT.map((m) => `<th>${m}</th>`).join('')}<th>Total</th></tr>`;
+
+    if (rows.length === 0) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="14">Ajoutez un bien pour afficher le suivi.</td></tr>';
+      tfoot.innerHTML = '';
+      return;
+    }
+
+    const monthTotals = new Array(12).fill(0);
+    const rowTotals = {};
+    rows.forEach((r) => {
+      const arr = matrix[r.id] || new Array(12).fill(0);
+      let rowTotal = 0;
+      arr.forEach((v, i) => { monthTotals[i] += v; rowTotal += v; });
+      rowTotals[r.id] = rowTotal;
+    });
+    const grandTotal = monthTotals.reduce((a, b) => a + b, 0);
+    const maxCell = Math.max(1, ...rows.flatMap((r) => matrix[r.id] || []));
+    const maxRowTotal = Math.max(1, ...Object.values(rowTotals));
+
+    tbody.innerHTML = rows.map((r) => {
+      const arr = matrix[r.id] || new Array(12).fill(0);
+      const cells = arr.map((v) => {
+        if (v <= 0) return '<td class="month-cell">—</td>';
+        const opacity = Math.min(1, 0.15 + 0.7 * (v / maxCell)).toFixed(2);
+        return `<td class="month-cell" style="background:rgba(47,111,237,${opacity})">${euros(v)}</td>`;
+      }).join('');
+      const rowTotal = rowTotals[r.id];
+      const barPct = Math.round((rowTotal / maxRowTotal) * 100);
+      return `<tr>
+        <td>${escapeHTML(r.nom)}</td>
+        ${cells}
+        <td class="month-cell">
+          <div class="charge-total-cell">
+            <span>${euros(rowTotal)}</span>
+            <div class="mini-bar"><div class="mini-bar-fill" style="width:${barPct}%"></div></div>
+          </div>
+        </td>
+      </tr>`;
+    }).join('');
+
+    tfoot.innerHTML = `<tr class="charges-total-row">
+      <td>Total</td>
+      ${monthTotals.map((v) => `<td class="month-cell">${v > 0 ? euros(v) : '—'}</td>`).join('')}
+      <td class="month-cell">${euros(grandTotal)}</td>
+    </tr>`;
+  }
+
+  function renderChargesDetailTable(cat, year) {
+    const tbody = document.querySelector('#charges-detail-table tbody');
+    const entries = data.charges
+      .filter((c) => c.categorie === cat && c.date && c.date.slice(0, 4) === String(year))
+      .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+
+    if (entries.length === 0) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="7">Aucune dépense enregistrée pour cette année.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = entries.map((c) => {
+      const bien = bienById(c.bienId);
+      const dateLabel = c.date ? new Date(`${c.date}T00:00:00`).toLocaleDateString('fr-FR') : '—';
+      const isDevis = c.type === 'devis';
+      const fileCell = c.fileId
+        ? `<button type="button" class="file-link" data-view-file="${c.fileId}">${escapeHTML(c.fileName || 'Voir')}</button>`
+        : '<span class="file-empty">—</span>';
+      return `<tr>
+        <td>${dateLabel}</td>
+        <td>${bien ? escapeHTML(bien.nom) : '<em>Bien supprimé</em>'}</td>
+        <td>${escapeHTML(c.libelle || '—')}</td>
+        <td><span class="badge ${isDevis ? 'badge-devis' : 'badge-facture'}">${isDevis ? 'Devis' : 'Facture'}</span></td>
+        <td>${euros(c.montant)}</td>
+        <td>${fileCell}</td>
+        <td class="actions-cell"><button type="button" class="btn btn-sm btn-danger" data-del-charge="${c.id}">Supprimer</button></td>
+      </tr>`;
+    }).join('');
+
+    tbody.querySelectorAll('[data-view-file]').forEach((btn) => btn.addEventListener('click', () => openStoredFile(btn.dataset.viewFile)));
+    tbody.querySelectorAll('[data-del-charge]').forEach((btn) => btn.addEventListener('click', () => deleteCharge(btn.dataset.delCharge)));
+  }
+
+  async function openStoredFile(fileId) {
+    try {
+      const blob = await FilesDb.getFile(fileId);
+      if (!blob) {
+        alert('Fichier introuvable (il a peut-être été supprimé).');
+        return;
+      }
+      // Une navigation via <a target="_blank"> n'est pas bloquée comme un pop-up,
+      // contrairement à window.open() appelé après un "await".
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e) {
+      console.error(e);
+      alert("Impossible d'ouvrir le fichier.");
+    }
+  }
+
+  async function deleteCharge(id) {
+    const entry = data.charges.find((c) => c.id === id);
+    if (!entry) return;
+    if (!confirm('Supprimer cette dépense ?')) return;
+    data.charges = data.charges.filter((c) => c.id !== id);
+    save();
+    if (entry.fileId) {
+      try { await FilesDb.deleteFile(entry.fileId); } catch (e) { console.error(e); }
+    }
+    renderChargesTables(currentChargeCategory);
+  }
+
+  byId('btn-charge-add').addEventListener('click', async () => {
+    const bienId = byId('charge-bien').value;
+    if (!bienId) { alert('Ajoutez d\'abord un bien, puis sélectionnez-le.'); return; }
+    const date = byId('charge-date').value;
+    if (!date) { alert('Renseignez une date.'); return; }
+    const montant = parseFloat(byId('charge-montant').value) || 0;
+    const type = byId('charge-type').value;
+    const libelle = byId('charge-libelle').value.trim();
+    const file = byId('charge-fichier').files[0];
+
+    const record = {
+      id: Storage.uid(),
+      categorie: currentChargeCategory,
+      bienId,
+      date,
+      montant,
+      type,
+      libelle,
+      fileId: null,
+      fileName: '',
+    };
+
+    if (file) {
+      const fileId = Storage.uid();
+      try {
+        await FilesDb.saveFile(fileId, file);
+        record.fileId = fileId;
+        record.fileName = file.name;
+      } catch (e) {
+        console.error(e);
+        alert("Le fichier n'a pas pu être enregistré, mais la dépense a été ajoutée sans justificatif.");
+      }
+    }
+
+    data.charges.push(record);
+    save();
+    renderChargesView(currentChargeCategory, date.slice(0, 4));
+  });
+
+  // ---------- Anciens locataires ----------
+  let currentAncEdlType = 'entrant';
+
+  function populateAncLocataireSelect() {
+    const sel = byId('anc-locataire');
+    const prev = sel.value;
+    const anciens = data.locataires.filter((l) => l.actif === false);
+    if (anciens.length === 0) {
+      sel.innerHTML = '<option value="">Aucun ancien locataire</option>';
+      return;
+    }
+    sel.innerHTML = anciens.map((l) => `<option value="${l.id}">${escapeHTML(l.nom)}</option>`).join('');
+    if (prev && anciens.some((l) => l.id === prev)) sel.value = prev;
+  }
+
+  byId('anc-locataire').addEventListener('change', renderAncPanels);
+
+  function renderAncPanels() {
+    renderAncDocumentsTable();
+    renderAncBailTable();
+    renderAncEdlTable();
+    renderAncDocTable();
+  }
+
+  function renderAnciensLocatairesView() {
+    populateAncLocataireSelect();
+    byId('anc-bail-date').value = new Date().toISOString().slice(0, 10);
+    byId('anc-bail-libelle').value = '';
+    byId('anc-bail-fichier').value = '';
+    byId('anc-edl-date').value = new Date().toISOString().slice(0, 10);
+    byId('anc-edl-libelle').value = '';
+    byId('anc-edl-fichier').value = '';
+    byId('anc-doc-date').value = new Date().toISOString().slice(0, 10);
+    byId('anc-doc-libelle').value = '';
+    byId('anc-doc-fichier').value = '';
+    renderAncPanels();
+  }
+
+  function renderAncDocumentsTable() {
+    const tbody = document.querySelector('#anc-documents-table tbody');
+    const locId = byId('anc-locataire').value;
+    const docs = data.documents.filter((d) => d.locataireId === locId).sort((a, b) => b.createdAt - a.createdAt);
+    if (!locId || docs.length === 0) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="5">Aucun document généré pour ce locataire.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = docs.map((d) => `<tr>
+      <td>${d.dateLabel}</td>
+      <td>${DOC_LABELS[d.type] || d.type}</td>
+      <td>${escapeHTML(d.periodeLabel || '—')}</td>
+      <td>${d.montant != null ? euros(d.montant) : '—'}</td>
+      <td class="actions-cell"><button type="button" class="btn btn-sm" data-anc-doc-pdf="${d.id}">Télécharger le PDF</button></td>
+    </tr>`).join('');
+    tbody.querySelectorAll('[data-anc-doc-pdf]').forEach((btn) => btn.addEventListener('click', () => {
+      const doc = data.documents.find((d) => d.id === btn.dataset.ancDocPdf);
+      if (doc && doc.ctx) downloadPdf(doc.type, doc.ctx);
+    }));
+  }
+
+  function renderAncBailTable() {
+    const locId = byId('anc-locataire').value;
+    const tbody = document.querySelector('#anc-bail-table tbody');
+    const docs = data.baux.filter((b) => b.locataireId === locId).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    if (!locId || docs.length === 0) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="4">Aucun document.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = docs.map((d) => {
+      const dateLabel = d.date ? new Date(`${d.date}T00:00:00`).toLocaleDateString('fr-FR') : '—';
+      return `<tr>
+        <td>${dateLabel}</td>
+        <td>${escapeHTML(d.libelle || '—')}</td>
+        <td>${fileLinksHTML(d)}</td>
+        <td class="actions-cell"><button type="button" class="btn btn-sm btn-danger" data-del-anc-bail="${d.id}">Supprimer</button></td>
+      </tr>`;
+    }).join('');
+    tbody.querySelectorAll('[data-view-file]').forEach((btn) => btn.addEventListener('click', () => openStoredFile(btn.dataset.viewFile)));
+    tbody.querySelectorAll('[data-del-anc-bail]').forEach((btn) => btn.addEventListener('click', () => deleteAncBail(btn.dataset.delAncBail)));
+  }
+
+  async function deleteAncBail(id) {
+    const entry = data.baux.find((b) => b.id === id);
+    if (!entry) return;
+    if (!confirm('Supprimer ce document ?')) return;
+    data.baux = data.baux.filter((b) => b.id !== id);
+    save();
+    await deleteRecordFiles(entry);
+    renderAncBailTable();
+  }
+
+  byId('anc-bail-fichier').addEventListener('change', function () {
+    if (this.files.length > MAX_DOC_PAGES) {
+      alert(`${MAX_DOC_PAGES} pages maximum par document.`);
+      this.value = '';
+    }
+  });
+
+  byId('btn-anc-bail-add').addEventListener('click', async () => {
+    const locataireId = byId('anc-locataire').value;
+    if (!locataireId) { alert('Sélectionnez un ancien locataire.'); return; }
+    const date = byId('anc-bail-date').value;
+    if (!date) { alert('Renseignez une date.'); return; }
+    const files = [...byId('anc-bail-fichier').files];
+    if (files.length === 0) { alert('Sélectionnez au moins un fichier (PDF, PNG ou JPG).'); return; }
+    if (files.length > MAX_DOC_PAGES) { alert(`${MAX_DOC_PAGES} pages maximum par document.`); return; }
+
+    const record = { id: Storage.uid(), locataireId, date, libelle: byId('anc-bail-libelle').value.trim(), files: [] };
+    try {
+      for (const file of files) {
+        const fileId = Storage.uid();
+        await FilesDb.saveFile(fileId, file);
+        record.files.push({ fileId, fileName: file.name });
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Certaines pages n'ont pas pu être enregistrées.");
+      return;
+    }
+    data.baux.push(record);
+    save();
+    byId('anc-bail-date').value = new Date().toISOString().slice(0, 10);
+    byId('anc-bail-libelle').value = '';
+    byId('anc-bail-fichier').value = '';
+    renderAncBailTable();
+  });
+
+  function renderAncEdlTable() {
+    const locId = byId('anc-locataire').value;
+    const tbody = document.querySelector('#anc-edl-table tbody');
+    const docs = data.etatsDesLieux
+      .filter((e) => e.locataireId === locId && e.sens === currentAncEdlType)
+      .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    if (!locId || docs.length === 0) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="4">Aucun document.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = docs.map((d) => {
+      const dateLabel = d.date ? new Date(`${d.date}T00:00:00`).toLocaleDateString('fr-FR') : '—';
+      return `<tr>
+        <td>${dateLabel}</td>
+        <td>${escapeHTML(d.libelle || '—')}</td>
+        <td>${fileLinksHTML(d)}</td>
+        <td class="actions-cell"><button type="button" class="btn btn-sm btn-danger" data-del-anc-edl="${d.id}">Supprimer</button></td>
+      </tr>`;
+    }).join('');
+    tbody.querySelectorAll('[data-view-file]').forEach((btn) => btn.addEventListener('click', () => openStoredFile(btn.dataset.viewFile)));
+    tbody.querySelectorAll('[data-del-anc-edl]').forEach((btn) => btn.addEventListener('click', () => deleteAncEdl(btn.dataset.delAncEdl)));
+  }
+
+  async function deleteAncEdl(id) {
+    const entry = data.etatsDesLieux.find((e) => e.id === id);
+    if (!entry) return;
+    if (!confirm('Supprimer ce document ?')) return;
+    data.etatsDesLieux = data.etatsDesLieux.filter((e) => e.id !== id);
+    save();
+    await deleteRecordFiles(entry);
+    renderAncEdlTable();
+  }
+
+  document.querySelectorAll('#anc-edl-type-toggle .toggle-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      currentAncEdlType = btn.dataset.edlType;
+      document.querySelectorAll('#anc-edl-type-toggle .toggle-btn').forEach((b) => b.classList.toggle('active', b === btn));
+      renderAncEdlTable();
+    });
+  });
+
+  byId('anc-edl-fichier').addEventListener('change', function () {
+    if (this.files.length > MAX_DOC_PAGES) {
+      alert(`${MAX_DOC_PAGES} pages maximum par document.`);
+      this.value = '';
+    }
+  });
+
+  byId('btn-anc-edl-add').addEventListener('click', async () => {
+    const locataireId = byId('anc-locataire').value;
+    if (!locataireId) { alert('Sélectionnez un ancien locataire.'); return; }
+    const date = byId('anc-edl-date').value;
+    if (!date) { alert('Renseignez une date.'); return; }
+    const files = [...byId('anc-edl-fichier').files];
+    if (files.length === 0) { alert('Sélectionnez au moins un fichier (PDF, PNG ou JPG).'); return; }
+    if (files.length > MAX_DOC_PAGES) { alert(`${MAX_DOC_PAGES} pages maximum par document.`); return; }
+
+    const record = {
+      id: Storage.uid(),
+      locataireId,
+      sens: currentAncEdlType,
+      date,
+      libelle: byId('anc-edl-libelle').value.trim(),
+      files: [],
+    };
+    try {
+      for (const file of files) {
+        const fileId = Storage.uid();
+        await FilesDb.saveFile(fileId, file);
+        record.files.push({ fileId, fileName: file.name });
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Certaines pages n'ont pas pu être enregistrées.");
+      return;
+    }
+    data.etatsDesLieux.push(record);
+    save();
+    byId('anc-edl-date').value = new Date().toISOString().slice(0, 10);
+    byId('anc-edl-libelle').value = '';
+    byId('anc-edl-fichier').value = '';
+    renderAncEdlTable();
+  });
+
+  function renderAncDocTable() {
+    const locId = byId('anc-locataire').value;
+    const tbody = document.querySelector('#anc-doc-table tbody');
+    const docs = data.documentsLocataires
+      .filter((d) => d.locataireId === locId)
+      .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    if (!locId || docs.length === 0) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="4">Aucun document.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = docs.map((d) => {
+      const dateLabel = d.date ? new Date(`${d.date}T00:00:00`).toLocaleDateString('fr-FR') : '—';
+      return `<tr>
+        <td>${dateLabel}</td>
+        <td>${escapeHTML(d.libelle || '—')}</td>
+        <td>${fileLinksHTML(d)}</td>
+        <td class="actions-cell"><button type="button" class="btn btn-sm btn-danger" data-del-anc-doc="${d.id}">Supprimer</button></td>
+      </tr>`;
+    }).join('');
+    tbody.querySelectorAll('[data-view-file]').forEach((btn) => btn.addEventListener('click', () => openStoredFile(btn.dataset.viewFile)));
+    tbody.querySelectorAll('[data-del-anc-doc]').forEach((btn) => btn.addEventListener('click', () => deleteAncDoc(btn.dataset.delAncDoc)));
+  }
+
+  async function deleteAncDoc(id) {
+    const entry = data.documentsLocataires.find((d) => d.id === id);
+    if (!entry) return;
+    if (!confirm('Supprimer ce document ?')) return;
+    data.documentsLocataires = data.documentsLocataires.filter((d) => d.id !== id);
+    save();
+    await deleteRecordFiles(entry);
+    renderAncDocTable();
+  }
+
+  byId('anc-doc-fichier').addEventListener('change', function () {
+    if (this.files.length > MAX_DOC_PAGES) {
+      alert(`${MAX_DOC_PAGES} pages maximum par document.`);
+      this.value = '';
+    }
+  });
+
+  byId('btn-anc-doc-add').addEventListener('click', async () => {
+    const locataireId = byId('anc-locataire').value;
+    if (!locataireId) { alert('Sélectionnez un ancien locataire.'); return; }
+    const date = byId('anc-doc-date').value;
+    if (!date) { alert('Renseignez une date.'); return; }
+    const files = [...byId('anc-doc-fichier').files];
+    if (files.length === 0) { alert('Sélectionnez au moins un fichier (PDF, PNG ou JPG).'); return; }
+    if (files.length > MAX_DOC_PAGES) { alert(`${MAX_DOC_PAGES} pages maximum par document.`); return; }
+
+    const record = { id: Storage.uid(), locataireId, date, libelle: byId('anc-doc-libelle').value.trim(), files: [] };
+    try {
+      for (const file of files) {
+        const fileId = Storage.uid();
+        await FilesDb.saveFile(fileId, file);
+        record.files.push({ fileId, fileName: file.name });
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Certaines pages n'ont pas pu être enregistrées.");
+      return;
+    }
+    data.documentsLocataires.push(record);
+    save();
+    byId('anc-doc-date').value = new Date().toISOString().slice(0, 10);
+    byId('anc-doc-libelle').value = '';
+    byId('anc-doc-fichier').value = '';
+    renderAncDocTable();
+  });
+
+  // ---------- Bail ----------
+  function renderBailView() {
+    populateBailLocataireSelect();
+    byId('bail-date').value = new Date().toISOString().slice(0, 10);
+    byId('bail-libelle').value = '';
+    byId('bail-fichier').value = '';
+    renderBailStatusGrid();
+    renderBailHistoryTable();
+  }
+
+  function populateBailLocataireSelect() {
+    const sel = byId('bail-locataire');
+    const prev = sel.value;
+    if (data.locataires.length === 0) {
+      sel.innerHTML = '<option value="">Aucun locataire enregistré</option>';
+      return;
+    }
+    sel.innerHTML = data.locataires.map((l) => `<option value="${l.id}">${escapeHTML(l.nom)}</option>`).join('');
+    if (prev && locataireById(prev)) sel.value = prev;
+  }
+
+  byId('bail-locataire').addEventListener('change', renderBailHistoryTable);
+
+  function renderBailStatusGrid() {
+    const grid = byId('bail-status-grid');
+    if (data.locataires.length === 0) {
+      grid.innerHTML = '<p class="charges-note">Aucun locataire enregistré.</p>';
+      return;
+    }
+    grid.innerHTML = data.locataires.map((l) => {
+      const docs = data.baux.filter((b) => b.locataireId === l.id).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+      const last = docs[0];
+      const status = last
+        ? `<span>Dernier document</span><span class="doc-status-ok">${new Date(`${last.date}T00:00:00`).toLocaleDateString('fr-FR')}</span>`
+        : `<span>Bail</span><span class="doc-status-missing">Manquant</span>`;
+      return `<div class="doc-status-card">
+        <span class="doc-status-name">${escapeHTML(l.nom)}</span>
+        <div class="doc-status-row">${status}</div>
+      </div>`;
+    }).join('');
+  }
+
+  function renderBailHistoryTable() {
+    const locId = byId('bail-locataire').value;
+    const loc = locataireById(locId);
+    byId('bail-locataire-label').textContent = loc ? loc.nom : '—';
+    const tbody = document.querySelector('#bail-table tbody');
+    const docs = data.baux.filter((b) => b.locataireId === locId).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    if (docs.length === 0) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="4">Aucun document pour ce locataire.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = docs.map((d) => {
+      const dateLabel = d.date ? new Date(`${d.date}T00:00:00`).toLocaleDateString('fr-FR') : '—';
+      return `<tr>
+        <td>${dateLabel}</td>
+        <td>${escapeHTML(d.libelle || '—')}</td>
+        <td>${fileLinksHTML(d)}</td>
+        <td class="actions-cell"><button type="button" class="btn btn-sm btn-danger" data-del-bail="${d.id}">Supprimer</button></td>
+      </tr>`;
+    }).join('');
+    tbody.querySelectorAll('[data-view-file]').forEach((btn) => btn.addEventListener('click', () => openStoredFile(btn.dataset.viewFile)));
+    tbody.querySelectorAll('[data-del-bail]').forEach((btn) => btn.addEventListener('click', () => deleteBail(btn.dataset.delBail)));
+  }
+
+  async function deleteBail(id) {
+    const entry = data.baux.find((b) => b.id === id);
+    if (!entry) return;
+    if (!confirm('Supprimer ce document ?')) return;
+    data.baux = data.baux.filter((b) => b.id !== id);
+    save();
+    await deleteRecordFiles(entry);
+    renderBailStatusGrid();
+    renderBailHistoryTable();
+  }
+
+  byId('bail-fichier').addEventListener('change', function () {
+    if (this.files.length > MAX_DOC_PAGES) {
+      alert(`${MAX_DOC_PAGES} pages maximum par document.`);
+      this.value = '';
+    }
+  });
+
+  byId('btn-bail-add').addEventListener('click', async () => {
+    const locataireId = byId('bail-locataire').value;
+    if (!locataireId) { alert("Ajoutez d'abord un locataire, puis sélectionnez-le."); return; }
+    const date = byId('bail-date').value;
+    if (!date) { alert('Renseignez une date.'); return; }
+    const files = [...byId('bail-fichier').files];
+    if (files.length === 0) { alert('Sélectionnez au moins un fichier (PDF, PNG ou JPG).'); return; }
+    if (files.length > MAX_DOC_PAGES) { alert(`${MAX_DOC_PAGES} pages maximum par document.`); return; }
+
+    const record = { id: Storage.uid(), locataireId, date, libelle: byId('bail-libelle').value.trim(), files: [] };
+    try {
+      for (const file of files) {
+        const fileId = Storage.uid();
+        await FilesDb.saveFile(fileId, file);
+        record.files.push({ fileId, fileName: file.name });
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Certaines pages n'ont pas pu être enregistrées.");
+      return;
+    }
+    data.baux.push(record);
+    save();
+    byId('bail-date').value = new Date().toISOString().slice(0, 10);
+    byId('bail-libelle').value = '';
+    byId('bail-fichier').value = '';
+    renderBailStatusGrid();
+    renderBailHistoryTable();
+  });
+
+  // ---------- États des lieux ----------
+  let currentEdlType = 'entrant';
+
+  function renderEtatsLieuxView() {
+    populateEdlLocataireSelect();
+    byId('edl-date').value = new Date().toISOString().slice(0, 10);
+    byId('edl-libelle').value = '';
+    byId('edl-fichier').value = '';
+    renderEdlStatusGrid();
+    renderEdlHistoryTable();
+  }
+
+  function populateEdlLocataireSelect() {
+    const sel = byId('edl-locataire');
+    const prev = sel.value;
+    if (data.locataires.length === 0) {
+      sel.innerHTML = '<option value="">Aucun locataire enregistré</option>';
+      return;
+    }
+    sel.innerHTML = data.locataires.map((l) => `<option value="${l.id}">${escapeHTML(l.nom)}</option>`).join('');
+    if (prev && locataireById(prev)) sel.value = prev;
+  }
+
+  byId('edl-locataire').addEventListener('change', renderEdlHistoryTable);
+
+  document.querySelectorAll('#edl-type-toggle .toggle-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      currentEdlType = btn.dataset.edlType;
+      document.querySelectorAll('#edl-type-toggle .toggle-btn').forEach((b) => b.classList.toggle('active', b === btn));
+      byId('edl-type-label').textContent = currentEdlType === 'sortant' ? 'Sortant' : 'Entrant';
+      renderEdlHistoryTable();
+    });
+  });
+
+  function renderEdlStatusGrid() {
+    const grid = byId('edl-status-grid');
+    if (data.locataires.length === 0) {
+      grid.innerHTML = '<p class="charges-note">Aucun locataire enregistré.</p>';
+      return;
+    }
+    const lastOf = (locId, sens) => data.etatsDesLieux
+      .filter((e) => e.locataireId === locId && e.sens === sens)
+      .sort((a, b) => (b.date || '').localeCompare(a.date || ''))[0];
+    const statusLine = (label, doc) => doc
+      ? `<span>${label}</span><span class="doc-status-ok">${new Date(`${doc.date}T00:00:00`).toLocaleDateString('fr-FR')}</span>`
+      : `<span>${label}</span><span class="doc-status-missing">Manquant</span>`;
+    grid.innerHTML = data.locataires.map((l) => {
+      const entrant = lastOf(l.id, 'entrant');
+      const sortant = lastOf(l.id, 'sortant');
+      return `<div class="doc-status-card">
+        <span class="doc-status-name">${escapeHTML(l.nom)}</span>
+        <div class="doc-status-row">${statusLine('Entrant', entrant)}</div>
+        <div class="doc-status-row">${statusLine('Sortant', sortant)}</div>
+      </div>`;
+    }).join('');
+  }
+
+  function renderEdlHistoryTable() {
+    const locId = byId('edl-locataire').value;
+    const loc = locataireById(locId);
+    byId('edl-locataire-label').textContent = loc ? loc.nom : '—';
+    const tbody = document.querySelector('#edl-table tbody');
+    const docs = data.etatsDesLieux
+      .filter((e) => e.locataireId === locId && e.sens === currentEdlType)
+      .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    if (docs.length === 0) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="4">Aucun document pour ce locataire.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = docs.map((d) => {
+      const dateLabel = d.date ? new Date(`${d.date}T00:00:00`).toLocaleDateString('fr-FR') : '—';
+      return `<tr>
+        <td>${dateLabel}</td>
+        <td>${escapeHTML(d.libelle || '—')}</td>
+        <td>${fileLinksHTML(d)}</td>
+        <td class="actions-cell"><button type="button" class="btn btn-sm btn-danger" data-del-edl="${d.id}">Supprimer</button></td>
+      </tr>`;
+    }).join('');
+    tbody.querySelectorAll('[data-view-file]').forEach((btn) => btn.addEventListener('click', () => openStoredFile(btn.dataset.viewFile)));
+    tbody.querySelectorAll('[data-del-edl]').forEach((btn) => btn.addEventListener('click', () => deleteEdl(btn.dataset.delEdl)));
+  }
+
+  async function deleteEdl(id) {
+    const entry = data.etatsDesLieux.find((e) => e.id === id);
+    if (!entry) return;
+    if (!confirm('Supprimer ce document ?')) return;
+    data.etatsDesLieux = data.etatsDesLieux.filter((e) => e.id !== id);
+    save();
+    await deleteRecordFiles(entry);
+    renderEdlStatusGrid();
+    renderEdlHistoryTable();
+  }
+
+  byId('edl-fichier').addEventListener('change', function () {
+    if (this.files.length > MAX_DOC_PAGES) {
+      alert(`${MAX_DOC_PAGES} pages maximum par document.`);
+      this.value = '';
+    }
+  });
+
+  byId('btn-edl-add').addEventListener('click', async () => {
+    const locataireId = byId('edl-locataire').value;
+    if (!locataireId) { alert("Ajoutez d'abord un locataire, puis sélectionnez-le."); return; }
+    const date = byId('edl-date').value;
+    if (!date) { alert('Renseignez une date.'); return; }
+    const files = [...byId('edl-fichier').files];
+    if (files.length === 0) { alert('Sélectionnez au moins un fichier (PDF, PNG ou JPG).'); return; }
+    if (files.length > MAX_DOC_PAGES) { alert(`${MAX_DOC_PAGES} pages maximum par document.`); return; }
+
+    const record = {
+      id: Storage.uid(),
+      locataireId,
+      sens: currentEdlType,
+      date,
+      libelle: byId('edl-libelle').value.trim(),
+      files: [],
+    };
+    try {
+      for (const file of files) {
+        const fileId = Storage.uid();
+        await FilesDb.saveFile(fileId, file);
+        record.files.push({ fileId, fileName: file.name });
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Certaines pages n'ont pas pu être enregistrées.");
+      return;
+    }
+    data.etatsDesLieux.push(record);
+    save();
+    byId('edl-date').value = new Date().toISOString().slice(0, 10);
+    byId('edl-libelle').value = '';
+    byId('edl-fichier').value = '';
+    renderEdlStatusGrid();
+    renderEdlHistoryTable();
+  });
+
+  // ---------- Documents administratifs ----------
+  const MAX_ADMIN_DOC_PAGES = 20;
+
+  function renderDocsAdminView(cat) {
+    currentDocsAdminCategory = cat;
+    byId('docsadmin-title').textContent = ADMIN_DOC_CATEGORIES[cat] || 'Documents administratifs';
+    byId('docsadmin-date').value = new Date().toISOString().slice(0, 10);
+    byId('docsadmin-libelle').value = '';
+    byId('docsadmin-fichier').value = '';
+    renderDocsAdminTable();
+  }
+
+  function renderDocsAdminTable() {
+    const tbody = document.querySelector('#docsadmin-table tbody');
+    const docs = data.documentsAdmin
+      .filter((d) => d.categorie === currentDocsAdminCategory)
+      .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    if (docs.length === 0) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="4">Aucun document dans cette catégorie.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = docs.map((d) => {
+      const dateLabel = d.date ? new Date(`${d.date}T00:00:00`).toLocaleDateString('fr-FR') : '—';
+      return `<tr>
+        <td>${dateLabel}</td>
+        <td>${escapeHTML(d.libelle || '—')}</td>
+        <td>${fileLinksHTML(d)}</td>
+        <td class="actions-cell"><button type="button" class="btn btn-sm btn-danger" data-del-docsadmin="${d.id}">Supprimer</button></td>
+      </tr>`;
+    }).join('');
+    tbody.querySelectorAll('[data-view-file]').forEach((btn) => btn.addEventListener('click', () => openStoredFile(btn.dataset.viewFile)));
+    tbody.querySelectorAll('[data-del-docsadmin]').forEach((btn) => btn.addEventListener('click', () => deleteDocsAdmin(btn.dataset.delDocsadmin)));
+  }
+
+  async function deleteDocsAdmin(id) {
+    const entry = data.documentsAdmin.find((d) => d.id === id);
+    if (!entry) return;
+    if (!confirm('Supprimer ce document ?')) return;
+    data.documentsAdmin = data.documentsAdmin.filter((d) => d.id !== id);
+    save();
+    await deleteRecordFiles(entry);
+    renderDocsAdminTable();
+  }
+
+  byId('docsadmin-fichier').addEventListener('change', function () {
+    if (this.files.length > MAX_ADMIN_DOC_PAGES) {
+      alert(`${MAX_ADMIN_DOC_PAGES} pages maximum par document.`);
+      this.value = '';
+    }
+  });
+
+  byId('btn-docsadmin-add').addEventListener('click', async () => {
+    const date = byId('docsadmin-date').value;
+    if (!date) { alert('Renseignez une date.'); return; }
+    const files = [...byId('docsadmin-fichier').files];
+    if (files.length === 0) { alert('Sélectionnez au moins un fichier (PDF, PNG ou JPG).'); return; }
+    if (files.length > MAX_ADMIN_DOC_PAGES) { alert(`${MAX_ADMIN_DOC_PAGES} pages maximum par document.`); return; }
+
+    const record = {
+      id: Storage.uid(),
+      categorie: currentDocsAdminCategory,
+      date,
+      libelle: byId('docsadmin-libelle').value.trim(),
+      files: [],
+    };
+    try {
+      for (const file of files) {
+        const fileId = Storage.uid();
+        await FilesDb.saveFile(fileId, file);
+        record.files.push({ fileId, fileName: file.name });
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Certaines pages n'ont pas pu être enregistrées.");
+      return;
+    }
+    data.documentsAdmin.push(record);
+    save();
+    byId('docsadmin-date').value = new Date().toISOString().slice(0, 10);
+    byId('docsadmin-libelle').value = '';
+    byId('docsadmin-fichier').value = '';
+    renderDocsAdminTable();
+  });
+
+  // ---------- Crédits ----------
+  function renderCreditsView(cat) {
+    currentCreditCategory = cat;
+    byId('credits-title').textContent = CREDIT_CATEGORIES[cat] || 'Crédits';
+    byId('credits-date').value = new Date().toISOString().slice(0, 10);
+    byId('credits-libelle').value = '';
+    byId('credits-fichier').value = '';
+    renderCreditsTable();
+  }
+
+  function renderCreditsTable() {
+    const tbody = document.querySelector('#credits-table tbody');
+    const docs = data.credits
+      .filter((d) => d.categorie === currentCreditCategory)
+      .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    if (docs.length === 0) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="4">Aucun document dans cette catégorie.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = docs.map((d) => {
+      const dateLabel = d.date ? new Date(`${d.date}T00:00:00`).toLocaleDateString('fr-FR') : '—';
+      return `<tr>
+        <td>${dateLabel}</td>
+        <td>${escapeHTML(d.libelle || '—')}</td>
+        <td>${fileLinksHTML(d)}</td>
+        <td class="actions-cell"><button type="button" class="btn btn-sm btn-danger" data-del-credits="${d.id}">Supprimer</button></td>
+      </tr>`;
+    }).join('');
+    tbody.querySelectorAll('[data-view-file]').forEach((btn) => btn.addEventListener('click', () => openStoredFile(btn.dataset.viewFile)));
+    tbody.querySelectorAll('[data-del-credits]').forEach((btn) => btn.addEventListener('click', () => deleteCredit(btn.dataset.delCredits)));
+  }
+
+  async function deleteCredit(id) {
+    const entry = data.credits.find((d) => d.id === id);
+    if (!entry) return;
+    if (!confirm('Supprimer ce document ?')) return;
+    data.credits = data.credits.filter((d) => d.id !== id);
+    save();
+    await deleteRecordFiles(entry);
+    renderCreditsTable();
+  }
+
+  byId('credits-fichier').addEventListener('change', function () {
+    if (this.files.length > MAX_DOC_PAGES) {
+      alert(`${MAX_DOC_PAGES} pages maximum par document.`);
+      this.value = '';
+    }
+  });
+
+  byId('btn-credits-add').addEventListener('click', async () => {
+    const date = byId('credits-date').value;
+    if (!date) { alert('Renseignez une date.'); return; }
+    const files = [...byId('credits-fichier').files];
+    if (files.length === 0) { alert('Sélectionnez au moins un fichier (PDF, PNG ou JPG).'); return; }
+    if (files.length > MAX_DOC_PAGES) { alert(`${MAX_DOC_PAGES} pages maximum par document.`); return; }
+
+    const record = {
+      id: Storage.uid(),
+      categorie: currentCreditCategory,
+      date,
+      libelle: byId('credits-libelle').value.trim(),
+      files: [],
+    };
+    try {
+      for (const file of files) {
+        const fileId = Storage.uid();
+        await FilesDb.saveFile(fileId, file);
+        record.files.push({ fileId, fileName: file.name });
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Certaines pages n'ont pas pu être enregistrées.");
+      return;
+    }
+    data.credits.push(record);
+    save();
+    byId('credits-date').value = new Date().toISOString().slice(0, 10);
+    byId('credits-libelle').value = '';
+    byId('credits-fichier').value = '';
+    renderCreditsTable();
+  });
+
+  // ---------- Factures et travaux ----------
+  function renderFacturesTravauxView(cat) {
+    currentFacturesTravauxCategory = cat;
+    byId('facturestravaux-title').textContent = FACTURES_TRAVAUX_CATEGORIES[cat] || 'Factures et travaux';
+    byId('facturestravaux-date').value = new Date().toISOString().slice(0, 10);
+    byId('facturestravaux-libelle').value = '';
+    byId('facturestravaux-fichier').value = '';
+    renderFacturesTravauxTable();
+  }
+
+  function renderFacturesTravauxTable() {
+    const tbody = document.querySelector('#facturestravaux-table tbody');
+    const docs = data.facturesTravaux
+      .filter((d) => d.categorie === currentFacturesTravauxCategory)
+      .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    if (docs.length === 0) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="4">Aucun document dans cette catégorie.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = docs.map((d) => {
+      const dateLabel = d.date ? new Date(`${d.date}T00:00:00`).toLocaleDateString('fr-FR') : '—';
+      return `<tr>
+        <td>${dateLabel}</td>
+        <td>${escapeHTML(d.libelle || '—')}</td>
+        <td>${fileLinksHTML(d)}</td>
+        <td class="actions-cell"><button type="button" class="btn btn-sm btn-danger" data-del-facturestravaux="${d.id}">Supprimer</button></td>
+      </tr>`;
+    }).join('');
+    tbody.querySelectorAll('[data-view-file]').forEach((btn) => btn.addEventListener('click', () => openStoredFile(btn.dataset.viewFile)));
+    tbody.querySelectorAll('[data-del-facturestravaux]').forEach((btn) => btn.addEventListener('click', () => deleteFacturesTravaux(btn.dataset.delFacturestravaux)));
+  }
+
+  async function deleteFacturesTravaux(id) {
+    const entry = data.facturesTravaux.find((d) => d.id === id);
+    if (!entry) return;
+    if (!confirm('Supprimer ce document ?')) return;
+    data.facturesTravaux = data.facturesTravaux.filter((d) => d.id !== id);
+    save();
+    await deleteRecordFiles(entry);
+    renderFacturesTravauxTable();
+  }
+
+  byId('facturestravaux-fichier').addEventListener('change', function () {
+    if (this.files.length > MAX_ADMIN_DOC_PAGES) {
+      alert(`${MAX_ADMIN_DOC_PAGES} pages maximum par document.`);
+      this.value = '';
+    }
+  });
+
+  byId('btn-facturestravaux-add').addEventListener('click', async () => {
+    const date = byId('facturestravaux-date').value;
+    if (!date) { alert('Renseignez une date.'); return; }
+    const files = [...byId('facturestravaux-fichier').files];
+    if (files.length === 0) { alert('Sélectionnez au moins un fichier (PDF, PNG ou JPG).'); return; }
+    if (files.length > MAX_ADMIN_DOC_PAGES) { alert(`${MAX_ADMIN_DOC_PAGES} pages maximum par document.`); return; }
+
+    const record = {
+      id: Storage.uid(),
+      categorie: currentFacturesTravauxCategory,
+      date,
+      libelle: byId('facturestravaux-libelle').value.trim(),
+      files: [],
+    };
+    try {
+      for (const file of files) {
+        const fileId = Storage.uid();
+        await FilesDb.saveFile(fileId, file);
+        record.files.push({ fileId, fileName: file.name });
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Certaines pages n'ont pas pu être enregistrées.");
+      return;
+    }
+    data.facturesTravaux.push(record);
+    save();
+    byId('facturestravaux-date').value = new Date().toISOString().slice(0, 10);
+    byId('facturestravaux-libelle').value = '';
+    byId('facturestravaux-fichier').value = '';
+    renderFacturesTravauxTable();
+  });
+
+  // ---------- Rédaction du bail ----------
+  const BAIL_PLACEHOLDERS = [
+    { key: 'LOCATAIRE_NOM', label: 'Nom locataire' },
+    { key: 'LOCATAIRE_ADRESSE', label: 'Adresse locataire' },
+    { key: 'BIEN_NOM', label: 'Désignation bien' },
+    { key: 'BIEN_ADRESSE', label: 'Adresse bien' },
+    { key: 'LOYER', label: 'Loyer' },
+    { key: 'CHARGES', label: 'Charges' },
+    { key: 'TOTAL', label: 'Total loyer + charges' },
+    { key: 'SCI_NOM', label: 'Nom SCI' },
+    { key: 'SCI_ADRESSE', label: 'Adresse SCI' },
+    { key: 'SCI_SIRET', label: 'SIRET' },
+    { key: 'VILLE', label: 'Ville' },
+    { key: 'DATE_DU_JOUR', label: 'Date du jour' },
+  ];
+  let currentRedactionDraftId = null;
+
+  try { document.execCommand('defaultParagraphSeparator', false, 'p'); } catch (e) { /* ignore */ }
+
+  function updateToolbarState(toolbar, editor) {
+    toolbar.querySelectorAll('button[data-cmd]').forEach((btn) => {
+      try {
+        btn.dataset.active = document.queryCommandState(btn.dataset.cmd) ? 'true' : 'false';
+      } catch (e) { /* ignore */ }
+    });
+  }
+
+  document.querySelectorAll('.rte-toolbar').forEach((toolbar) => {
+    const editor = byId(toolbar.dataset.target);
+    if (!editor) return;
+    toolbar.querySelectorAll('button[data-cmd]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        editor.focus();
+        document.execCommand(btn.dataset.cmd, false, null);
+        updateToolbarState(toolbar, editor);
+      });
+    });
+    editor.addEventListener('keyup', () => updateToolbarState(toolbar, editor));
+    editor.addEventListener('mouseup', () => updateToolbarState(toolbar, editor));
+  });
+
+  byId('modele-field-chips').innerHTML = BAIL_PLACEHOLDERS
+    .map((p) => `<button type="button" class="field-chip" data-insert="${p.key}">${escapeHTML(p.label)}</button>`)
+    .join('');
+  byId('modele-field-chips').querySelectorAll('[data-insert]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const editor = byId('modele-editor');
+      editor.focus();
+      document.execCommand('insertText', false, `{{${btn.dataset.insert}}}`);
+    });
+  });
+
+  function renderModeleEditor() {
+    byId('modele-editor').innerHTML = data.bailModele || '';
+  }
+
+  byId('btn-modele-save').addEventListener('click', () => {
+    data.bailModele = byId('modele-editor').innerHTML;
+    save();
+    alert('Modèle enregistré.');
+  });
+
+  function substitutePlaceholders(html, locataireId) {
+    const l = locataireById(locataireId);
+    const bien = l ? bienById(l.bienId) : null;
+    const total = l ? (Number(l.loyer) || 0) + (Number(l.charges) || 0) : 0;
+    const raw = {
+      LOCATAIRE_NOM: l ? l.nom : '',
+      LOCATAIRE_ADRESSE: l ? (l.adresseDestinataire || (bien ? bien.adresse : '')) : '',
+      BIEN_NOM: bien ? bien.nom : '',
+      BIEN_ADRESSE: bien ? bien.adresse : '',
+      LOYER: l ? euros(l.loyer) : '',
+      CHARGES: l ? euros(l.charges) : '',
+      TOTAL: l ? euros(total) : '',
+      SCI_NOM: data.sci.nom || '',
+      SCI_ADRESSE: data.sci.adresse || '',
+      SCI_SIRET: data.sci.siret || '',
+      VILLE: data.sci.ville || '',
+      DATE_DU_JOUR: Documents.todayFR(),
+    };
+    const multilineKeys = ['LOCATAIRE_ADRESSE', 'BIEN_ADRESSE', 'SCI_ADRESSE'];
+    let result = html;
+    Object.keys(raw).forEach((key) => {
+      const value = multilineKeys.indexOf(key) !== -1 ? nl2brLocal(raw[key]) : escapeHTML(raw[key]);
+      result = result.split(`{{${key}}}`).join(value);
+    });
+    return result;
+  }
+
+  function populateRedactionLocataireSelect() {
+    const sel = byId('redaction-locataire');
+    const prev = sel.value;
+    if (data.locataires.length === 0) {
+      sel.innerHTML = '<option value="">Aucun locataire enregistré</option>';
+      return;
+    }
+    sel.innerHTML = data.locataires.map((l) => `<option value="${l.id}">${escapeHTML(l.nom)}</option>`).join('');
+    if (prev && locataireById(prev)) sel.value = prev;
+  }
+
+  function updateRedactionLabels() {
+    const loc = locataireById(byId('redaction-locataire').value);
+    const name = loc ? loc.nom : '—';
+    byId('redaction-locataire-label').textContent = name;
+    byId('redaction-history-label').textContent = name;
+  }
+
+  byId('redaction-locataire').addEventListener('change', () => {
+    currentRedactionDraftId = null;
+    byId('redaction-editor').innerHTML = '';
+    byId('redaction-libelle').value = '';
+    updateRedactionLabels();
+    renderRedactionHistory();
+  });
+
+  byId('btn-redaction-new').addEventListener('click', () => {
+    const locataireId = byId('redaction-locataire').value;
+    if (!locataireId) { alert("Ajoutez d'abord un locataire, puis sélectionnez-le."); return; }
+    if (isHtmlEmpty(data.bailModele)) {
+      if (!confirm("Aucun modèle de bail enregistré (ou modèle vide). Créer un bail vierge pour ce locataire ?")) return;
+    }
+    currentRedactionDraftId = null;
+    byId('redaction-libelle').value = 'Bail initial';
+    byId('redaction-editor').innerHTML = substitutePlaceholders(data.bailModele || '', locataireId);
+    updateRedactionLabels();
+  });
+
+  function saveRedactionDraft() {
+    const locataireId = byId('redaction-locataire').value;
+    if (!locataireId) return null;
+    let libelle = byId('redaction-libelle').value.trim();
+    if (!libelle) libelle = 'Brouillon';
+    const html = byId('redaction-editor').innerHTML;
+    const now = new Date();
+
+    if (currentRedactionDraftId) {
+      const existing = data.bailRedactions.find((r) => r.id === currentRedactionDraftId);
+      if (existing) {
+        existing.libelle = libelle;
+        existing.html = html;
+        existing.updatedAt = now.getTime();
+        save();
+        return existing;
+      }
+    }
+    const record = { id: Storage.uid(), locataireId, libelle, html, createdAt: now.getTime(), updatedAt: now.getTime() };
+    data.bailRedactions.push(record);
+    currentRedactionDraftId = record.id;
+    save();
+    return record;
+  }
+
+  byId('btn-redaction-save').addEventListener('click', () => {
+    const locataireId = byId('redaction-locataire').value;
+    if (!locataireId) { alert("Ajoutez d'abord un locataire, puis sélectionnez-le."); return; }
+    if (RichTextPdf.isEmpty(byId('redaction-editor'))) { alert('Le document est vide.'); return; }
+    saveRedactionDraft();
+    renderRedactionHistory();
+    alert('Brouillon enregistré.');
+  });
+
+  function downloadRedactionPdf(editorEl, locataireNom) {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ unit: 'pt', format: 'a4', compress: true });
+    doc.setFont('times', 'bold');
+    doc.setFontSize(15);
+    doc.text('BAIL DE LOCATION', 297.64, 50, { align: 'center' });
+    RichTextPdf.render(doc, editorEl, { y0: 80 });
+    doc.save(`bail-${slugify(locataireNom)}.pdf`);
+  }
+
+  byId('btn-redaction-pdf').addEventListener('click', () => {
+    const locataireId = byId('redaction-locataire').value;
+    const loc = locataireById(locataireId);
+    if (!loc) { alert("Ajoutez d'abord un locataire, puis sélectionnez-le."); return; }
+    if (RichTextPdf.isEmpty(byId('redaction-editor'))) { alert('Le document est vide.'); return; }
+    saveRedactionDraft();
+    renderRedactionHistory();
+    downloadRedactionPdf(byId('redaction-editor'), loc.nom);
+  });
+
+  function renderRedactionHistory() {
+    const locId = byId('redaction-locataire').value;
+    const tbody = document.querySelector('#redaction-history-table tbody');
+    const drafts = data.bailRedactions
+      .filter((r) => r.locataireId === locId)
+      .sort((a, b) => b.updatedAt - a.updatedAt);
+    if (!locId || drafts.length === 0) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="3">Aucune rédaction pour ce locataire.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = drafts.map((r) => {
+      const dateLabel = new Date(r.updatedAt).toLocaleDateString('fr-FR');
+      return `<tr>
+        <td>${dateLabel}</td>
+        <td>${escapeHTML(r.libelle || '—')}</td>
+        <td class="actions-cell">
+          <button type="button" class="btn btn-sm" data-edit-redaction="${r.id}">Modifier</button>
+          <button type="button" class="btn btn-sm" data-pdf-redaction="${r.id}">Télécharger le PDF</button>
+          <button type="button" class="btn btn-sm btn-danger" data-del-redaction="${r.id}">Supprimer</button>
+        </td>
+      </tr>`;
+    }).join('');
+    tbody.querySelectorAll('[data-edit-redaction]').forEach((btn) => btn.addEventListener('click', () => loadRedactionDraft(btn.dataset.editRedaction)));
+    tbody.querySelectorAll('[data-pdf-redaction]').forEach((btn) => btn.addEventListener('click', () => {
+      const r = data.bailRedactions.find((x) => x.id === btn.dataset.pdfRedaction);
+      const loc = r ? locataireById(r.locataireId) : null;
+      if (!r || !loc) return;
+      const tempEl = document.createElement('div');
+      tempEl.innerHTML = r.html;
+      downloadRedactionPdf(tempEl, loc.nom);
+    }));
+    tbody.querySelectorAll('[data-del-redaction]').forEach((btn) => btn.addEventListener('click', () => deleteRedaction(btn.dataset.delRedaction)));
+  }
+
+  function loadRedactionDraft(id) {
+    const r = data.bailRedactions.find((x) => x.id === id);
+    if (!r) return;
+    currentRedactionDraftId = r.id;
+    byId('redaction-libelle').value = r.libelle || '';
+    byId('redaction-editor').innerHTML = r.html || '';
+  }
+
+  function deleteRedaction(id) {
+    if (!confirm('Supprimer cette rédaction ?')) return;
+    data.bailRedactions = data.bailRedactions.filter((r) => r.id !== id);
+    if (currentRedactionDraftId === id) {
+      currentRedactionDraftId = null;
+      byId('redaction-editor').innerHTML = '';
+      byId('redaction-libelle').value = '';
+    }
+    save();
+    renderRedactionHistory();
+  }
+
+  function renderRedactionBailView() {
+    renderModeleEditor();
+    populateRedactionLocataireSelect();
+    currentRedactionDraftId = null;
+    byId('redaction-editor').innerHTML = '';
+    byId('redaction-libelle').value = '';
+    updateRedactionLabels();
+    renderRedactionHistory();
+  }
+
+  // ---------- Modal helpers ----------
+  const modalOverlay = byId('modal-overlay');
+  function openModal(title, bodyHTML) {
+    byId('modal-title').textContent = title;
+    byId('modal-body').innerHTML = bodyHTML;
+    modalOverlay.hidden = false;
+  }
+  function closeModal() { modalOverlay.hidden = true; }
+  byId('modal-close').addEventListener('click', closeModal);
+  modalOverlay.addEventListener('click', (e) => { if (e.target === modalOverlay) closeModal(); });
+
+  // ---------- Import / Export ----------
+  function slugify(str) {
+    return String(str || '')
+      .normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .replace(/[^a-zA-Z0-9]+/g, '-')
+      .replace(/(^-+|-+$)/g, '')
+      .toLowerCase() || 'sans-nom';
+  }
+
+  byId('btn-export').addEventListener('click', async () => {
+    const btn = byId('btn-export');
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "Préparation de l'archive...";
+    try {
+      const zip = new JSZip();
+      const manifest = {};
+
+      const addFiles = async (folder, record) => {
+        const files = filesOf(record);
+        for (let i = 0; i < files.length; i++) {
+          const f = files[i];
+          const blob = await FilesDb.getFile(f.fileId);
+          if (!blob) continue;
+          const pageSuffix = files.length > 1 ? `-page${i + 1}` : '';
+          const name = `${record.date || 'sans-date'}${pageSuffix}-${f.fileName || f.fileId}`;
+          const path = `fichiers/${folder}/${name}`;
+          zip.file(path, blob);
+          manifest[f.fileId] = { path, type: blob.type || 'application/octet-stream' };
+        }
+      };
+
+      for (const c of data.charges) {
+        const catLabel = CHARGE_CATEGORIES[c.categorie] || c.categorie || 'autre';
+        await addFiles(`charges-locatives/${slugify(catLabel)}`, c);
+      }
+      for (const b of data.baux) {
+        const loc = locataireById(b.locataireId);
+        await addFiles(`bail/${slugify(loc ? loc.nom : 'locataire-inconnu')}`, b);
+      }
+      for (const e of data.etatsDesLieux) {
+        const loc = locataireById(e.locataireId);
+        await addFiles(`etats-des-lieux/${e.sens}/${slugify(loc ? loc.nom : 'locataire-inconnu')}`, e);
+      }
+      for (const d of data.documentsAdmin) {
+        const catLabel = ADMIN_DOC_CATEGORIES[d.categorie] || d.categorie || 'autre';
+        await addFiles(`documents-administratifs/${slugify(catLabel)}`, d);
+      }
+      for (const d of data.documentsLocataires) {
+        const loc = locataireById(d.locataireId);
+        await addFiles(`anciens-locataires/${slugify(loc ? loc.nom : 'locataire-inconnu')}`, d);
+      }
+      for (const c of data.credits) {
+        const catLabel = CREDIT_CATEGORIES[c.categorie] || c.categorie || 'autre';
+        await addFiles(`credits/${slugify(catLabel)}`, c);
+      }
+      for (const d of data.facturesTravaux) {
+        const catLabel = FACTURES_TRAVAUX_CATEGORIES[d.categorie] || d.categorie || 'autre';
+        await addFiles(`factures-et-travaux/${slugify(catLabel)}`, d);
+      }
+
+      zip.file('manifest.json', JSON.stringify(manifest, null, 2));
+      zip.file('donnees.json', JSON.stringify(data, null, 2));
+
+      const blob = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const stamp = new Date().toISOString().slice(0, 10);
+      a.href = url;
+      a.download = `quittance-facile-sauvegarde-${stamp}.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error(e);
+      alert("Une erreur est survenue lors de la génération de l'archive.");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = originalText;
+    }
+  });
+
+  byId('btn-import').addEventListener('click', () => byId('file-import').click());
+  byId('file-import').addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (file.name.toLowerCase().endsWith('.zip')) {
+      importZipBackup(file);
+    } else {
+      importJsonBackup(file);
+    }
+    e.target.value = '';
+  });
+
+  function importJsonBackup(file) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const parsed = JSON.parse(reader.result);
+        if (!confirm('Importer ces données remplacera vos données actuelles. Continuer ?')) return;
+        Object.assign(data, {
+          sci: parsed.sci || {},
+          biens: parsed.biens || [],
+          locataires: parsed.locataires || [],
+          documents: parsed.documents || [],
+          charges: parsed.charges || [],
+          baux: parsed.baux || [],
+          etatsDesLieux: parsed.etatsDesLieux || [],
+          documentsAdmin: parsed.documentsAdmin || [],
+          documentsLocataires: parsed.documentsLocataires || [],
+          credits: parsed.credits || [],
+          bailModele: parsed.bailModele || '',
+          bailRedactions: parsed.bailRedactions || [],
+          facturesTravaux: parsed.facturesTravaux || [],
+        });
+        save();
+        showView('dashboard');
+        alert('Import terminé.');
+      } catch (err) {
+        console.error(err);
+        alert('Fichier invalide.');
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  async function importZipBackup(file) {
+    if (!confirm("Importer cette archive remplacera vos données actuelles, y compris les justificatifs déjà enregistrés. Continuer ?")) return;
+    const btn = byId('btn-import');
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "Import en cours...";
+    try {
+      const zip = await JSZip.loadAsync(file);
+      const donneesEntry = zip.file('donnees.json');
+      if (!donneesEntry) { alert('Archive invalide : donnees.json introuvable.'); return; }
+      const parsed = JSON.parse(await donneesEntry.async('string'));
+      const manifestEntry = zip.file('manifest.json');
+      const manifest = manifestEntry ? JSON.parse(await manifestEntry.async('string')) : {};
+
+      for (const [fileId, info] of Object.entries(manifest)) {
+        const entry = zip.file(info.path);
+        if (!entry) continue;
+        const arrayBuffer = await entry.async('arraybuffer');
+        const blob = new Blob([arrayBuffer], { type: info.type || 'application/octet-stream' });
+        await FilesDb.saveFile(fileId, blob);
+      }
+
+      Object.assign(data, {
+        sci: parsed.sci || {},
+        biens: parsed.biens || [],
+        locataires: parsed.locataires || [],
+        documents: parsed.documents || [],
+        charges: parsed.charges || [],
+        baux: parsed.baux || [],
+        etatsDesLieux: parsed.etatsDesLieux || [],
+        documentsAdmin: parsed.documentsAdmin || [],
+        documentsLocataires: parsed.documentsLocataires || [],
+        credits: parsed.credits || [],
+        bailModele: parsed.bailModele || '',
+        bailRedactions: parsed.bailRedactions || [],
+        facturesTravaux: parsed.facturesTravaux || [],
+      });
+      save();
+      showView('dashboard');
+      alert('Import terminé.');
+    } catch (err) {
+      console.error(err);
+      alert('Impossible de lire cette archive.');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = originalText;
+    }
+  }
+
+  // ---------- Init ----------
+  renderDashboard();
+  renderGenererOptions();
+
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('sw.js').catch(() => { /* file:// ou hors ligne : sans effet */ });
+    });
+  }
+})();

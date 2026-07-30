@@ -1,0 +1,779 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gestion Loc SCI</title>
+<meta name="description" content="Gestion locative de SCI : quittances, baux, charges, documents et crédits.">
+<meta name="theme-color" content="#2f6fed">
+<link rel="manifest" href="manifest.json?v=2026072104">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Gestion Loc SCI">
+<meta name="mobile-web-app-capable" content="yes">
+<link rel="stylesheet" href="css/style.css?v=2026072104">
+</head>
+<body>
+
+<div class="app">
+
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="brand-mark">GLS</div>
+      <div class="brand-text">
+        <strong>Gestion Loc SCI</strong>
+        <span>Emjysoft &middot; v2025</span>
+      </div>
+    </div>
+    <nav class="nav">
+      <button class="nav-btn active" data-view="dashboard">Tableau de bord</button>
+      <button class="nav-btn" data-view="generer">Générer un document</button>
+      <button class="nav-btn" data-view="redaction-bail">Rédaction du bail</button>
+      <button class="nav-btn" data-view="locataires">Locataires</button>
+      <button class="nav-btn" data-view="anciens-locataires">Anciens locataires</button>
+      <button class="nav-btn" data-view="biens">Biens</button>
+      <button class="nav-btn" data-view="historique">Historique</button>
+      <button class="nav-btn" data-view="parametres">Ma SCI</button>
+      <button type="button" class="nav-group-label nav-group-toggle" data-toggle-group="charges">
+        <span>Charges locatives</span>
+        <span class="nav-group-arrow"></span>
+      </button>
+      <div class="nav-subgroup" id="nav-subgroup-charges">
+        <button class="nav-btn nav-btn-sub" data-view="charges-tontes">Tontes jardinet</button>
+        <button class="nav-btn nav-btn-sub" data-view="charges-chaudiere">Entretien chaudière</button>
+        <button class="nav-btn nav-btn-sub" data-view="charges-clim">Entretien clim</button>
+        <button class="nav-btn nav-btn-sub" data-view="charges-ordures">Ordures ménagères</button>
+        <button class="nav-btn nav-btn-sub" data-view="charges-edf">EDF communs</button>
+      </div>
+      <div class="nav-group-label">Documents locataires</div>
+      <button class="nav-btn nav-btn-sub" data-view="bail">Bail</button>
+      <button class="nav-btn nav-btn-sub" data-view="etatslieux">États des lieux</button>
+      <button type="button" class="nav-group-label nav-group-toggle" data-toggle-group="docsadmin">
+        <span>Documents administratifs</span>
+        <span class="nav-group-arrow"></span>
+      </button>
+      <div class="nav-subgroup" id="nav-subgroup-docsadmin">
+        <button class="nav-btn nav-btn-sub" data-view="docsadmin-dpe">DPE</button>
+        <button class="nav-btn nav-btn-sub" data-view="docsadmin-conformites">Conformités électrique, gaz et eau</button>
+        <button class="nav-btn nav-btn-sub" data-view="docsadmin-daact">DAACT</button>
+        <button class="nav-btn nav-btn-sub" data-view="docsadmin-kbis">Kbis</button>
+        <button class="nav-btn nav-btn-sub" data-view="docsadmin-bilans">Bilans</button>
+        <button class="nav-btn nav-btn-sub" data-view="docsadmin-clims">Contrats Clims Bellevue et rue Alfred</button>
+        <button class="nav-btn nav-btn-sub" data-view="docsadmin-prm">Nums PRM eau et gaz</button>
+        <button class="nav-btn nav-btn-sub" data-view="docsadmin-notices">Notices</button>
+        <button class="nav-btn nav-btn-sub" data-view="docsadmin-rib">RIB</button>
+        <button class="nav-btn nav-btn-sub" data-view="docsadmin-assurances">Assurances</button>
+        <button class="nav-btn nav-btn-sub" data-view="docsadmin-cartepro">Num carte Impar</button>
+      </div>
+      <button type="button" class="nav-group-label nav-group-toggle" data-toggle-group="credits">
+        <span>Crédits</span>
+        <span class="nav-group-arrow"></span>
+      </button>
+      <div class="nav-subgroup" id="nav-subgroup-credits">
+        <button class="nav-btn nav-btn-sub" data-view="credits-bpaca">BPACA</button>
+        <button class="nav-btn nav-btn-sub" data-view="credits-caissedepargne">Caisse d'Épargne</button>
+        <button class="nav-btn nav-btn-sub" data-view="credits-autre">Autre</button>
+      </div>
+      <button type="button" class="nav-group-label nav-group-toggle" data-toggle-group="facturestravaux">
+        <span>Factures et travaux</span>
+        <span class="nav-group-arrow"></span>
+      </button>
+      <div class="nav-subgroup" id="nav-subgroup-facturestravaux">
+        <button class="nav-btn nav-btn-sub" data-view="facturestravaux-factures">Factures SCI</button>
+        <button class="nav-btn nav-btn-sub" data-view="facturestravaux-travaux">Travaux SCI</button>
+      </div>
+    </nav>
+    <div class="sidebar-footer">
+      <button id="btn-export" class="link-btn">Exporter mes données (.zip)</button>
+      <button id="btn-import" class="link-btn">Importer des données</button>
+      <input type="file" id="file-import" accept="application/json,.zip,application/zip" hidden>
+    </div>
+  </aside>
+
+  <main class="content">
+
+    <!-- DASHBOARD -->
+    <section id="view-dashboard" class="view active">
+      <header class="view-header">
+        <h1>Tableau de bord</h1>
+        <p>Vue d'ensemble de votre SCI</p>
+      </header>
+      <div class="cards">
+        <div class="card">
+          <span class="card-value" id="stat-biens">0</span>
+          <span class="card-label">Biens</span>
+        </div>
+        <div class="card">
+          <span class="card-value" id="stat-locataires">0</span>
+          <span class="card-label">Locataires actifs</span>
+        </div>
+        <div class="card">
+          <span class="card-value" id="stat-mois">0 €</span>
+          <span class="card-label">Loyers encaissés ce mois</span>
+        </div>
+        <div class="card">
+          <span class="card-value" id="stat-docs">0</span>
+          <span class="card-label">Documents émis</span>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>Actions rapides</h2>
+        <div class="quick-actions">
+          <button class="btn btn-primary" data-action="quick-quittance">+ Nouvelle quittance</button>
+          <button class="btn" data-action="quick-locataire">+ Ajouter un locataire</button>
+          <button class="btn" data-action="quick-bien">+ Ajouter un bien</button>
+        </div>
+      </div>
+      <div class="panel">
+        <h2>Derniers documents</h2>
+        <table class="table" id="dashboard-recent">
+          <thead><tr><th>Date</th><th>Type</th><th>Locataire</th><th>Période</th><th>Montant</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- GENERER -->
+    <section id="view-generer" class="view">
+      <header class="view-header">
+        <h1>Générer un document</h1>
+        <p>Quittance, reçu partiel, relance ou courrier libre</p>
+      </header>
+
+      <div class="grid-2">
+        <div class="panel">
+          <h2>1. Choix du document</h2>
+          <div class="field">
+            <label>Type de document</label>
+            <select id="doc-type">
+              <option value="quittance">Quittance de loyer</option>
+              <option value="recu-partiel">Reçu de paiement partiel</option>
+              <option value="relance">Relance pour impayé</option>
+              <option value="avenant">Avenant au bail</option>
+              <option value="libre">Courrier libre</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>Locataire</label>
+            <select id="doc-locataire"></select>
+          </div>
+          <div class="field" id="field-periode">
+            <label>Période (mois concerné)</label>
+            <input type="month" id="doc-periode">
+          </div>
+
+          <div id="fields-quittance" class="doc-fields">
+            <div class="field">
+              <label>Loyer (€)</label>
+              <input type="number" step="0.01" id="doc-loyer">
+            </div>
+            <div class="field">
+              <label>Charges (€)</label>
+              <input type="number" step="0.01" id="doc-charges">
+            </div>
+          </div>
+
+          <div id="fields-recu-partiel" class="doc-fields" hidden>
+            <div class="field">
+              <label>Total dû (€)</label>
+              <input type="number" step="0.01" id="doc-total-du">
+            </div>
+            <div class="field">
+              <label>Montant payé (€)</label>
+              <input type="number" step="0.01" id="doc-montant-paye">
+            </div>
+          </div>
+
+          <div id="fields-relance" class="doc-fields" hidden>
+            <div class="field">
+              <label>Montant impayé (€)</label>
+              <input type="number" step="0.01" id="doc-montant-impaye">
+            </div>
+          </div>
+
+          <div id="fields-libre" class="doc-fields" hidden>
+            <div class="field">
+              <label>Objet du courrier</label>
+              <input type="text" id="doc-objet" placeholder="Objet de votre courrier">
+            </div>
+            <div class="field">
+              <label>Message</label>
+              <textarea id="doc-message" rows="8" placeholder="Votre message..."></textarea>
+            </div>
+          </div>
+
+          <div id="fields-avenant" class="doc-fields" hidden>
+            <div class="field">
+              <label>Date d'effet de l'avenant</label>
+              <input type="date" id="avenant-date-effet">
+            </div>
+            <div class="field">
+              <label>Provisions sur charges (ajoutez, modifiez ou supprimez des lignes)</label>
+              <div id="avenant-charges-list"></div>
+              <button type="button" class="btn btn-sm" id="btn-avenant-add-line" style="margin-top:8px;">+ Ajouter une ligne</button>
+            </div>
+            <div class="field">
+              <label>Total des charges</label>
+              <div class="avenant-total-display" id="avenant-charges-total">0,00 €</div>
+            </div>
+          </div>
+
+          <div class="field">
+            <label>Ville (pour "Fait à...")</label>
+            <input type="text" id="doc-ville">
+          </div>
+
+          <button class="btn btn-primary" id="btn-generate">Générer l'aperçu</button>
+        </div>
+
+        <div class="panel preview-panel">
+          <h2>2. Aperçu</h2>
+          <div class="preview-frame">
+            <div id="doc-preview" class="doc-empty">L'aperçu du document apparaîtra ici.</div>
+          </div>
+          <div class="preview-actions">
+            <button class="btn btn-primary" id="btn-download-pdf" disabled>Télécharger le PDF</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- REDACTION DU BAIL -->
+    <section id="view-redaction-bail" class="view">
+      <header class="view-header">
+        <h1>Rédaction du bail</h1>
+        <p>Rédigez et personnalisez vos baux directement dans l'appli</p>
+      </header>
+
+      <div class="panel">
+        <h2>1. Modèle de bail</h2>
+        <p class="charges-note" style="margin:0 0 12px;">Collez ici votre propre modèle de bail (texte que vous rédigez ou récupérez auprès de votre notaire, agence, etc.). Il sera réutilisé comme point de départ pour chaque nouveau bail. Les champs ci-dessous s'insèrent à l'endroit du curseur et seront remplacés automatiquement par les informations du locataire, du bien et de la SCI.</p>
+        <div class="field-chips" id="modele-field-chips"></div>
+        <div class="rte-toolbar" data-target="modele-editor">
+          <button type="button" class="rte-btn-bold" data-cmd="bold" title="Gras">B</button>
+          <button type="button" class="rte-btn-italic" data-cmd="italic" title="Italique">I</button>
+          <button type="button" class="rte-btn-underline" data-cmd="underline" title="Souligné">U</button>
+        </div>
+        <div class="rte-editor" id="modele-editor" contenteditable="true"></div>
+        <button class="btn btn-primary" id="btn-modele-save" style="margin-top:12px;">Enregistrer le modèle</button>
+      </div>
+
+      <div class="panel">
+        <h2>2. Créer un bail pour un locataire</h2>
+        <div class="field">
+          <label>Locataire</label>
+          <select id="redaction-locataire"></select>
+        </div>
+        <button class="btn btn-primary" id="btn-redaction-new">Nouveau bail à partir du modèle</button>
+      </div>
+
+      <div class="panel">
+        <h2>3. Rédaction en cours — <span id="redaction-locataire-label">—</span></h2>
+        <div class="field">
+          <label>Libellé</label>
+          <input type="text" id="redaction-libelle" placeholder="Ex : Bail initial, Avenant loyer 2026">
+        </div>
+        <div class="rte-toolbar" data-target="redaction-editor">
+          <button type="button" class="rte-btn-bold" data-cmd="bold" title="Gras">B</button>
+          <button type="button" class="rte-btn-italic" data-cmd="italic" title="Italique">I</button>
+          <button type="button" class="rte-btn-underline" data-cmd="underline" title="Souligné">U</button>
+        </div>
+        <div class="rte-editor" id="redaction-editor" contenteditable="true"></div>
+        <div class="preview-actions">
+          <button class="btn btn-primary" id="btn-redaction-save">Enregistrer le brouillon</button>
+          <button class="btn" id="btn-redaction-pdf">Télécharger le PDF</button>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>4. Historique des rédactions — <span id="redaction-history-label">—</span></h2>
+        <table class="table" id="redaction-history-table">
+          <thead><tr><th>Date</th><th>Libellé</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- LOCATAIRES -->
+    <section id="view-locataires" class="view">
+      <header class="view-header">
+        <h1>Locataires</h1>
+        <p>Gérez les locataires de vos biens</p>
+        <button class="btn btn-primary header-btn" data-action="new-locataire">+ Nouveau locataire</button>
+      </header>
+      <div class="panel">
+        <table class="table" id="table-locataires">
+          <thead><tr><th>Nom</th><th>Bien</th><th>Loyer</th><th>Charges</th><th>Statut</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ANCIENS LOCATAIRES -->
+    <section id="view-anciens-locataires" class="view">
+      <header class="view-header">
+        <h1>Anciens locataires</h1>
+        <p>Archive des locataires partis : quittances, documents, bail et états des lieux</p>
+      </header>
+
+      <div class="panel">
+        <div class="field">
+          <label>Ancien locataire</label>
+          <select id="anc-locataire"></select>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Quittances et documents générés</h2>
+        <table class="table" id="anc-documents-table">
+          <thead><tr><th>Date</th><th>Type</th><th>Période</th><th>Montant</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="panel">
+        <h2>Bail</h2>
+        <div class="charges-form-grid">
+          <div class="field">
+            <label>Date</label>
+            <input type="date" id="anc-bail-date">
+          </div>
+          <div class="field charges-form-libelle">
+            <label>Libellé (optionnel)</label>
+            <input type="text" id="anc-bail-libelle" placeholder="Ex : Bail initial, Avenant">
+          </div>
+          <div class="field">
+            <label>Fichier(s) — 10 pages maximum</label>
+            <input type="file" id="anc-bail-fichier" accept="application/pdf,image/png,image/jpeg" multiple>
+          </div>
+        </div>
+        <button class="btn btn-primary" id="btn-anc-bail-add">Ajouter</button>
+        <table class="table" id="anc-bail-table">
+          <thead><tr><th>Date</th><th>Libellé</th><th>Fichier</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="panel">
+        <h2>État des lieux</h2>
+        <div class="toggle-group" id="anc-edl-type-toggle">
+          <button type="button" class="toggle-btn active" data-edl-type="entrant">Entrant</button>
+          <button type="button" class="toggle-btn" data-edl-type="sortant">Sortant</button>
+        </div>
+        <div class="charges-form-grid">
+          <div class="field">
+            <label>Date</label>
+            <input type="date" id="anc-edl-date">
+          </div>
+          <div class="field charges-form-libelle">
+            <label>Libellé (optionnel)</label>
+            <input type="text" id="anc-edl-libelle" placeholder="Ex : État des lieux réalisé avec l'agence">
+          </div>
+          <div class="field">
+            <label>Fichier(s) — 10 pages maximum</label>
+            <input type="file" id="anc-edl-fichier" accept="application/pdf,image/png,image/jpeg" multiple>
+          </div>
+        </div>
+        <button class="btn btn-primary" id="btn-anc-edl-add">Ajouter</button>
+        <table class="table" id="anc-edl-table">
+          <thead><tr><th>Date</th><th>Libellé</th><th>Fichier</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div class="panel">
+        <h2>Autres documents</h2>
+        <div class="charges-form-grid">
+          <div class="field">
+            <label>Date</label>
+            <input type="date" id="anc-doc-date">
+          </div>
+          <div class="field charges-form-libelle">
+            <label>Libellé (optionnel)</label>
+            <input type="text" id="anc-doc-libelle" placeholder="Ex : Courrier de résiliation">
+          </div>
+          <div class="field">
+            <label>Fichier(s) — 10 pages maximum</label>
+            <input type="file" id="anc-doc-fichier" accept="application/pdf,image/png,image/jpeg" multiple>
+          </div>
+        </div>
+        <button class="btn btn-primary" id="btn-anc-doc-add">Ajouter</button>
+        <table class="table" id="anc-doc-table">
+          <thead><tr><th>Date</th><th>Libellé</th><th>Fichier</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- BIENS -->
+    <section id="view-biens" class="view">
+      <header class="view-header">
+        <h1>Biens</h1>
+        <p>Les biens détenus par votre SCI</p>
+        <button class="btn btn-primary header-btn" data-action="new-bien">+ Nouveau bien</button>
+      </header>
+      <div class="panel">
+        <table class="table" id="table-biens">
+          <thead><tr><th>Désignation</th><th>Adresse</th><th>Loyer</th><th>Charges</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- HISTORIQUE -->
+    <section id="view-historique" class="view">
+      <header class="view-header">
+        <h1>Historique</h1>
+        <p>Tous les documents générés</p>
+      </header>
+      <div class="panel">
+        <table class="table" id="table-historique">
+          <thead><tr><th>Date</th><th>Type</th><th>Locataire</th><th>Période</th><th>Montant</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- PARAMETRES -->
+    <section id="view-parametres" class="view">
+      <header class="view-header">
+        <h1>Ma SCI</h1>
+        <p>Informations utilisées en en-tête de vos documents</p>
+      </header>
+      <div class="panel">
+        <div class="field">
+          <label>Nom de la SCI / du bailleur</label>
+          <input type="text" id="sci-nom" placeholder="SCI Example">
+        </div>
+        <div class="field">
+          <label>Adresse (une ligne par champ)</label>
+          <textarea id="sci-adresse" rows="3" placeholder="12 rue de la Paix&#10;75002 Paris"></textarea>
+        </div>
+        <div class="field">
+          <label>Ville (pour "Fait à...")</label>
+          <input type="text" id="sci-ville" placeholder="Paris">
+        </div>
+        <div class="field">
+          <label>Numéro de SIRET</label>
+          <input type="text" id="sci-siret" placeholder="123 456 789 00012">
+        </div>
+        <div class="field">
+          <label>Capital social (€)</label>
+          <input type="text" id="sci-capital" placeholder="1000">
+        </div>
+        <div class="field">
+          <label>Nom du gérant</label>
+          <input type="text" id="sci-gerant" placeholder="Jean Dupont">
+        </div>
+        <div class="field">
+          <label>Email (optionnel)</label>
+          <input type="email" id="sci-email">
+        </div>
+        <div class="field">
+          <label>Téléphone (optionnel)</label>
+          <input type="text" id="sci-tel">
+        </div>
+        <div class="field">
+          <label>Signature (utilisée sur tous vos documents)</label>
+          <div class="signature-row">
+            <img id="sci-signature-preview" class="signature-preview" hidden>
+            <span id="sci-signature-empty" class="signature-empty">Aucune signature importée</span>
+            <button type="button" class="btn btn-sm" id="btn-signature-upload">Importer une image</button>
+            <button type="button" class="btn btn-sm btn-danger" id="btn-signature-remove" hidden>Supprimer</button>
+            <input type="file" id="sci-signature-file" accept="image/png,image/jpeg" hidden>
+          </div>
+        </div>
+        <button class="btn btn-primary" id="btn-save-sci">Enregistrer</button>
+      </div>
+    </section>
+
+    <!-- CHARGES LOCATIVES (vue partagée par les 5 catégories) -->
+    <section id="view-charges" class="view">
+      <header class="view-header">
+        <h1 id="charges-title">Charges locatives</h1>
+        <p id="charges-subtitle">Suivi et justificatifs</p>
+      </header>
+
+      <div class="panel">
+        <h2>Ajouter une dépense</h2>
+        <div class="charges-form-grid">
+          <div class="field">
+            <label>Logement</label>
+            <select id="charge-bien"></select>
+          </div>
+          <div class="field">
+            <label>Date</label>
+            <input type="date" id="charge-date">
+          </div>
+          <div class="field">
+            <label>Montant (€)</label>
+            <input type="number" step="0.01" id="charge-montant">
+          </div>
+          <div class="field">
+            <label>Type</label>
+            <select id="charge-type">
+              <option value="facture">Facture</option>
+              <option value="devis">Devis</option>
+            </select>
+          </div>
+          <div class="field charges-form-libelle">
+            <label>Libellé (optionnel)</label>
+            <input type="text" id="charge-libelle" placeholder="Ex : passage entreprise Dupont">
+          </div>
+          <div class="field">
+            <label>Justificatif (optionnel)</label>
+            <input type="file" id="charge-fichier" accept="application/pdf,image/png,image/jpeg">
+          </div>
+        </div>
+        <button class="btn btn-primary" id="btn-charge-add">Ajouter la dépense</button>
+      </div>
+
+      <div class="panel">
+        <div class="charges-year-row">
+          <h2>Suivi annuel</h2>
+          <select id="charges-year"></select>
+        </div>
+        <div class="table-scroll">
+          <table class="table charges-annual-table" id="charges-annual-table">
+            <thead></thead>
+            <tbody></tbody>
+            <tfoot></tfoot>
+          </table>
+        </div>
+        <p class="charges-note">Seules les factures sont comptabilisées dans le suivi annuel ; les devis sont indiqués à titre de référence dans le détail ci-dessous.</p>
+      </div>
+
+      <div class="panel">
+        <h2>Détail des dépenses</h2>
+        <table class="table" id="charges-detail-table">
+          <thead><tr><th>Date</th><th>Logement</th><th>Libellé</th><th>Type</th><th>Montant</th><th>Justificatif</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- BAIL -->
+    <section id="view-bail" class="view">
+      <header class="view-header">
+        <h1>Bail</h1>
+        <p>Historique des baux et avenants par locataire</p>
+      </header>
+
+      <div class="panel">
+        <h2>Suivi par locataire</h2>
+        <div class="doc-status-grid" id="bail-status-grid"></div>
+      </div>
+
+      <div class="panel">
+        <h2>Ajouter un document</h2>
+        <div class="charges-form-grid">
+          <div class="field">
+            <label>Locataire</label>
+            <select id="bail-locataire"></select>
+          </div>
+          <div class="field">
+            <label>Date</label>
+            <input type="date" id="bail-date">
+          </div>
+          <div class="field charges-form-libelle">
+            <label>Libellé (optionnel)</label>
+            <input type="text" id="bail-libelle" placeholder="Ex : Bail initial, Avenant loyer 2026">
+          </div>
+          <div class="field">
+            <label>Fichier(s) — 10 pages maximum</label>
+            <input type="file" id="bail-fichier" accept="application/pdf,image/png,image/jpeg" multiple>
+          </div>
+        </div>
+        <button class="btn btn-primary" id="btn-bail-add">Ajouter</button>
+      </div>
+
+      <div class="panel">
+        <h2>Historique — <span id="bail-locataire-label"></span></h2>
+        <table class="table" id="bail-table">
+          <thead><tr><th>Date</th><th>Libellé</th><th>Fichier</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ETATS DES LIEUX -->
+    <section id="view-etatslieux" class="view">
+      <header class="view-header">
+        <h1>États des lieux</h1>
+        <p>Entrant et sortant, par locataire</p>
+      </header>
+
+      <div class="panel">
+        <h2>Suivi par locataire</h2>
+        <div class="doc-status-grid" id="edl-status-grid"></div>
+      </div>
+
+      <div class="panel">
+        <h2>Ajouter un document</h2>
+        <div class="toggle-group" id="edl-type-toggle">
+          <button type="button" class="toggle-btn active" data-edl-type="entrant">Entrant</button>
+          <button type="button" class="toggle-btn" data-edl-type="sortant">Sortant</button>
+        </div>
+        <div class="charges-form-grid">
+          <div class="field">
+            <label>Locataire</label>
+            <select id="edl-locataire"></select>
+          </div>
+          <div class="field">
+            <label>Date</label>
+            <input type="date" id="edl-date">
+          </div>
+          <div class="field charges-form-libelle">
+            <label>Libellé (optionnel)</label>
+            <input type="text" id="edl-libelle" placeholder="Ex : État des lieux réalisé avec l'agence">
+          </div>
+          <div class="field">
+            <label>Fichier(s) — 10 pages maximum</label>
+            <input type="file" id="edl-fichier" accept="application/pdf,image/png,image/jpeg" multiple>
+          </div>
+        </div>
+        <button class="btn btn-primary" id="btn-edl-add">Ajouter</button>
+      </div>
+
+      <div class="panel">
+        <h2>Historique — <span id="edl-locataire-label"></span> (<span id="edl-type-label">Entrant</span>)</h2>
+        <table class="table" id="edl-table">
+          <thead><tr><th>Date</th><th>Libellé</th><th>Fichier</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- DOCUMENTS ADMINISTRATIFS (vue partagée par les 11 catégories) -->
+    <section id="view-docsadmin" class="view">
+      <header class="view-header">
+        <h1 id="docsadmin-title">Documents administratifs</h1>
+        <p>Historique des documents par catégorie</p>
+      </header>
+
+      <div class="panel">
+        <h2>Ajouter un document</h2>
+        <div class="charges-form-grid">
+          <div class="field">
+            <label>Date</label>
+            <input type="date" id="docsadmin-date">
+          </div>
+          <div class="field charges-form-libelle">
+            <label>Libellé (optionnel)</label>
+            <input type="text" id="docsadmin-libelle" placeholder="Ex : DPE Maison 2 - 2026">
+          </div>
+          <div class="field">
+            <label>Fichier(s) — 20 pages maximum</label>
+            <input type="file" id="docsadmin-fichier" accept="application/pdf,image/png,image/jpeg" multiple>
+          </div>
+        </div>
+        <button class="btn btn-primary" id="btn-docsadmin-add">Ajouter</button>
+      </div>
+
+      <div class="panel">
+        <h2>Historique</h2>
+        <table class="table" id="docsadmin-table">
+          <thead><tr><th>Date</th><th>Libellé</th><th>Fichier(s)</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- CREDITS (vue partagée par les 3 catégories) -->
+    <section id="view-credits" class="view">
+      <header class="view-header">
+        <h1 id="credits-title">Crédits</h1>
+        <p>Historique des documents par organisme</p>
+      </header>
+
+      <div class="panel">
+        <h2>Ajouter un document</h2>
+        <div class="charges-form-grid">
+          <div class="field">
+            <label>Date</label>
+            <input type="date" id="credits-date">
+          </div>
+          <div class="field charges-form-libelle">
+            <label>Libellé (optionnel)</label>
+            <input type="text" id="credits-libelle" placeholder="Ex : Tableau d'amortissement 2026">
+          </div>
+          <div class="field">
+            <label>Fichier(s) — 10 pages maximum</label>
+            <input type="file" id="credits-fichier" accept="application/pdf,image/png,image/jpeg" multiple>
+          </div>
+        </div>
+        <button class="btn btn-primary" id="btn-credits-add">Ajouter</button>
+      </div>
+
+      <div class="panel">
+        <h2>Historique</h2>
+        <table class="table" id="credits-table">
+          <thead><tr><th>Date</th><th>Libellé</th><th>Fichier(s)</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- FACTURES ET TRAVAUX (vue partagée par les 2 catégories) -->
+    <section id="view-facturestravaux" class="view">
+      <header class="view-header">
+        <h1 id="facturestravaux-title">Factures et travaux</h1>
+        <p>Historique des documents par catégorie</p>
+      </header>
+
+      <div class="panel">
+        <h2>Ajouter un document</h2>
+        <div class="charges-form-grid">
+          <div class="field">
+            <label>Date</label>
+            <input type="date" id="facturestravaux-date">
+          </div>
+          <div class="field charges-form-libelle">
+            <label>Libellé (optionnel)</label>
+            <input type="text" id="facturestravaux-libelle" placeholder="Ex : Facture entreprise Dupont">
+          </div>
+          <div class="field">
+            <label>Fichier(s) — 20 pages maximum</label>
+            <input type="file" id="facturestravaux-fichier" accept="application/pdf,image/png,image/jpeg" multiple>
+          </div>
+        </div>
+        <button class="btn btn-primary" id="btn-facturestravaux-add">Ajouter</button>
+      </div>
+
+      <div class="panel">
+        <h2>Historique</h2>
+        <table class="table" id="facturestravaux-table">
+          <thead><tr><th>Date</th><th>Libellé</th><th>Fichier(s)</th><th></th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- Modal for Bien/Locataire forms -->
+<div id="modal-overlay" class="modal-overlay" hidden>
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="modal-title">Titre</h3>
+      <button class="modal-close" id="modal-close">&times;</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+  </div>
+</div>
+
+<script src="js/vendor/jspdf.umd.min.js"></script>
+<script src="js/vendor/jszip.min.js"></script>
+<script src="js/numberToWords.js?v=2026072104"></script>
+<script src="js/storage.js?v=2026072104"></script>
+<script src="js/filesDb.js?v=2026072104"></script>
+<script src="js/documents.js?v=2026072104"></script>
+<script src="js/pdfBuilder.js?v=2026072104"></script>
+<script src="js/richTextPdf.js?v=2026072104"></script>
+<script src="js/app.js?v=2026072104"></script>
+</body>
+</html>
