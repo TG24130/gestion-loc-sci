@@ -852,33 +852,63 @@
       </tr>`;
     }).join('');
 
-    tbody.querySelectorAll('[data-view-file]').forEach((btn) => btn.addEventListener('click', () => openStoredFile(btn.dataset.viewFile)));
+    tbody.querySelectorAll('[data-view-file]').forEach((btn) => btn.addEventListener('click', () => openStoredFile(btn.dataset.viewFile, btn.title)));
     tbody.querySelectorAll('[data-del-charge]').forEach((btn) => btn.addEventListener('click', () => deleteCharge(btn.dataset.delCharge)));
   }
 
-  async function openStoredFile(fileId) {
+  // Aperçu intégré à l'appli (pas de nouvel onglet) : sur mobile, en particulier en
+  // PWA installée, ouvrir une URL "blob" dans un nouvel onglet ne fonctionne pas de
+  // façon fiable (pas d'onglets en mode standalone, contexte blob non partagé).
+  let currentPreviewUrl = null;
+
+  async function openStoredFile(fileId, fileName) {
     try {
       const blob = await FilesDb.getFile(fileId);
       if (!blob) {
         alert('Fichier introuvable (il a peut-être été supprimé).');
         return;
       }
-      // Une navigation via <a target="_blank"> n'est pas bloquée comme un pop-up,
-      // contrairement à window.open() appelé après un "await".
       const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.target = '_blank';
-      a.rel = 'noopener';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      currentPreviewUrl = url;
+
+      byId('file-preview-title').textContent = fileName || 'Document';
+      const downloadLink = byId('file-preview-download');
+      downloadLink.href = url;
+      downloadLink.download = fileName || 'document';
+
+      const body = byId('file-preview-body');
+      body.innerHTML = '';
+      if (blob.type === 'application/pdf') {
+        const iframe = document.createElement('iframe');
+        iframe.src = url;
+        body.appendChild(iframe);
+      } else if (blob.type.indexOf('image/') === 0) {
+        const img = document.createElement('img');
+        img.src = url;
+        body.appendChild(img);
+      } else {
+        body.innerHTML = '<p class="file-preview-fallback">Aperçu non disponible pour ce type de fichier. Utilisez le bouton "Télécharger".</p>';
+      }
+      byId('file-preview-overlay').hidden = false;
     } catch (e) {
       console.error(e);
       alert("Impossible d'ouvrir le fichier.");
     }
   }
+
+  function closeFilePreview() {
+    byId('file-preview-overlay').hidden = true;
+    byId('file-preview-body').innerHTML = '';
+    if (currentPreviewUrl) {
+      URL.revokeObjectURL(currentPreviewUrl);
+      currentPreviewUrl = null;
+    }
+  }
+
+  byId('file-preview-close').addEventListener('click', closeFilePreview);
+  byId('file-preview-overlay').addEventListener('click', (e) => {
+    if (e.target === byId('file-preview-overlay')) closeFilePreview();
+  });
 
   async function deleteCharge(id) {
     const entry = data.charges.find((c) => c.id === id);
@@ -1007,7 +1037,7 @@
         <td class="actions-cell"><button type="button" class="btn btn-sm btn-danger" data-del-anc-bail="${d.id}">Supprimer</button></td>
       </tr>`;
     }).join('');
-    tbody.querySelectorAll('[data-view-file]').forEach((btn) => btn.addEventListener('click', () => openStoredFile(btn.dataset.viewFile)));
+    tbody.querySelectorAll('[data-view-file]').forEach((btn) => btn.addEventListener('click', () => openStoredFile(btn.dataset.viewFile, btn.title)));
     tbody.querySelectorAll('[data-del-anc-bail]').forEach((btn) => btn.addEventListener('click', () => deleteAncBail(btn.dataset.delAncBail)));
   }
 
@@ -1076,7 +1106,7 @@
         <td class="actions-cell"><button type="button" class="btn btn-sm btn-danger" data-del-anc-edl="${d.id}">Supprimer</button></td>
       </tr>`;
     }).join('');
-    tbody.querySelectorAll('[data-view-file]').forEach((btn) => btn.addEventListener('click', () => openStoredFile(btn.dataset.viewFile)));
+    tbody.querySelectorAll('[data-view-file]').forEach((btn) => btn.addEventListener('click', () => openStoredFile(btn.dataset.viewFile, btn.title)));
     tbody.querySelectorAll('[data-del-anc-edl]').forEach((btn) => btn.addEventListener('click', () => deleteAncEdl(btn.dataset.delAncEdl)));
   }
 
@@ -1160,7 +1190,7 @@
         <td class="actions-cell"><button type="button" class="btn btn-sm btn-danger" data-del-anc-doc="${d.id}">Supprimer</button></td>
       </tr>`;
     }).join('');
-    tbody.querySelectorAll('[data-view-file]').forEach((btn) => btn.addEventListener('click', () => openStoredFile(btn.dataset.viewFile)));
+    tbody.querySelectorAll('[data-view-file]').forEach((btn) => btn.addEventListener('click', () => openStoredFile(btn.dataset.viewFile, btn.title)));
     tbody.querySelectorAll('[data-del-anc-doc]').forEach((btn) => btn.addEventListener('click', () => deleteAncDoc(btn.dataset.delAncDoc)));
   }
 
@@ -1271,7 +1301,7 @@
         <td class="actions-cell"><button type="button" class="btn btn-sm btn-danger" data-del-bail="${d.id}">Supprimer</button></td>
       </tr>`;
     }).join('');
-    tbody.querySelectorAll('[data-view-file]').forEach((btn) => btn.addEventListener('click', () => openStoredFile(btn.dataset.viewFile)));
+    tbody.querySelectorAll('[data-view-file]').forEach((btn) => btn.addEventListener('click', () => openStoredFile(btn.dataset.viewFile, btn.title)));
     tbody.querySelectorAll('[data-del-bail]').forEach((btn) => btn.addEventListener('click', () => deleteBail(btn.dataset.delBail)));
   }
 
@@ -1401,7 +1431,7 @@
         <td class="actions-cell"><button type="button" class="btn btn-sm btn-danger" data-del-edl="${d.id}">Supprimer</button></td>
       </tr>`;
     }).join('');
-    tbody.querySelectorAll('[data-view-file]').forEach((btn) => btn.addEventListener('click', () => openStoredFile(btn.dataset.viewFile)));
+    tbody.querySelectorAll('[data-view-file]').forEach((btn) => btn.addEventListener('click', () => openStoredFile(btn.dataset.viewFile, btn.title)));
     tbody.querySelectorAll('[data-del-edl]').forEach((btn) => btn.addEventListener('click', () => deleteEdl(btn.dataset.delEdl)));
   }
 
@@ -1490,7 +1520,7 @@
         <td class="actions-cell"><button type="button" class="btn btn-sm btn-danger" data-del-docsadmin="${d.id}">Supprimer</button></td>
       </tr>`;
     }).join('');
-    tbody.querySelectorAll('[data-view-file]').forEach((btn) => btn.addEventListener('click', () => openStoredFile(btn.dataset.viewFile)));
+    tbody.querySelectorAll('[data-view-file]').forEach((btn) => btn.addEventListener('click', () => openStoredFile(btn.dataset.viewFile, btn.title)));
     tbody.querySelectorAll('[data-del-docsadmin]').forEach((btn) => btn.addEventListener('click', () => deleteDocsAdmin(btn.dataset.delDocsadmin)));
   }
 
@@ -1572,7 +1602,7 @@
         <td class="actions-cell"><button type="button" class="btn btn-sm btn-danger" data-del-credits="${d.id}">Supprimer</button></td>
       </tr>`;
     }).join('');
-    tbody.querySelectorAll('[data-view-file]').forEach((btn) => btn.addEventListener('click', () => openStoredFile(btn.dataset.viewFile)));
+    tbody.querySelectorAll('[data-view-file]').forEach((btn) => btn.addEventListener('click', () => openStoredFile(btn.dataset.viewFile, btn.title)));
     tbody.querySelectorAll('[data-del-credits]').forEach((btn) => btn.addEventListener('click', () => deleteCredit(btn.dataset.delCredits)));
   }
 
@@ -1654,7 +1684,7 @@
         <td class="actions-cell"><button type="button" class="btn btn-sm btn-danger" data-del-facturestravaux="${d.id}">Supprimer</button></td>
       </tr>`;
     }).join('');
-    tbody.querySelectorAll('[data-view-file]').forEach((btn) => btn.addEventListener('click', () => openStoredFile(btn.dataset.viewFile)));
+    tbody.querySelectorAll('[data-view-file]').forEach((btn) => btn.addEventListener('click', () => openStoredFile(btn.dataset.viewFile, btn.title)));
     tbody.querySelectorAll('[data-del-facturestravaux]').forEach((btn) => btn.addEventListener('click', () => deleteFacturesTravaux(btn.dataset.delFacturestravaux)));
   }
 

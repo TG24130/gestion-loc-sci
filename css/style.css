@@ -480,3 +480,28 @@ html.qf-locked .app{display:none;}
 }
 .lock-box .btn{width:100%;}
 .lock-error{color:var(--danger) !important;font-size:12.5px;margin-top:12px !important;margin-bottom:0 !important;}
+
+/* Aperçu de fichier intégré */
+.file-preview-box{
+  background:var(--card-bg);
+  border-radius:var(--radius);
+  width:min(900px, 94vw);
+  height:min(88vh, 900px);
+  display:flex;
+  flex-direction:column;
+  box-shadow:0 10px 40px rgba(0,0,0,.3);
+  overflow:hidden;
+}
+.file-preview-header{
+  display:flex;justify-content:space-between;align-items:center;gap:12px;
+  padding:12px 16px;border-bottom:1px solid var(--border);flex-shrink:0;
+}
+.file-preview-header h3{margin:0;font-size:14.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.file-preview-actions{display:flex;gap:8px;align-items:center;flex-shrink:0;}
+.file-preview-body{
+  flex:1;overflow:auto;background:#525659;
+  display:flex;align-items:center;justify-content:center;
+}
+.file-preview-body iframe{width:100%;height:100%;border:none;background:#fff;}
+.file-preview-body img{max-width:100%;max-height:100%;object-fit:contain;}
+.file-preview-fallback{color:#fff;padding:24px;text-align:center;font-size:13.5px;}

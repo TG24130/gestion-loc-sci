@@ -6,7 +6,7 @@
 <title>Gestion Loc SCI</title>
 <meta name="description" content="Gestion locative de SCI : quittances, baux, charges, documents et crédits.">
 <meta name="theme-color" content="#2f6fed">
-<link rel="manifest" href="manifest.json?v=2026072105">
+<link rel="manifest" href="manifest.json?v=2026072106">
 <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Gestion Loc SCI">
 <meta name="mobile-web-app-capable" content="yes">
-<link rel="stylesheet" href="css/style.css?v=2026072105">
+<link rel="stylesheet" href="css/style.css?v=2026072106">
 </head>
 <body>
 <script>
@@ -808,14 +808,29 @@
   </div>
 </div>
 
+<!-- Aperçu de fichier (bail, EDL, charges, etc.) : intégré dans l'appli, ne dépend pas -->
+<!-- d'un nouvel onglet, ce qui ne fonctionne pas de façon fiable sur mobile/PWA. -->
+<div id="file-preview-overlay" class="modal-overlay file-preview-overlay" hidden>
+  <div class="file-preview-box">
+    <div class="file-preview-header">
+      <h3 id="file-preview-title">Document</h3>
+      <div class="file-preview-actions">
+        <a id="file-preview-download" class="btn btn-sm" download>Télécharger</a>
+        <button class="modal-close" id="file-preview-close">&times;</button>
+      </div>
+    </div>
+    <div class="file-preview-body" id="file-preview-body"></div>
+  </div>
+</div>
+
 <script src="js/vendor/jspdf.umd.min.js"></script>
 <script src="js/vendor/jszip.min.js"></script>
-<script src="js/numberToWords.js?v=2026072105"></script>
-<script src="js/storage.js?v=2026072105"></script>
-<script src="js/filesDb.js?v=2026072105"></script>
-<script src="js/documents.js?v=2026072105"></script>
-<script src="js/pdfBuilder.js?v=2026072105"></script>
-<script src="js/richTextPdf.js?v=2026072105"></script>
-<script src="js/app.js?v=2026072105"></script>
+<script src="js/numberToWords.js?v=2026072106"></script>
+<script src="js/storage.js?v=2026072106"></script>
+<script src="js/filesDb.js?v=2026072106"></script>
+<script src="js/documents.js?v=2026072106"></script>
+<script src="js/pdfBuilder.js?v=2026072106"></script>
+<script src="js/richTextPdf.js?v=2026072106"></script>
+<script src="js/app.js?v=2026072106"></script>
 </body>
 </html>
