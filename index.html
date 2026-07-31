@@ -6,7 +6,7 @@
 <title>Gestion Loc SCI</title>
 <meta name="description" content="Gestion locative de SCI : quittances, baux, charges, documents et crédits.">
 <meta name="theme-color" content="#2f6fed">
-<link rel="manifest" href="manifest.json?v=2026072104">
+<link rel="manifest" href="manifest.json?v=2026072105">
 <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -14,9 +14,29 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Gestion Loc SCI">
 <meta name="mobile-web-app-capable" content="yes">
-<link rel="stylesheet" href="css/style.css?v=2026072104">
+<link rel="stylesheet" href="css/style.css?v=2026072105">
 </head>
 <body>
+<script>
+  (function () {
+    try {
+      if (localStorage.getItem('qf_lock_hash')) {
+        document.documentElement.classList.add('qf-locked');
+      }
+    } catch (e) { /* ignore */ }
+  })();
+</script>
+
+<div id="lock-overlay" class="lock-overlay">
+  <div class="lock-box">
+    <div class="brand-mark" style="margin:0 auto 16px;">GLS</div>
+    <h2>Gestion Loc SCI</h2>
+    <p>Entrez le code d'accès</p>
+    <input type="password" id="lock-code-input" autocomplete="off" placeholder="Code d'accès">
+    <button class="btn btn-primary" id="lock-unlock-btn">Déverrouiller</button>
+    <p class="lock-error" id="lock-error" hidden>Code incorrect.</p>
+  </div>
+</div>
 
 <div class="app">
 
@@ -488,6 +508,28 @@
         </div>
         <button class="btn btn-primary" id="btn-save-sci">Enregistrer</button>
       </div>
+
+      <div class="panel">
+        <h2>Verrouillage de l'application</h2>
+        <p class="charges-note" style="margin:0 0 14px;">
+          Statut : <strong id="lock-status">Aucun code défini</strong><br>
+          Ce code est propre à cet appareil/installation (il n'est pas inclus dans l'export .zip).
+          À noter : le code source de cette appli étant public, ce verrouillage dissuade un accès de passage
+          mais ne protège pas contre quelqu'un de techniquement averti.
+        </p>
+        <div class="field">
+          <label>Nouveau code</label>
+          <input type="text" id="lock-new-code" placeholder="Ex : 4821">
+        </div>
+        <div class="field">
+          <label>Confirmer le nouveau code</label>
+          <input type="text" id="lock-new-code-confirm" placeholder="Retapez le code">
+        </div>
+        <div class="preview-actions">
+          <button class="btn btn-primary" id="btn-lock-save">Enregistrer le code</button>
+          <button class="btn btn-danger" id="btn-lock-remove">Désactiver le verrouillage</button>
+        </div>
+      </div>
     </section>
 
     <!-- CHARGES LOCATIVES (vue partagée par les 5 catégories) -->
@@ -768,12 +810,12 @@
 
 <script src="js/vendor/jspdf.umd.min.js"></script>
 <script src="js/vendor/jszip.min.js"></script>
-<script src="js/numberToWords.js?v=2026072104"></script>
-<script src="js/storage.js?v=2026072104"></script>
-<script src="js/filesDb.js?v=2026072104"></script>
-<script src="js/documents.js?v=2026072104"></script>
-<script src="js/pdfBuilder.js?v=2026072104"></script>
-<script src="js/richTextPdf.js?v=2026072104"></script>
-<script src="js/app.js?v=2026072104"></script>
+<script src="js/numberToWords.js?v=2026072105"></script>
+<script src="js/storage.js?v=2026072105"></script>
+<script src="js/filesDb.js?v=2026072105"></script>
+<script src="js/documents.js?v=2026072105"></script>
+<script src="js/pdfBuilder.js?v=2026072105"></script>
+<script src="js/richTextPdf.js?v=2026072105"></script>
+<script src="js/app.js?v=2026072105"></script>
 </body>
 </html>

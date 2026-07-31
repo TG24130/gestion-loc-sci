@@ -444,3 +444,39 @@ body{
 }
 .avenant-charge-row .btn{padding:8px 10px;}
 .avenant-total-display{font-size:18px;font-weight:700;color:var(--accent);}
+
+/* Écran de verrouillage */
+.lock-overlay{
+  display:none;
+  position:fixed;inset:0;z-index:1000;
+  background:linear-gradient(135deg,var(--accent),var(--accent-dark));
+  align-items:center;justify-content:center;
+}
+html.qf-locked .lock-overlay{display:flex;}
+html.qf-locked .app{display:none;}
+.lock-box{
+  background:var(--card-bg);
+  border-radius:14px;
+  padding:36px 32px;
+  width:320px;
+  max-width:88vw;
+  text-align:center;
+  box-shadow:0 20px 60px rgba(0,0,0,.35);
+}
+.lock-box .brand-mark{width:48px;height:48px;font-size:15px;}
+.lock-box h2{margin:0 0 4px;font-size:17px;color:var(--text);}
+.lock-box p{margin:0 0 16px;color:var(--text-muted);font-size:13px;}
+.lock-box input{
+  width:100%;
+  padding:12px 14px;
+  border:1px solid var(--border);
+  border-radius:8px;
+  font-size:16px;
+  text-align:center;
+  letter-spacing:4px;
+  margin-bottom:14px;
+  background:var(--bg);
+  color:var(--text);
+}
+.lock-box .btn{width:100%;}
+.lock-error{color:var(--danger) !important;font-size:12.5px;margin-top:12px !important;margin-bottom:0 !important;}
