@@ -123,6 +123,17 @@
     autre: { label: 'Autre', elements: [] },
   };
 
+  const EDL_VETUSTE_OPTIONS = [
+    { value: '', label: '— Vétusté —' },
+    { value: 'neuf', label: 'Neuf' },
+    { value: 'bon', label: 'Bon état' },
+    { value: 'usage', label: "État d'usage" },
+    { value: 'mauvais', label: 'Mauvais état' },
+    { value: 'hors-service', label: 'Hors service' },
+  ];
+  let currentEdlRedaction = null;
+  let currentEdlRedacSens = 'entrant';
+
   // ---------- Navigation ----------
   document.querySelectorAll('.nav-btn').forEach((btn) => {
     btn.addEventListener('click', () => showView(btn.dataset.view));
@@ -2102,9 +2113,262 @@
     alert('Pièces enregistrées pour ce bien.');
   });
 
+  // ---------- Phase 2 : rédaction concrète (vétusté, photos, notes) ----------
+  function populateEdlRedacLocataireSelect() {
+    const bienId = byId('edl-gabarit-bien').value;
+    const sel = byId('edl-redac-locataire');
+    const prev = sel.value;
+    const options = data.locataires.filter((l) => l.bienId === bienId);
+    if (options.length === 0) {
+      sel.innerHTML = '<option value="">Aucun locataire pour ce bien</option>';
+      return;
+    }
+    sel.innerHTML = options.map((l) => `<option value="${l.id}">${escapeHTML(l.nom)}</option>`).join('');
+    if (prev && options.some((l) => l.id === prev)) sel.value = prev;
+  }
+
+  document.querySelectorAll('#edl-redac-type-toggle .toggle-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      currentEdlRedacSens = btn.dataset.edlRedacType;
+      document.querySelectorAll('#edl-redac-type-toggle .toggle-btn').forEach((b) => b.classList.toggle('active', b === btn));
+    });
+  });
+
+  async function renderEdlPhotoGallery(container, el) {
+    container.innerHTML = '';
+    for (const f of el.files) {
+      const blob = await FilesDb.getFile(f.fileId);
+      if (!blob) continue;
+      const url = URL.createObjectURL(blob);
+      const thumb = document.createElement('div');
+      thumb.className = 'edl-photo-thumb';
+      thumb.innerHTML = '<img><button type="button" class="edl-photo-remove">&times;</button>';
+      thumb.querySelector('img').src = url;
+      thumb.querySelector('img').addEventListener('click', () => openStoredFile(f.fileId, f.fileName));
+      thumb.querySelector('.edl-photo-remove').addEventListener('click', async () => {
+        el.files = el.files.filter((x) => x.fileId !== f.fileId);
+        try { await FilesDb.deleteFile(f.fileId); } catch (e) { console.error(e); }
+        renderEdlPhotoGallery(container, el);
+      });
+      container.appendChild(thumb);
+    }
+  }
+
+  function createEdlRedacElement(el) {
+    const div = document.createElement('div');
+    div.className = 'edl-redac-element';
+    const vetusteOptions = EDL_VETUSTE_OPTIONS.map((o) => `<option value="${o.value}">${escapeHTML(o.label)}</option>`).join('');
+    div.innerHTML = `
+      <div class="edl-redac-element-header">
+        <span class="edl-redac-element-name">${escapeHTML(el.nom)}</span>
+        <select class="edl-redac-element-vetuste">${vetusteOptions}</select>
+      </div>
+      <textarea class="edl-redac-element-note" rows="1" placeholder="Note (optionnel)"></textarea>
+      <div class="edl-photo-gallery"></div>
+      <label class="edl-photo-add-label">+ Ajouter une photo
+        <input type="file" accept="image/*" capture="environment" multiple hidden>
+      </label>
+    `;
+    const vetusteSelect = div.querySelector('.edl-redac-element-vetuste');
+    vetusteSelect.value = el.vetuste || '';
+    vetusteSelect.addEventListener('change', (e) => { el.vetuste = e.target.value; });
+
+    const noteInput = div.querySelector('.edl-redac-element-note');
+    noteInput.value = el.note || '';
+    noteInput.addEventListener('input', (e) => { el.note = e.target.value; });
+
+    const gallery = div.querySelector('.edl-photo-gallery');
+    renderEdlPhotoGallery(gallery, el);
+
+    const fileInput = div.querySelector('input[type="file"]');
+    fileInput.addEventListener('change', async () => {
+      const files = [...fileInput.files];
+      fileInput.value = '';
+      for (const file of files) {
+        const fileId = Storage.uid();
+        try {
+          await FilesDb.saveFile(fileId, file);
+          el.files.push({ fileId, fileName: file.name });
+        } catch (e) {
+          console.error(e);
+          alert("Une photo n'a pas pu être enregistrée.");
+        }
+      }
+      renderEdlPhotoGallery(gallery, el);
+    });
+
+    return div;
+  }
+
+  function renderEdlRedacRooms() {
+    const container = byId('edl-redac-rooms');
+    container.innerHTML = '';
+    if (!currentEdlRedaction) return;
+    currentEdlRedaction.pieces.forEach((room) => {
+      const roomEl = document.createElement('div');
+      roomEl.className = 'edl-redac-room';
+      const title = document.createElement('h3');
+      title.className = 'edl-redac-room-title';
+      title.textContent = room.nom;
+      roomEl.appendChild(title);
+      room.elements.forEach((el) => roomEl.appendChild(createEdlRedacElement(el)));
+      container.appendChild(roomEl);
+    });
+  }
+
+  function updateEdlRedacLabels() {
+    if (!currentEdlRedaction) {
+      byId('edl-redac-current-label').textContent = '—';
+      return;
+    }
+    const loc = locataireById(currentEdlRedaction.locataireId);
+    const sensLabel = currentEdlRedaction.sens === 'sortant' ? 'Sortant' : 'Entrant';
+    const dateLabel = currentEdlRedaction.date ? new Date(`${currentEdlRedaction.date}T00:00:00`).toLocaleDateString('fr-FR') : '—';
+    byId('edl-redac-current-label').textContent = `${loc ? loc.nom : '—'} — ${sensLabel} — ${dateLabel}`;
+  }
+
+  function clearCurrentEdlRedaction() {
+    currentEdlRedaction = null;
+    byId('edl-redac-rooms').innerHTML = '';
+    byId('edl-redac-actions').hidden = true;
+    byId('edl-redac-current-label').textContent = '—';
+  }
+
+  byId('btn-edl-redac-new').addEventListener('click', () => {
+    const bienId = byId('edl-gabarit-bien').value;
+    const locataireId = byId('edl-redac-locataire').value;
+    const date = byId('edl-redac-date').value;
+    if (!bienId) { alert("Ajoutez d'abord un bien, puis sélectionnez-le."); return; }
+    if (!locataireId) { alert("Ce bien n'a pas de locataire enregistré."); return; }
+    if (!date) { alert('Renseignez une date.'); return; }
+    const gabarit = data.bienGabarits.find((g) => g.bienId === bienId);
+    if (!gabarit || gabarit.pieces.length === 0) {
+      alert("Ce bien n'a pas encore de pièces configurées (panneau 2 ci-dessus) — configurez-les d'abord.");
+      return;
+    }
+    currentEdlRedaction = {
+      id: null,
+      bienId,
+      locataireId,
+      sens: currentEdlRedacSens,
+      date,
+      libelle: byId('edl-redac-libelle').value.trim(),
+      pieces: gabarit.pieces.map((room) => ({
+        id: Storage.uid(),
+        nom: room.nom,
+        type: room.type,
+        elements: room.elements.map((el) => ({
+          id: Storage.uid(),
+          nom: el.nom,
+          vetuste: '',
+          note: '',
+          files: [],
+        })),
+      })),
+    };
+    renderEdlRedacRooms();
+    updateEdlRedacLabels();
+    byId('edl-redac-actions').hidden = false;
+  });
+
+  byId('btn-edl-redac-save').addEventListener('click', () => {
+    if (!currentEdlRedaction) return;
+    currentEdlRedaction.libelle = byId('edl-redac-libelle').value.trim();
+    const now = Date.now();
+    if (currentEdlRedaction.id) {
+      const idx = data.edlRedactions.findIndex((r) => r.id === currentEdlRedaction.id);
+      currentEdlRedaction.updatedAt = now;
+      if (idx !== -1) data.edlRedactions[idx] = currentEdlRedaction;
+      else data.edlRedactions.push(currentEdlRedaction);
+    } else {
+      currentEdlRedaction.id = Storage.uid();
+      currentEdlRedaction.createdAt = now;
+      currentEdlRedaction.updatedAt = now;
+      data.edlRedactions.push(currentEdlRedaction);
+    }
+    save();
+    renderEdlRedacHistory();
+    alert('Brouillon enregistré.');
+  });
+
+  function renderEdlRedacHistory() {
+    const bienId = byId('edl-gabarit-bien').value;
+    const bien = bienById(bienId);
+    byId('edl-redac-history-label').textContent = bien ? bien.nom : '—';
+    const tbody = document.querySelector('#edl-redac-history-table tbody');
+    const items = data.edlRedactions
+      .filter((r) => r.bienId === bienId)
+      .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    if (!bienId || items.length === 0) {
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="4">Aucun état des lieux rédigé pour ce bien.</td></tr>';
+      return;
+    }
+    tbody.innerHTML = items.map((r) => {
+      const loc = locataireById(r.locataireId);
+      const dateLabel = r.date ? new Date(`${r.date}T00:00:00`).toLocaleDateString('fr-FR') : '—';
+      const sensLabel = r.sens === 'sortant' ? 'Sortant' : 'Entrant';
+      const sensBadge = r.sens === 'sortant' ? 'badge-devis' : 'badge-facture';
+      return `<tr>
+        <td>${dateLabel}</td>
+        <td><span class="badge ${sensBadge}">${sensLabel}</span></td>
+        <td>${escapeHTML(r.libelle || (loc ? loc.nom : '—'))}</td>
+        <td class="actions-cell">
+          <button type="button" class="btn btn-sm" data-edit-edl-redac="${r.id}">Modifier</button>
+          <button type="button" class="btn btn-sm btn-danger" data-del-edl-redac="${r.id}">Supprimer</button>
+        </td>
+      </tr>`;
+    }).join('');
+    tbody.querySelectorAll('[data-edit-edl-redac]').forEach((btn) => btn.addEventListener('click', () => loadEdlRedaction(btn.dataset.editEdlRedac)));
+    tbody.querySelectorAll('[data-del-edl-redac]').forEach((btn) => btn.addEventListener('click', () => deleteEdlRedaction(btn.dataset.delEdlRedac)));
+  }
+
+  function loadEdlRedaction(id) {
+    const r = data.edlRedactions.find((x) => x.id === id);
+    if (!r) return;
+    currentEdlRedaction = JSON.parse(JSON.stringify(r));
+    byId('edl-redac-locataire').value = r.locataireId;
+    byId('edl-redac-date').value = r.date;
+    byId('edl-redac-libelle').value = r.libelle || '';
+    currentEdlRedacSens = r.sens;
+    document.querySelectorAll('#edl-redac-type-toggle .toggle-btn').forEach((b) => b.classList.toggle('active', b.dataset.edlRedacType === r.sens));
+    renderEdlRedacRooms();
+    updateEdlRedacLabels();
+    byId('edl-redac-actions').hidden = false;
+  }
+
+  async function deleteEdlRedaction(id) {
+    const r = data.edlRedactions.find((x) => x.id === id);
+    if (!r) return;
+    if (!confirm('Supprimer cet état des lieux rédigé, avec toutes ses photos ?')) return;
+    for (const room of r.pieces) {
+      for (const el of room.elements) {
+        for (const f of (el.files || [])) {
+          try { await FilesDb.deleteFile(f.fileId); } catch (e) { console.error(e); }
+        }
+      }
+    }
+    data.edlRedactions = data.edlRedactions.filter((x) => x.id !== id);
+    if (currentEdlRedaction && currentEdlRedaction.id === id) clearCurrentEdlRedaction();
+    save();
+    renderEdlRedacHistory();
+  }
+
+  byId('edl-gabarit-bien').addEventListener('change', () => {
+    populateEdlRedacLocataireSelect();
+    clearCurrentEdlRedaction();
+    renderEdlRedacHistory();
+  });
+
   function renderEdlRedactionView() {
     populateEdlGabaritBienSelect();
     renderEdlGabaritRooms();
+    populateEdlRedacLocataireSelect();
+    byId('edl-redac-date').value = new Date().toISOString().slice(0, 10);
+    byId('edl-redac-libelle').value = '';
+    currentEdlRedacSens = 'entrant';
+    document.querySelectorAll('#edl-redac-type-toggle .toggle-btn').forEach((b) => b.classList.toggle('active', b.dataset.edlRedacType === 'entrant'));
+    clearCurrentEdlRedaction();
+    renderEdlRedacHistory();
   }
 
   // ---------- Modal helpers ----------
@@ -2178,6 +2442,16 @@
         const catLabel = FACTURES_TRAVAUX_CATEGORIES[d.categorie] || d.categorie || 'autre';
         await addFiles(`factures-et-travaux/${slugify(catLabel)}`, d);
       }
+      for (const r of data.edlRedactions) {
+        const bien = bienById(r.bienId);
+        const baseFolder = `etats-des-lieux-rediges/${slugify(bien ? bien.nom : 'bien-inconnu')}/${r.sens}-${slugify(r.date || 'sans-date')}`;
+        for (const room of r.pieces) {
+          for (const el of room.elements) {
+            if (!el.files || el.files.length === 0) continue;
+            await addFiles(`${baseFolder}/${slugify(room.nom)}-${slugify(el.nom)}`, { date: r.date, files: el.files });
+          }
+        }
+      }
 
       zip.file('manifest.json', JSON.stringify(manifest, null, 2));
       zip.file('donnees.json', JSON.stringify(data, null, 2));
@@ -2232,6 +2506,7 @@
           bailRedactions: parsed.bailRedactions || [],
           facturesTravaux: parsed.facturesTravaux || [],
           bienGabarits: parsed.bienGabarits || [],
+          edlRedactions: parsed.edlRedactions || [],
         });
         save();
         showView('dashboard');
@@ -2281,6 +2556,7 @@
         bailRedactions: parsed.bailRedactions || [],
         facturesTravaux: parsed.facturesTravaux || [],
         bienGabarits: parsed.bienGabarits || [],
+        edlRedactions: parsed.edlRedactions || [],
       });
       save();
       showView('dashboard');

@@ -529,3 +529,32 @@ html.qf-locked .app{display:none;}
   flex:1;padding:7px 10px;border:1px solid var(--border);border-radius:6px;
   font-size:13px;background:var(--card-bg);color:var(--text);
 }
+
+/* Rédaction concrète d'un état des lieux : pièces / éléments / photos */
+.edl-redac-room{
+  border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:16px;background:var(--bg);
+}
+.edl-redac-room-title{margin:0 0 12px;font-size:15px;font-weight:700;}
+.edl-redac-element{border-top:1px dashed var(--border);padding-top:12px;margin-top:12px;}
+.edl-redac-element:first-of-type{border-top:none;margin-top:0;padding-top:0;}
+.edl-redac-element-header{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap;}
+.edl-redac-element-name{font-weight:600;font-size:13.5px;}
+.edl-redac-element-vetuste{
+  padding:6px 10px;border:1px solid var(--border);border-radius:7px;font-size:12.5px;
+  background:var(--card-bg);color:var(--text);
+}
+.edl-redac-element-note{
+  width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:7px;font-size:13px;
+  background:var(--card-bg);color:var(--text);margin-bottom:8px;resize:vertical;min-height:36px;font-family:inherit;
+}
+.edl-photo-gallery{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px;}
+.edl-photo-thumb{position:relative;width:64px;height:64px;border-radius:6px;overflow:hidden;border:1px solid var(--border);flex-shrink:0;}
+.edl-photo-thumb img{width:100%;height:100%;object-fit:cover;cursor:pointer;display:block;}
+.edl-photo-remove{
+  position:absolute;top:2px;right:2px;width:18px;height:18px;border-radius:50%;
+  background:rgba(0,0,0,.6);color:#fff;border:none;font-size:12px;line-height:1;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;padding:0;
+}
+.edl-photo-add-label{
+  display:inline-block;font-size:12px;color:var(--accent);cursor:pointer;font-weight:600;
+}
