@@ -505,3 +505,27 @@ html.qf-locked .app{display:none;}
 .file-preview-body iframe{width:100%;height:100%;border:none;background:#fff;}
 .file-preview-body img{max-width:100%;max-height:100%;object-fit:contain;}
 .file-preview-fallback{color:#fff;padding:24px;text-align:center;font-size:13.5px;}
+
+/* Rédaction état des lieux : pièces / éléments */
+.edl-room-card{
+  border:1px solid var(--border);
+  border-radius:10px;
+  padding:16px;
+  margin-bottom:14px;
+  background:var(--bg);
+}
+.edl-room-header{display:flex;gap:10px;align-items:center;margin-bottom:12px;}
+.edl-room-header .edl-room-name{
+  flex:1;padding:9px 11px;border:1px solid var(--border);border-radius:7px;
+  font-size:14px;font-weight:600;background:var(--card-bg);color:var(--text);
+}
+.edl-room-type-label{
+  font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);
+  flex-shrink:0;
+}
+.edl-elements-list{display:flex;flex-direction:column;gap:6px;margin-bottom:10px;}
+.edl-element-row{display:flex;gap:8px;align-items:center;}
+.edl-element-row .edl-element-name{
+  flex:1;padding:7px 10px;border:1px solid var(--border);border-radius:6px;
+  font-size:13px;background:var(--card-bg);color:var(--text);
+}

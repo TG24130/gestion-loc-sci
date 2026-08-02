@@ -109,6 +109,20 @@
   };
   let currentFacturesTravauxCategory = null;
 
+  // Rédaction d'état des lieux — Phase 1 : gabarits de pièces par bien.
+  const EDL_ROOM_TYPES = {
+    chambre: { label: 'Chambre', elements: ['Sol', 'Murs', 'Plafond', 'Fenêtre(s)', 'Volets', 'Porte', 'Prises et interrupteurs', 'Chauffage', 'Placard'] },
+    sdb: { label: 'Salle de bain', elements: ['Sol', 'Murs', 'Plafond', 'Douche ou baignoire', 'Robinetterie', 'Lavabo', 'Miroir', 'VMC', 'Faïence', 'Chauffage'] },
+    cuisine: { label: 'Cuisine', elements: ['Sol', 'Murs', 'Plafond', 'Évier et robinetterie', 'Plaques de cuisson', 'Four', 'Hotte', 'Meubles hauts', 'Meubles bas', 'Plan de travail', 'Prises et interrupteurs'] },
+    salon: { label: 'Salon / Séjour', elements: ['Sol', 'Murs', 'Plafond', 'Fenêtre(s)', 'Volets', 'Porte', 'Prises et interrupteurs', 'Chauffage'] },
+    wc: { label: 'WC', elements: ['Sol', 'Murs', 'Plafond', "Cuvette et chasse d'eau", 'Ventilation'] },
+    entree: { label: 'Entrée / Couloir', elements: ['Sol', 'Murs', 'Plafond', "Porte d'entrée", 'Interphone / Digicode', 'Prises et interrupteurs'] },
+    exterieur: { label: 'Extérieur', elements: ['Revêtement de sol', 'Clôture', 'Portail', 'Éclairage extérieur', 'Entretien végétation'] },
+    cave: { label: 'Cave / Cellier', elements: ['Sol', 'Murs', 'Plafond', 'Porte', 'Éclairage'] },
+    garage: { label: 'Garage / Parking', elements: ['Sol', 'Murs', 'Porte de garage', 'Éclairage'] },
+    autre: { label: 'Autre', elements: [] },
+  };
+
   // ---------- Navigation ----------
   document.querySelectorAll('.nav-btn').forEach((btn) => {
     btn.addEventListener('click', () => showView(btn.dataset.view));
@@ -138,6 +152,7 @@
     if (view === 'historique') renderHistorique();
     if (view === 'generer') renderGenererOptions();
     if (view === 'redaction-bail') renderRedactionBailView();
+    if (view === 'edl-redaction') renderEdlRedactionView();
     if (view === 'parametres') fillSciForm();
     if (isCharges) renderChargesView(view.slice('charges-'.length));
     if (view === 'bail') renderBailView();
@@ -148,6 +163,7 @@
   }
 
   document.querySelectorAll('[data-action="quick-quittance"]').forEach((b) => b.addEventListener('click', () => showView('generer')));
+  document.querySelectorAll('[data-action="quick-edl"]').forEach((b) => b.addEventListener('click', () => showView('edl-redaction')));
   document.querySelectorAll('[data-action="quick-locataire"], [data-action="new-locataire"]').forEach((b) => b.addEventListener('click', () => openLocataireModal()));
   document.querySelectorAll('[data-action="quick-bien"], [data-action="new-bien"]').forEach((b) => b.addEventListener('click', () => openBienModal()));
 
@@ -1983,6 +1999,114 @@
     renderRedactionHistory();
   }
 
+  // ---------- Rédiger un état des lieux (Phase 1 : pièces par bien) ----------
+  function createElementRow(name) {
+    const div = document.createElement('div');
+    div.className = 'edl-element-row';
+    div.innerHTML = `
+      <input type="text" class="edl-element-name" placeholder="Nom de l'élément">
+      <button type="button" class="btn btn-sm btn-danger edl-element-remove">Supprimer</button>
+    `;
+    div.querySelector('.edl-element-name').value = name || '';
+    div.querySelector('.edl-element-remove').addEventListener('click', () => div.remove());
+    return div;
+  }
+
+  function createRoomCard(room) {
+    const card = document.createElement('div');
+    card.className = 'edl-room-card';
+    card.dataset.type = room.type || 'autre';
+    const typeLabel = (EDL_ROOM_TYPES[room.type] || EDL_ROOM_TYPES.autre).label;
+    card.innerHTML = `
+      <div class="edl-room-header">
+        <input type="text" class="edl-room-name" placeholder="Nom de la pièce">
+        <span class="edl-room-type-label">${escapeHTML(typeLabel)}</span>
+        <button type="button" class="btn btn-sm btn-danger edl-room-remove">Supprimer la pièce</button>
+      </div>
+      <div class="edl-elements-list"></div>
+      <button type="button" class="btn btn-sm edl-element-add">+ Ajouter un élément</button>
+    `;
+    card.querySelector('.edl-room-name').value = room.nom || '';
+    const elementsList = card.querySelector('.edl-elements-list');
+    (room.elements || []).forEach((el) => elementsList.appendChild(createElementRow(el.nom || el)));
+    card.querySelector('.edl-element-add').addEventListener('click', () => {
+      elementsList.appendChild(createElementRow(''));
+    });
+    card.querySelector('.edl-room-remove').addEventListener('click', () => {
+      if (confirm('Supprimer cette pièce et tous ses éléments ?')) card.remove();
+    });
+    return card;
+  }
+
+  function addRoomOfType(typeKey) {
+    const typeInfo = EDL_ROOM_TYPES[typeKey] || EDL_ROOM_TYPES.autre;
+    const list = byId('edl-rooms-list');
+    const existingCount = list.querySelectorAll(`.edl-room-card[data-type="${typeKey}"]`).length;
+    const nom = existingCount > 0 ? `${typeInfo.label} ${existingCount + 1}` : typeInfo.label;
+    const room = { nom, type: typeKey, elements: typeInfo.elements.map((n) => ({ nom: n })) };
+    list.appendChild(createRoomCard(room));
+  }
+
+  byId('edl-room-type-chips').innerHTML = Object.keys(EDL_ROOM_TYPES).map((key) =>
+    `<button type="button" class="field-chip" data-room-type="${key}">+ ${escapeHTML(EDL_ROOM_TYPES[key].label)}</button>`
+  ).join('');
+  byId('edl-room-type-chips').querySelectorAll('[data-room-type]').forEach((btn) => {
+    btn.addEventListener('click', () => addRoomOfType(btn.dataset.roomType));
+  });
+
+  function populateEdlGabaritBienSelect() {
+    const sel = byId('edl-gabarit-bien');
+    const prev = sel.value;
+    if (data.biens.length === 0) {
+      sel.innerHTML = '<option value="">Aucun bien enregistré</option>';
+      return;
+    }
+    sel.innerHTML = data.biens.map((b) => `<option value="${b.id}">${escapeHTML(b.nom)}</option>`).join('');
+    if (prev && bienById(prev)) sel.value = prev;
+  }
+
+  function renderEdlGabaritRooms() {
+    const bienId = byId('edl-gabarit-bien').value;
+    const list = byId('edl-rooms-list');
+    list.innerHTML = '';
+    if (!bienId) return;
+    const gabarit = data.bienGabarits.find((g) => g.bienId === bienId);
+    (gabarit ? gabarit.pieces : []).forEach((room) => list.appendChild(createRoomCard(room)));
+  }
+
+  byId('edl-gabarit-bien').addEventListener('change', renderEdlGabaritRooms);
+
+  function collectEdlGabaritRooms() {
+    return [...document.querySelectorAll('#edl-rooms-list .edl-room-card')].map((card) => ({
+      id: Storage.uid(),
+      nom: card.querySelector('.edl-room-name').value.trim(),
+      type: card.dataset.type,
+      elements: [...card.querySelectorAll('.edl-elements-list .edl-element-row')]
+        .map((row) => ({ id: Storage.uid(), nom: row.querySelector('.edl-element-name').value.trim() }))
+        .filter((el) => el.nom),
+    })).filter((r) => r.nom);
+  }
+
+  byId('btn-edl-gabarit-save').addEventListener('click', () => {
+    const bienId = byId('edl-gabarit-bien').value;
+    if (!bienId) { alert("Ajoutez d'abord un bien, puis sélectionnez-le."); return; }
+    const pieces = collectEdlGabaritRooms();
+    let gabarit = data.bienGabarits.find((g) => g.bienId === bienId);
+    if (gabarit) {
+      gabarit.pieces = pieces;
+    } else {
+      gabarit = { id: Storage.uid(), bienId, pieces };
+      data.bienGabarits.push(gabarit);
+    }
+    save();
+    alert('Pièces enregistrées pour ce bien.');
+  });
+
+  function renderEdlRedactionView() {
+    populateEdlGabaritBienSelect();
+    renderEdlGabaritRooms();
+  }
+
   // ---------- Modal helpers ----------
   const modalOverlay = byId('modal-overlay');
   function openModal(title, bodyHTML) {
@@ -2107,6 +2231,7 @@
           bailModele: parsed.bailModele || '',
           bailRedactions: parsed.bailRedactions || [],
           facturesTravaux: parsed.facturesTravaux || [],
+          bienGabarits: parsed.bienGabarits || [],
         });
         save();
         showView('dashboard');
@@ -2155,6 +2280,7 @@
         bailModele: parsed.bailModele || '',
         bailRedactions: parsed.bailRedactions || [],
         facturesTravaux: parsed.facturesTravaux || [],
+        bienGabarits: parsed.bienGabarits || [],
       });
       save();
       showView('dashboard');

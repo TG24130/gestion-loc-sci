@@ -17,6 +17,7 @@ const Storage = (function () {
       bailModele: '',
       bailRedactions: [],
       facturesTravaux: [],
+      bienGabarits: [],
     };
   }
 
