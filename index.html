@@ -6,7 +6,7 @@
 <title>Gestion Loc SCI</title>
 <meta name="description" content="Gestion locative de SCI : quittances, baux, charges, documents et crédits.">
 <meta name="theme-color" content="#2f6fed">
-<link rel="manifest" href="manifest.json?v=2026072109">
+<link rel="manifest" href="manifest.json?v=2026072110">
 <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Gestion Loc SCI">
 <meta name="mobile-web-app-capable" content="yes">
-<link rel="stylesheet" href="css/style.css?v=2026072109">
+<link rel="stylesheet" href="css/style.css?v=2026072110">
 </head>
 <body>
 <script>
@@ -379,6 +379,26 @@
         <div id="edl-redac-rooms"></div>
         <h3 class="edl-redac-room-title" id="edl-redac-meters-title" hidden>Relevé des compteurs</h3>
         <div id="edl-redac-meters"></div>
+
+        <h3 class="edl-redac-room-title">Signatures</h3>
+        <div class="edl-signature-row">
+          <div class="edl-signature-col">
+            <label>Bailleur</label>
+            <div class="edl-signature-preview-box" id="edl-signature-bailleur-box">
+              <span class="signature-empty">Aucune signature enregistrée (configurez-la dans "Ma SCI")</span>
+            </div>
+          </div>
+          <div class="edl-signature-col">
+            <label>Locataire (signez ci-dessous)</label>
+            <canvas id="edl-signature-locataire-canvas" width="320" height="140" class="edl-signature-canvas"></canvas>
+            <img id="edl-signature-locataire-preview" class="edl-signature-canvas" alt="Signature locataire" hidden>
+            <div class="preview-actions" style="margin-top:8px;">
+              <button type="button" class="btn btn-sm" id="btn-edl-signature-clear">Effacer</button>
+              <button type="button" class="btn btn-sm" id="btn-edl-signature-resign" hidden>Re-signer</button>
+            </div>
+          </div>
+        </div>
+
         <div class="preview-actions" id="edl-redac-actions" hidden>
           <button class="btn btn-primary" id="btn-edl-redac-save">Enregistrer le brouillon</button>
         </div>
@@ -901,12 +921,12 @@
 
 <script src="js/vendor/jspdf.umd.min.js"></script>
 <script src="js/vendor/jszip.min.js"></script>
-<script src="js/numberToWords.js?v=2026072109"></script>
-<script src="js/storage.js?v=2026072109"></script>
-<script src="js/filesDb.js?v=2026072109"></script>
-<script src="js/documents.js?v=2026072109"></script>
-<script src="js/pdfBuilder.js?v=2026072109"></script>
-<script src="js/richTextPdf.js?v=2026072109"></script>
-<script src="js/app.js?v=2026072109"></script>
+<script src="js/numberToWords.js?v=2026072110"></script>
+<script src="js/storage.js?v=2026072110"></script>
+<script src="js/filesDb.js?v=2026072110"></script>
+<script src="js/documents.js?v=2026072110"></script>
+<script src="js/pdfBuilder.js?v=2026072110"></script>
+<script src="js/richTextPdf.js?v=2026072110"></script>
+<script src="js/app.js?v=2026072110"></script>
 </body>
 </html>

@@ -2307,6 +2307,90 @@
     currentEdlRedaction.compteurs.forEach((m) => container.appendChild(createEdlRedacMeter(m)));
   }
 
+  // ---------- Signature locataire (canvas) ----------
+  const edlSigCanvas = byId('edl-signature-locataire-canvas');
+  const edlSigCtx = edlSigCanvas.getContext('2d');
+  let edlSigDrawing = false;
+  let edlSigHasStroke = false;
+
+  function edlSigInitCanvas() {
+    edlSigCtx.fillStyle = '#fff';
+    edlSigCtx.fillRect(0, 0, edlSigCanvas.width, edlSigCanvas.height);
+    edlSigCtx.strokeStyle = '#111';
+    edlSigCtx.lineWidth = 2;
+    edlSigCtx.lineCap = 'round';
+    edlSigCtx.lineJoin = 'round';
+    edlSigHasStroke = false;
+  }
+
+  function edlSigPointerPos(e) {
+    const rect = edlSigCanvas.getBoundingClientRect();
+    const scaleX = edlSigCanvas.width / rect.width;
+    const scaleY = edlSigCanvas.height / rect.height;
+    const point = (e.touches && e.touches.length) ? e.touches[0] : e;
+    return { x: (point.clientX - rect.left) * scaleX, y: (point.clientY - rect.top) * scaleY };
+  }
+
+  function edlSigStart(e) {
+    e.preventDefault();
+    edlSigDrawing = true;
+    const p = edlSigPointerPos(e);
+    edlSigCtx.beginPath();
+    edlSigCtx.moveTo(p.x, p.y);
+  }
+  function edlSigMove(e) {
+    if (!edlSigDrawing) return;
+    e.preventDefault();
+    const p = edlSigPointerPos(e);
+    edlSigCtx.lineTo(p.x, p.y);
+    edlSigCtx.stroke();
+    edlSigHasStroke = true;
+  }
+  function edlSigEnd() { edlSigDrawing = false; }
+
+  edlSigCanvas.addEventListener('mousedown', edlSigStart);
+  edlSigCanvas.addEventListener('mousemove', edlSigMove);
+  window.addEventListener('mouseup', edlSigEnd);
+  edlSigCanvas.addEventListener('touchstart', edlSigStart, { passive: false });
+  edlSigCanvas.addEventListener('touchmove', edlSigMove, { passive: false });
+  edlSigCanvas.addEventListener('touchend', edlSigEnd);
+
+  function renderEdlSignatureBailleur() {
+    const box = byId('edl-signature-bailleur-box');
+    box.innerHTML = data.sci.signature
+      ? `<img src="${data.sci.signature}" alt="Signature bailleur">`
+      : '<span class="signature-empty">Aucune signature enregistrée (configurez-la dans "Ma SCI")</span>';
+  }
+
+  function renderEdlSignatureLocataire() {
+    const preview = byId('edl-signature-locataire-preview');
+    const clearBtn = byId('btn-edl-signature-clear');
+    const resignBtn = byId('btn-edl-signature-resign');
+    const signed = !!(currentEdlRedaction && currentEdlRedaction.signatureLocataire);
+    if (signed) {
+      preview.src = currentEdlRedaction.signatureLocataire;
+      preview.hidden = false;
+      edlSigCanvas.hidden = true;
+      clearBtn.hidden = true;
+      resignBtn.hidden = false;
+    } else {
+      preview.hidden = true;
+      edlSigCanvas.hidden = false;
+      edlSigInitCanvas();
+      clearBtn.hidden = false;
+      resignBtn.hidden = true;
+    }
+  }
+
+  byId('btn-edl-signature-clear').addEventListener('click', () => {
+    edlSigInitCanvas();
+  });
+
+  byId('btn-edl-signature-resign').addEventListener('click', () => {
+    if (currentEdlRedaction) currentEdlRedaction.signatureLocataire = '';
+    renderEdlSignatureLocataire();
+  });
+
   function updateEdlRedacLabels() {
     if (!currentEdlRedaction) {
       byId('edl-redac-current-label').textContent = '—';
@@ -2325,6 +2409,8 @@
     byId('edl-redac-meters-title').hidden = true;
     byId('edl-redac-actions').hidden = true;
     byId('edl-redac-current-label').textContent = '—';
+    renderEdlSignatureBailleur();
+    renderEdlSignatureLocataire();
   }
 
   byId('btn-edl-redac-new').addEventListener('click', () => {
@@ -2364,16 +2450,24 @@
         index: '',
         files: [],
       })),
+      signatureBailleur: '',
+      signatureLocataire: '',
     };
     renderEdlRedacRooms();
     renderEdlRedacMeters();
     updateEdlRedacLabels();
+    renderEdlSignatureBailleur();
+    renderEdlSignatureLocataire();
     byId('edl-redac-actions').hidden = false;
   });
 
   byId('btn-edl-redac-save').addEventListener('click', () => {
     if (!currentEdlRedaction) return;
     currentEdlRedaction.libelle = byId('edl-redac-libelle').value.trim();
+    if (!edlSigCanvas.hidden && edlSigHasStroke) {
+      currentEdlRedaction.signatureLocataire = edlSigCanvas.toDataURL('image/png');
+    }
+    currentEdlRedaction.signatureBailleur = data.sci.signature || '';
     const now = Date.now();
     if (currentEdlRedaction.id) {
       const idx = data.edlRedactions.findIndex((r) => r.id === currentEdlRedaction.id);
@@ -2388,6 +2482,7 @@
     }
     save();
     renderEdlRedacHistory();
+    renderEdlSignatureLocataire();
     alert('Brouillon enregistré.');
   });
 
@@ -2434,6 +2529,8 @@
     renderEdlRedacRooms();
     renderEdlRedacMeters();
     updateEdlRedacLabels();
+    renderEdlSignatureBailleur();
+    renderEdlSignatureLocataire();
     byId('edl-redac-actions').hidden = false;
   }
 
