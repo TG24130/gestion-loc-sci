@@ -2461,13 +2461,57 @@
     byId('edl-redac-actions').hidden = false;
   });
 
-  byId('btn-edl-redac-save').addEventListener('click', () => {
+  function captureCurrentEdlSignatures() {
     if (!currentEdlRedaction) return;
-    currentEdlRedaction.libelle = byId('edl-redac-libelle').value.trim();
     if (!edlSigCanvas.hidden && edlSigHasStroke) {
       currentEdlRedaction.signatureLocataire = edlSigCanvas.toDataURL('image/png');
     }
     currentEdlRedaction.signatureBailleur = data.sci.signature || '';
+  }
+
+  function buildEdlPdfContext(r) {
+    const bien = bienById(r.bienId);
+    const loc = locataireById(r.locataireId);
+    return {
+      sens: r.sens,
+      bienNom: bien ? bien.nom : '—',
+      bienAdresse: bien ? bien.adresse : '',
+      locataireNom: loc ? loc.nom : '—',
+      date: r.date,
+      dateLabel: r.date ? new Date(`${r.date}T00:00:00`).toLocaleDateString('fr-FR') : '—',
+      pieces: r.pieces,
+      compteurs: r.compteurs,
+      signatureBailleur: r.signatureBailleur,
+      signatureLocataire: r.signatureLocataire,
+    };
+  }
+
+  async function generateEdlPdf(r, btn) {
+    const originalText = btn ? btn.textContent : null;
+    if (btn) { btn.disabled = true; btn.textContent = 'Génération du PDF...'; }
+    try {
+      const ctx = buildEdlPdfContext(r);
+      const doc = await EdlPdf.generate(ctx);
+      doc.save(EdlPdf.filename(ctx));
+    } catch (e) {
+      console.error(e);
+      alert("Une erreur est survenue lors de la génération du PDF.");
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = originalText; }
+    }
+  }
+
+  byId('btn-edl-redac-pdf').addEventListener('click', (e) => {
+    if (!currentEdlRedaction) return;
+    currentEdlRedaction.libelle = byId('edl-redac-libelle').value.trim();
+    captureCurrentEdlSignatures();
+    generateEdlPdf(currentEdlRedaction, e.currentTarget);
+  });
+
+  byId('btn-edl-redac-save').addEventListener('click', () => {
+    if (!currentEdlRedaction) return;
+    currentEdlRedaction.libelle = byId('edl-redac-libelle').value.trim();
+    captureCurrentEdlSignatures();
     const now = Date.now();
     if (currentEdlRedaction.id) {
       const idx = data.edlRedactions.findIndex((r) => r.id === currentEdlRedaction.id);
@@ -2508,11 +2552,16 @@
         <td><span class="badge ${sensBadge}">${sensLabel}</span></td>
         <td>${escapeHTML(r.libelle || (loc ? loc.nom : '—'))}</td>
         <td class="actions-cell">
+          <button type="button" class="btn btn-sm" data-pdf-edl-redac="${r.id}">Télécharger le PDF</button>
           <button type="button" class="btn btn-sm" data-edit-edl-redac="${r.id}">Modifier</button>
           <button type="button" class="btn btn-sm btn-danger" data-del-edl-redac="${r.id}">Supprimer</button>
         </td>
       </tr>`;
     }).join('');
+    tbody.querySelectorAll('[data-pdf-edl-redac]').forEach((btn) => btn.addEventListener('click', (e) => {
+      const r = data.edlRedactions.find((x) => x.id === btn.dataset.pdfEdlRedac);
+      if (r) generateEdlPdf(r, e.currentTarget);
+    }));
     tbody.querySelectorAll('[data-edit-edl-redac]').forEach((btn) => btn.addEventListener('click', () => loadEdlRedaction(btn.dataset.editEdlRedac)));
     tbody.querySelectorAll('[data-del-edl-redac]').forEach((btn) => btn.addEventListener('click', () => deleteEdlRedaction(btn.dataset.delEdlRedac)));
   }
