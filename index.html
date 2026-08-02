@@ -6,7 +6,7 @@
 <title>Gestion Loc SCI</title>
 <meta name="description" content="Gestion locative de SCI : quittances, baux, charges, documents et crédits.">
 <meta name="theme-color" content="#2f6fed">
-<link rel="manifest" href="manifest.json?v=2026072108">
+<link rel="manifest" href="manifest.json?v=2026072109">
 <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Gestion Loc SCI">
 <meta name="mobile-web-app-capable" content="yes">
-<link rel="stylesheet" href="css/style.css?v=2026072108">
+<link rel="stylesheet" href="css/style.css?v=2026072109">
 </head>
 <body>
 <script>
@@ -339,11 +339,18 @@
         <p class="charges-note" style="margin:0 0 12px;">Cliquez sur un type de pièce pour l'ajouter, avec ses éléments habituels déjà pré-remplis. Renommez, ajoutez ou supprimez librement les pièces et leurs éléments (ex : 4 chambres pour ce bien, 2 salles de bain pour un autre).</p>
         <div class="field-chips" id="edl-room-type-chips"></div>
         <div id="edl-rooms-list"></div>
-        <button class="btn btn-primary" id="btn-edl-gabarit-save" style="margin-top:8px;">Enregistrer les pièces de ce bien</button>
+        <button class="btn btn-primary" id="btn-edl-gabarit-save" style="margin-top:8px;">Enregistrer les pièces et compteurs de ce bien</button>
       </div>
 
       <div class="panel">
-        <h2>3. Nouvel état des lieux</h2>
+        <h2>3. Compteurs du bien</h2>
+        <p class="charges-note" style="margin:0 0 12px;">Cliquez pour ajouter un compteur. Renommez ou supprimez librement selon ce qui est présent sur ce bien (ex : 2 compteurs d'eau, pas de gaz...).</p>
+        <div class="field-chips" id="edl-meter-chips"></div>
+        <div id="edl-meters-gabarit-list"></div>
+      </div>
+
+      <div class="panel">
+        <h2>4. Nouvel état des lieux</h2>
         <div class="charges-form-grid">
           <div class="field">
             <label>Locataire</label>
@@ -368,15 +375,17 @@
       </div>
 
       <div class="panel">
-        <h2>4. Rédaction en cours — <span id="edl-redac-current-label">—</span></h2>
+        <h2>5. Rédaction en cours — <span id="edl-redac-current-label">—</span></h2>
         <div id="edl-redac-rooms"></div>
+        <h3 class="edl-redac-room-title" id="edl-redac-meters-title" hidden>Relevé des compteurs</h3>
+        <div id="edl-redac-meters"></div>
         <div class="preview-actions" id="edl-redac-actions" hidden>
           <button class="btn btn-primary" id="btn-edl-redac-save">Enregistrer le brouillon</button>
         </div>
       </div>
 
       <div class="panel">
-        <h2>5. Historique des états des lieux rédigés — <span id="edl-redac-history-label">—</span></h2>
+        <h2>6. Historique des états des lieux rédigés — <span id="edl-redac-history-label">—</span></h2>
         <table class="table" id="edl-redac-history-table">
           <thead><tr><th>Date</th><th>Sens</th><th>Libellé</th><th></th></tr></thead>
           <tbody></tbody>
@@ -892,12 +901,12 @@
 
 <script src="js/vendor/jspdf.umd.min.js"></script>
 <script src="js/vendor/jszip.min.js"></script>
-<script src="js/numberToWords.js?v=2026072108"></script>
-<script src="js/storage.js?v=2026072108"></script>
-<script src="js/filesDb.js?v=2026072108"></script>
-<script src="js/documents.js?v=2026072108"></script>
-<script src="js/pdfBuilder.js?v=2026072108"></script>
-<script src="js/richTextPdf.js?v=2026072108"></script>
-<script src="js/app.js?v=2026072108"></script>
+<script src="js/numberToWords.js?v=2026072109"></script>
+<script src="js/storage.js?v=2026072109"></script>
+<script src="js/filesDb.js?v=2026072109"></script>
+<script src="js/documents.js?v=2026072109"></script>
+<script src="js/pdfBuilder.js?v=2026072109"></script>
+<script src="js/richTextPdf.js?v=2026072109"></script>
+<script src="js/app.js?v=2026072109"></script>
 </body>
 </html>

@@ -133,6 +133,7 @@
   ];
   let currentEdlRedaction = null;
   let currentEdlRedacSens = 'entrant';
+  const EDL_METER_DEFAULTS = ['Électricité Heures Creuses', 'Électricité Heures Pleines', 'Eau', 'Gaz'];
 
   // ---------- Navigation ----------
   document.querySelectorAll('.nav-btn').forEach((btn) => {
@@ -2085,7 +2086,10 @@
     (gabarit ? gabarit.pieces : []).forEach((room) => list.appendChild(createRoomCard(room)));
   }
 
-  byId('edl-gabarit-bien').addEventListener('change', renderEdlGabaritRooms);
+  byId('edl-gabarit-bien').addEventListener('change', () => {
+    renderEdlGabaritRooms();
+    renderEdlGabaritMeters();
+  });
 
   function collectEdlGabaritRooms() {
     return [...document.querySelectorAll('#edl-rooms-list .edl-room-card')].map((card) => ({
@@ -2098,19 +2102,57 @@
     })).filter((r) => r.nom);
   }
 
+  function createMeterRow(name) {
+    const div = document.createElement('div');
+    div.className = 'edl-meter-row';
+    div.innerHTML = `
+      <input type="text" class="edl-meter-name" placeholder="Nom du compteur">
+      <button type="button" class="btn btn-sm btn-danger edl-meter-remove">Supprimer</button>
+    `;
+    div.querySelector('.edl-meter-name').value = name || '';
+    div.querySelector('.edl-meter-remove').addEventListener('click', () => div.remove());
+    return div;
+  }
+
+  byId('edl-meter-chips').innerHTML = EDL_METER_DEFAULTS
+    .map((name) => `<button type="button" class="field-chip" data-meter-name="${escapeHTML(name)}">+ ${escapeHTML(name)}</button>`)
+    .join('') + '<button type="button" class="field-chip" data-meter-name="">+ Autre compteur</button>';
+  byId('edl-meter-chips').querySelectorAll('[data-meter-name]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      byId('edl-meters-gabarit-list').appendChild(createMeterRow(btn.dataset.meterName));
+    });
+  });
+
+  function renderEdlGabaritMeters() {
+    const bienId = byId('edl-gabarit-bien').value;
+    const list = byId('edl-meters-gabarit-list');
+    list.innerHTML = '';
+    if (!bienId) return;
+    const gabarit = data.bienGabarits.find((g) => g.bienId === bienId);
+    (gabarit && gabarit.compteurs ? gabarit.compteurs : []).forEach((m) => list.appendChild(createMeterRow(m.nom)));
+  }
+
+  function collectEdlGabaritMeters() {
+    return [...document.querySelectorAll('#edl-meters-gabarit-list .edl-meter-row')]
+      .map((row) => ({ id: Storage.uid(), nom: row.querySelector('.edl-meter-name').value.trim() }))
+      .filter((m) => m.nom);
+  }
+
   byId('btn-edl-gabarit-save').addEventListener('click', () => {
     const bienId = byId('edl-gabarit-bien').value;
     if (!bienId) { alert("Ajoutez d'abord un bien, puis sélectionnez-le."); return; }
     const pieces = collectEdlGabaritRooms();
+    const compteurs = collectEdlGabaritMeters();
     let gabarit = data.bienGabarits.find((g) => g.bienId === bienId);
     if (gabarit) {
       gabarit.pieces = pieces;
+      gabarit.compteurs = compteurs;
     } else {
-      gabarit = { id: Storage.uid(), bienId, pieces };
+      gabarit = { id: Storage.uid(), bienId, pieces, compteurs };
       data.bienGabarits.push(gabarit);
     }
     save();
-    alert('Pièces enregistrées pour ce bien.');
+    alert('Pièces et compteurs enregistrés pour ce bien.');
   });
 
   // ---------- Phase 2 : rédaction concrète (vétusté, photos, notes) ----------
@@ -2216,6 +2258,55 @@
     });
   }
 
+  function createEdlRedacMeter(m) {
+    const div = document.createElement('div');
+    div.className = 'edl-redac-meter';
+    div.innerHTML = `
+      <div class="edl-redac-meter-header">
+        <span class="edl-redac-meter-name">${escapeHTML(m.nom)}</span>
+        <input type="number" step="0.01" class="edl-redac-meter-index" placeholder="Index relevé">
+      </div>
+      <div class="edl-photo-gallery"></div>
+      <label class="edl-photo-add-label">+ Ajouter une photo
+        <input type="file" accept="image/*" capture="environment" multiple hidden>
+      </label>
+    `;
+    const indexInput = div.querySelector('.edl-redac-meter-index');
+    indexInput.value = m.index === '' || m.index == null ? '' : m.index;
+    indexInput.addEventListener('input', (e) => { m.index = e.target.value; });
+
+    const gallery = div.querySelector('.edl-photo-gallery');
+    renderEdlPhotoGallery(gallery, m);
+
+    const fileInput = div.querySelector('input[type="file"]');
+    fileInput.addEventListener('change', async () => {
+      const files = [...fileInput.files];
+      fileInput.value = '';
+      for (const file of files) {
+        const fileId = Storage.uid();
+        try {
+          await FilesDb.saveFile(fileId, file);
+          m.files.push({ fileId, fileName: file.name });
+        } catch (e) {
+          console.error(e);
+          alert("Une photo n'a pas pu être enregistrée.");
+        }
+      }
+      renderEdlPhotoGallery(gallery, m);
+    });
+
+    return div;
+  }
+
+  function renderEdlRedacMeters() {
+    const container = byId('edl-redac-meters');
+    container.innerHTML = '';
+    const hasMeters = !!(currentEdlRedaction && currentEdlRedaction.compteurs && currentEdlRedaction.compteurs.length > 0);
+    byId('edl-redac-meters-title').hidden = !hasMeters;
+    if (!hasMeters) return;
+    currentEdlRedaction.compteurs.forEach((m) => container.appendChild(createEdlRedacMeter(m)));
+  }
+
   function updateEdlRedacLabels() {
     if (!currentEdlRedaction) {
       byId('edl-redac-current-label').textContent = '—';
@@ -2230,6 +2321,8 @@
   function clearCurrentEdlRedaction() {
     currentEdlRedaction = null;
     byId('edl-redac-rooms').innerHTML = '';
+    byId('edl-redac-meters').innerHTML = '';
+    byId('edl-redac-meters-title').hidden = true;
     byId('edl-redac-actions').hidden = true;
     byId('edl-redac-current-label').textContent = '—';
   }
@@ -2265,8 +2358,15 @@
           files: [],
         })),
       })),
+      compteurs: (gabarit.compteurs || []).map((m) => ({
+        id: Storage.uid(),
+        nom: m.nom,
+        index: '',
+        files: [],
+      })),
     };
     renderEdlRedacRooms();
+    renderEdlRedacMeters();
     updateEdlRedacLabels();
     byId('edl-redac-actions').hidden = false;
   });
@@ -2332,6 +2432,7 @@
     currentEdlRedacSens = r.sens;
     document.querySelectorAll('#edl-redac-type-toggle .toggle-btn').forEach((b) => b.classList.toggle('active', b.dataset.edlRedacType === r.sens));
     renderEdlRedacRooms();
+    renderEdlRedacMeters();
     updateEdlRedacLabels();
     byId('edl-redac-actions').hidden = false;
   }
@@ -2345,6 +2446,11 @@
         for (const f of (el.files || [])) {
           try { await FilesDb.deleteFile(f.fileId); } catch (e) { console.error(e); }
         }
+      }
+    }
+    for (const m of (r.compteurs || [])) {
+      for (const f of (m.files || [])) {
+        try { await FilesDb.deleteFile(f.fileId); } catch (e) { console.error(e); }
       }
     }
     data.edlRedactions = data.edlRedactions.filter((x) => x.id !== id);
@@ -2362,6 +2468,7 @@
   function renderEdlRedactionView() {
     populateEdlGabaritBienSelect();
     renderEdlGabaritRooms();
+    renderEdlGabaritMeters();
     populateEdlRedacLocataireSelect();
     byId('edl-redac-date').value = new Date().toISOString().slice(0, 10);
     byId('edl-redac-libelle').value = '';
@@ -2450,6 +2557,10 @@
             if (!el.files || el.files.length === 0) continue;
             await addFiles(`${baseFolder}/${slugify(room.nom)}-${slugify(el.nom)}`, { date: r.date, files: el.files });
           }
+        }
+        for (const m of (r.compteurs || [])) {
+          if (!m.files || m.files.length === 0) continue;
+          await addFiles(`${baseFolder}/compteurs-${slugify(m.nom)}`, { date: r.date, files: m.files });
         }
       }
 
