@@ -591,6 +591,8 @@ html.qf-locked .app{display:none;}
 }
 img.edl-signature-canvas{object-fit:contain;cursor:default;border-style:solid;background:var(--card-bg);}
 
+.edl-test-panel{border-style:dashed;background:transparent;box-shadow:none;padding:16px 24px;}
+
 /* Comparaison entrant/sortant (Phase 6) */
 #edl-redac-compare-note.edl-compare-warn{color:#b45309;}
 .edl-compare-line{font-size:12px;color:var(--text-muted);margin:-2px 0 8px;}

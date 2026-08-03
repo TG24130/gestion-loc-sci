@@ -2779,6 +2779,110 @@
     renderEdlRedacHistory();
   });
 
+  const EDL_TEST_BIEN_ID = 'edl-test-bien';
+  const EDL_TEST_LOC_ID = 'edl-test-locataire';
+
+  function ensureEdlTestData() {
+    let bien = data.biens.find((b) => b.id === EDL_TEST_BIEN_ID);
+    if (!bien) {
+      bien = {
+        id: EDL_TEST_BIEN_ID,
+        nom: "🧪 TEST — Appartement d'exemple",
+        adresse: "12 rue de l'Exemple\n31000 Toulouse",
+        loyer: 650,
+        charges: 50,
+        isTest: true,
+      };
+      data.biens.push(bien);
+    }
+    let loc = data.locataires.find((l) => l.id === EDL_TEST_LOC_ID);
+    if (!loc) {
+      loc = {
+        id: EDL_TEST_LOC_ID,
+        nom: '🧪 TEST — Jean Dupont',
+        bienId: EDL_TEST_BIEN_ID,
+        designation: '',
+        adresseDestinataire: '',
+        loyer: 650,
+        charges: 50,
+        dateEntree: new Date().toISOString().slice(0, 10),
+        lieuNaissance: '',
+        dateNaissance: '',
+        email1: 'test.locataire@exemple.fr',
+        email2: '',
+        tel1: '',
+        tel2: '',
+        actif: true,
+        isTest: true,
+      };
+      data.locataires.push(loc);
+    }
+    let gabarit = data.bienGabarits.find((g) => g.bienId === EDL_TEST_BIEN_ID);
+    if (!gabarit) {
+      gabarit = {
+        id: Storage.uid(),
+        bienId: EDL_TEST_BIEN_ID,
+        pieces: [
+          { id: Storage.uid(), nom: 'Salon', type: 'salon', elements: EDL_ROOM_TYPES.salon.elements.map((nom) => ({ id: Storage.uid(), nom })) },
+          { id: Storage.uid(), nom: 'Chambre 1', type: 'chambre', elements: EDL_ROOM_TYPES.chambre.elements.map((nom) => ({ id: Storage.uid(), nom })) },
+        ],
+        compteurs: EDL_METER_DEFAULTS.map((nom) => ({ id: Storage.uid(), nom })),
+      };
+      data.bienGabarits.push(gabarit);
+    }
+    save();
+  }
+
+  async function cleanupEdlTestData() {
+    if (!confirm("Supprimer le bien, le locataire et tous les états des lieux de test créés pour l'entraînement ?")) return;
+    const testRedactions = data.edlRedactions.filter((r) => r.bienId === EDL_TEST_BIEN_ID);
+    for (const r of testRedactions) {
+      for (const room of r.pieces) {
+        for (const el of room.elements) {
+          for (const f of (el.files || [])) {
+            try { await FilesDb.deleteFile(f.fileId); } catch (e) { console.error(e); }
+          }
+        }
+      }
+      for (const m of (r.compteurs || [])) {
+        for (const f of (m.files || [])) {
+          try { await FilesDb.deleteFile(f.fileId); } catch (e) { console.error(e); }
+        }
+      }
+      if (r.etatsDesLieuxId) {
+        const archived = data.etatsDesLieux.find((e) => e.id === r.etatsDesLieuxId);
+        if (archived) {
+          for (const f of archived.files) {
+            try { await FilesDb.deleteFile(f.fileId); } catch (e) { console.error(e); }
+          }
+          data.etatsDesLieux = data.etatsDesLieux.filter((e) => e.id !== archived.id);
+        }
+      }
+    }
+    data.edlRedactions = data.edlRedactions.filter((r) => r.bienId !== EDL_TEST_BIEN_ID);
+    data.bienGabarits = data.bienGabarits.filter((g) => g.bienId !== EDL_TEST_BIEN_ID);
+    data.locataires = data.locataires.filter((l) => l.id !== EDL_TEST_LOC_ID);
+    data.biens = data.biens.filter((b) => b.id !== EDL_TEST_BIEN_ID);
+    if (currentEdlRedaction && currentEdlRedaction.bienId === EDL_TEST_BIEN_ID) clearCurrentEdlRedaction();
+    save();
+    renderEdlRedactionView();
+  }
+
+  function updateEdlTestButtonVisibility() {
+    byId('btn-edl-test-clean').hidden = !data.biens.some((b) => b.id === EDL_TEST_BIEN_ID);
+  }
+
+  byId('btn-edl-test').addEventListener('click', () => {
+    ensureEdlTestData();
+    populateEdlGabaritBienSelect();
+    byId('edl-gabarit-bien').value = EDL_TEST_BIEN_ID;
+    byId('edl-gabarit-bien').dispatchEvent(new Event('change'));
+    updateEdlTestButtonVisibility();
+    alert('Un bien et un locataire "TEST" ont été créés, avec des pièces et compteurs déjà configurés (panneaux 2 et 3). Vous pouvez maintenant refaire tout le parcours ci-dessous comme pour un vrai dossier (panneaux 4 à 6, y compris photos, signature et PDF). Cliquez sur "Supprimer les données de test" une fois terminé.');
+  });
+
+  byId('btn-edl-test-clean').addEventListener('click', cleanupEdlTestData);
+
   function renderEdlRedactionView() {
     populateEdlGabaritBienSelect();
     renderEdlGabaritRooms();
@@ -2790,6 +2894,7 @@
     document.querySelectorAll('#edl-redac-type-toggle .toggle-btn').forEach((b) => b.classList.toggle('active', b.dataset.edlRedacType === 'entrant'));
     clearCurrentEdlRedaction();
     renderEdlRedacHistory();
+    updateEdlTestButtonVisibility();
   }
 
   // ---------- Modal helpers ----------
