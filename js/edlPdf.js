@@ -15,6 +15,7 @@ const EdlPdf = (function () {
     usage: "État d'usage",
     mauvais: 'Mauvais état',
     'hors-service': 'Hors service',
+    ns: 'NS (non significatif)',
   };
 
   function blobToDataURL(blob) {

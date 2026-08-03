@@ -136,6 +136,7 @@
     { value: 'usage', label: "État d'usage" },
     { value: 'mauvais', label: 'Mauvais état' },
     { value: 'hors-service', label: 'Hors service' },
+    { value: 'ns', label: 'NS (non significatif)' },
   ];
   let currentEdlRedaction = null;
   let currentEdlRedacSens = 'entrant';
