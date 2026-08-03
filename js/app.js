@@ -2089,21 +2089,24 @@
     return card;
   }
 
-  function addRoomOfType(typeKey) {
+  function addRoomOfType(typeKey, list) {
     const typeInfo = EDL_ROOM_TYPES[typeKey] || EDL_ROOM_TYPES.autre;
-    const list = byId('edl-rooms-list');
     const existingCount = list.querySelectorAll(`.edl-room-card[data-type="${typeKey}"]`).length;
     const nom = existingCount > 0 ? `${typeInfo.label} ${existingCount + 1}` : typeInfo.label;
     const room = { nom, type: typeKey, elements: typeInfo.elements.map((n) => ({ nom: n })) };
     list.appendChild(createRoomCard(room));
   }
 
-  byId('edl-room-type-chips').innerHTML = Object.keys(EDL_ROOM_TYPES).map((key) =>
-    `<button type="button" class="field-chip" data-room-type="${key}">+ ${escapeHTML(EDL_ROOM_TYPES[key].label)}</button>`
-  ).join('');
-  byId('edl-room-type-chips').querySelectorAll('[data-room-type]').forEach((btn) => {
-    btn.addEventListener('click', () => addRoomOfType(btn.dataset.roomType));
-  });
+  function wireRoomTypeChips(chipsId, listId) {
+    byId(chipsId).innerHTML = Object.keys(EDL_ROOM_TYPES).map((key) =>
+      `<button type="button" class="field-chip" data-room-type="${key}">+ ${escapeHTML(EDL_ROOM_TYPES[key].label)}</button>`
+    ).join('');
+    byId(chipsId).querySelectorAll('[data-room-type]').forEach((btn) => {
+      btn.addEventListener('click', () => addRoomOfType(btn.dataset.roomType, byId(listId)));
+    });
+  }
+  wireRoomTypeChips('edl-room-type-chips', 'edl-rooms-list');
+  wireRoomTypeChips('edl-modele-room-chips', 'edl-modele-rooms-list');
 
   function populateEdlGabaritBienSelect() {
     const sel = byId('edl-gabarit-bien');
@@ -2142,8 +2145,8 @@
     renderEdlGabaritCles();
   });
 
-  function collectEdlGabaritRooms() {
-    return [...document.querySelectorAll('#edl-rooms-list .edl-room-card')].map((card) => ({
+  function collectRoomsFromList(listId) {
+    return [...document.querySelectorAll(`#${listId} .edl-room-card`)].map((card) => ({
       id: Storage.uid(),
       nom: card.querySelector('.edl-room-name').value.trim(),
       type: card.dataset.type,
@@ -2152,6 +2155,7 @@
         .filter((el) => el.nom),
     })).filter((r) => r.nom);
   }
+  function collectEdlGabaritRooms() { return collectRoomsFromList('edl-rooms-list'); }
 
   function createMeterRow(name, numero) {
     const div = document.createElement('div');
@@ -2167,14 +2171,18 @@
     return div;
   }
 
-  byId('edl-meter-chips').innerHTML = EDL_METER_DEFAULTS
-    .map((name) => `<button type="button" class="field-chip" data-meter-name="${escapeHTML(name)}">+ ${escapeHTML(name)}</button>`)
-    .join('') + '<button type="button" class="field-chip" data-meter-name="">+ Autre compteur</button>';
-  byId('edl-meter-chips').querySelectorAll('[data-meter-name]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      byId('edl-meters-gabarit-list').appendChild(createMeterRow(btn.dataset.meterName));
+  function wireMeterChips(chipsId, listId) {
+    byId(chipsId).innerHTML = EDL_METER_DEFAULTS
+      .map((name) => `<button type="button" class="field-chip" data-meter-name="${escapeHTML(name)}">+ ${escapeHTML(name)}</button>`)
+      .join('') + '<button type="button" class="field-chip" data-meter-name="">+ Autre compteur</button>';
+    byId(chipsId).querySelectorAll('[data-meter-name]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        byId(listId).appendChild(createMeterRow(btn.dataset.meterName));
+      });
     });
-  });
+  }
+  wireMeterChips('edl-meter-chips', 'edl-meters-gabarit-list');
+  wireMeterChips('edl-modele-meter-chips', 'edl-modele-meters-list');
 
   function renderEdlGabaritMeters() {
     const bienId = byId('edl-gabarit-bien').value;
@@ -2185,8 +2193,8 @@
     (gabarit && gabarit.compteurs ? gabarit.compteurs : []).forEach((m) => list.appendChild(createMeterRow(m.nom, m.numero)));
   }
 
-  function collectEdlGabaritMeters() {
-    return [...document.querySelectorAll('#edl-meters-gabarit-list .edl-meter-row')]
+  function collectMetersFromList(listId) {
+    return [...document.querySelectorAll(`#${listId} .edl-meter-row`)]
       .map((row) => ({
         id: Storage.uid(),
         nom: row.querySelector('.edl-meter-name').value.trim(),
@@ -2194,6 +2202,7 @@
       }))
       .filter((m) => m.nom);
   }
+  function collectEdlGabaritMeters() { return collectMetersFromList('edl-meters-gabarit-list'); }
 
   function createCleRow(name) {
     const div = document.createElement('div');
@@ -2207,14 +2216,18 @@
     return div;
   }
 
-  byId('edl-cle-chips').innerHTML = EDL_CLES_DEFAULTS
-    .map((name) => `<button type="button" class="field-chip" data-cle-name="${escapeHTML(name)}">+ ${escapeHTML(name)}</button>`)
-    .join('') + '<button type="button" class="field-chip" data-cle-name="">+ Autre clé / badge</button>';
-  byId('edl-cle-chips').querySelectorAll('[data-cle-name]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      byId('edl-cles-gabarit-list').appendChild(createCleRow(btn.dataset.cleName));
+  function wireCleChips(chipsId, listId) {
+    byId(chipsId).innerHTML = EDL_CLES_DEFAULTS
+      .map((name) => `<button type="button" class="field-chip" data-cle-name="${escapeHTML(name)}">+ ${escapeHTML(name)}</button>`)
+      .join('') + '<button type="button" class="field-chip" data-cle-name="">+ Autre clé / badge</button>';
+    byId(chipsId).querySelectorAll('[data-cle-name]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        byId(listId).appendChild(createCleRow(btn.dataset.cleName));
+      });
     });
-  });
+  }
+  wireCleChips('edl-cle-chips', 'edl-cles-gabarit-list');
+  wireCleChips('edl-modele-cle-chips', 'edl-modele-cles-list');
 
   function renderEdlGabaritCles() {
     const bienId = byId('edl-gabarit-bien').value;
@@ -2225,11 +2238,12 @@
     (gabarit && gabarit.cles ? gabarit.cles : []).forEach((c) => list.appendChild(createCleRow(c.nom)));
   }
 
-  function collectEdlGabaritCles() {
-    return [...document.querySelectorAll('#edl-cles-gabarit-list .edl-meter-row')]
+  function collectClesFromList(listId) {
+    return [...document.querySelectorAll(`#${listId} .edl-meter-row`)]
       .map((row) => ({ id: Storage.uid(), nom: row.querySelector('.edl-cle-name').value.trim() }))
       .filter((c) => c.nom);
   }
+  function collectEdlGabaritCles() { return collectClesFromList('edl-cles-gabarit-list'); }
 
   byId('btn-edl-gabarit-save').addEventListener('click', () => {
     const bienId = byId('edl-gabarit-bien').value;
@@ -2248,6 +2262,145 @@
     }
     save();
     alert('Pièces, compteurs et clés enregistrés pour ce bien.');
+  });
+
+  // ---------- Modèles d'état des lieux réutilisables (non liés à un bien) ----------
+  function populateEdlModeleSelect() {
+    const sel = byId('edl-modele-select');
+    const prev = sel.value;
+    sel.innerHTML = '<option value="__new__">+ Nouveau modèle</option>' +
+      data.edlModeles.map((m) => `<option value="${m.id}">${escapeHTML(m.nom)}</option>`).join('');
+    if (prev && data.edlModeles.some((m) => m.id === prev)) sel.value = prev;
+  }
+
+  function populateEdlApplyModeleSelect() {
+    const sel = byId('edl-apply-modele-select');
+    const prev = sel.value;
+    if (data.edlModeles.length === 0) {
+      sel.innerHTML = '<option value="">Aucun modèle enregistré</option>';
+      return;
+    }
+    sel.innerHTML = '<option value="">— Choisir un modèle —</option>' +
+      data.edlModeles.map((m) => `<option value="${m.id}">${escapeHTML(m.nom)}</option>`).join('');
+    if (prev && data.edlModeles.some((m) => m.id === prev)) sel.value = prev;
+  }
+
+  function loadEdlModeleIntoEditor(modeleId) {
+    byId('edl-modele-rooms-list').innerHTML = '';
+    byId('edl-modele-meters-list').innerHTML = '';
+    byId('edl-modele-cles-list').innerHTML = '';
+    byId('btn-edl-modele-delete').hidden = true;
+    if (modeleId === '__new__' || !modeleId) {
+      byId('edl-modele-nom').value = '';
+      return;
+    }
+    const modele = data.edlModeles.find((m) => m.id === modeleId);
+    if (!modele) return;
+    byId('edl-modele-nom').value = modele.nom || '';
+    modele.pieces.forEach((room) => byId('edl-modele-rooms-list').appendChild(createRoomCard(room)));
+    (modele.compteurs || []).forEach((m) => byId('edl-modele-meters-list').appendChild(createMeterRow(m.nom, m.numero)));
+    (modele.cles || []).forEach((c) => byId('edl-modele-cles-list').appendChild(createCleRow(c.nom)));
+    byId('btn-edl-modele-delete').hidden = false;
+  }
+
+  byId('edl-modele-select').addEventListener('change', (e) => loadEdlModeleIntoEditor(e.target.value));
+
+  byId('btn-edl-modele-save').addEventListener('click', () => {
+    const nom = byId('edl-modele-nom').value.trim();
+    if (!nom) { alert('Renseignez un nom pour ce modèle.'); return; }
+    const pieces = collectRoomsFromList('edl-modele-rooms-list');
+    const compteurs = collectMetersFromList('edl-modele-meters-list');
+    const cles = collectClesFromList('edl-modele-cles-list');
+    const selectedId = byId('edl-modele-select').value;
+    let modele = selectedId !== '__new__' ? data.edlModeles.find((m) => m.id === selectedId) : null;
+    if (modele) {
+      modele.nom = nom;
+      modele.pieces = pieces;
+      modele.compteurs = compteurs;
+      modele.cles = cles;
+    } else {
+      modele = { id: Storage.uid(), nom, pieces, compteurs, cles };
+      data.edlModeles.push(modele);
+    }
+    save();
+    populateEdlModeleSelect();
+    populateEdlApplyModeleSelect();
+    byId('edl-modele-select').value = modele.id;
+    byId('btn-edl-modele-delete').hidden = false;
+    alert(`Modèle "${modele.nom}" enregistré. Il ne crée ni bien ni locataire — utilisez "Appliquer ce modèle à ce bien" (panneau 1) pour vous en servir.`);
+  });
+
+  byId('btn-edl-modele-delete').addEventListener('click', () => {
+    const modeleId = byId('edl-modele-select').value;
+    const modele = data.edlModeles.find((m) => m.id === modeleId);
+    if (!modele) return;
+    if (!confirm(`Supprimer le modèle "${modele.nom}" ? Les biens déjà configurés à partir de ce modèle ne seront pas modifiés.`)) return;
+    data.edlModeles = data.edlModeles.filter((m) => m.id !== modeleId);
+    save();
+    populateEdlModeleSelect();
+    populateEdlApplyModeleSelect();
+    loadEdlModeleIntoEditor('__new__');
+  });
+
+  byId('btn-edl-apply-modele').addEventListener('click', () => {
+    const bienId = byId('edl-gabarit-bien').value;
+    const modeleId = byId('edl-apply-modele-select').value;
+    if (!bienId) { alert("Sélectionnez d'abord un bien (panneau 1)."); return; }
+    if (!modeleId) { alert("Sélectionnez un modèle à appliquer."); return; }
+    const modele = data.edlModeles.find((m) => m.id === modeleId);
+    if (!modele) return;
+    if (!confirm(`Remplacer les pièces, compteurs et clés actuels de ce bien par le modèle « ${modele.nom} » ?`)) return;
+    const clonedPieces = modele.pieces.map((room) => ({
+      id: Storage.uid(),
+      nom: room.nom,
+      type: room.type,
+      elements: room.elements.map((el) => ({ id: Storage.uid(), nom: el.nom })),
+    }));
+    const clonedCompteurs = (modele.compteurs || []).map((m) => ({ id: Storage.uid(), nom: m.nom, numero: m.numero || '' }));
+    const clonedCles = (modele.cles || []).map((c) => ({ id: Storage.uid(), nom: c.nom }));
+    let gabarit = data.bienGabarits.find((g) => g.bienId === bienId);
+    if (gabarit) {
+      gabarit.pieces = clonedPieces;
+      gabarit.compteurs = clonedCompteurs;
+      gabarit.cles = clonedCles;
+    } else {
+      gabarit = { id: Storage.uid(), bienId, pieces: clonedPieces, compteurs: clonedCompteurs, cles: clonedCles };
+      data.bienGabarits.push(gabarit);
+    }
+    save();
+    renderEdlGabaritRooms();
+    renderEdlGabaritMeters();
+    renderEdlGabaritCles();
+    alert(`Modèle « ${modele.nom} » appliqué à ce bien. Vérifiez/ajustez ci-dessous (panneaux 2 et 3) puis enregistrez si besoin.`);
+  });
+
+  byId('btn-edl-save-as-modele').addEventListener('click', () => {
+    const bienId = byId('edl-gabarit-bien').value;
+    if (!bienId) { alert("Sélectionnez d'abord un bien (panneau 1)."); return; }
+    const gabarit = data.bienGabarits.find((g) => g.bienId === bienId);
+    const hasContent = gabarit && (gabarit.pieces.length || (gabarit.compteurs || []).length || (gabarit.cles || []).length);
+    if (!hasContent) { alert("Ce bien n'a pas encore de pièces/compteurs/clés configurés (panneaux 2 et 3) à enregistrer comme modèle."); return; }
+    const bien = bienById(bienId);
+    const suggestion = (bien ? bien.nom : '').replace(/\s*\(copie\)/gi, '').replace(/TEST/gi, '').trim();
+    const nom = prompt('Nom du modèle à créer à partir de ce bien (ex : "Maison standard 1 à 5") :', suggestion);
+    if (!nom || !nom.trim()) return;
+    const modele = {
+      id: Storage.uid(),
+      nom: nom.trim(),
+      pieces: gabarit.pieces.map((room) => ({
+        id: Storage.uid(),
+        nom: room.nom,
+        type: room.type,
+        elements: room.elements.map((el) => ({ id: Storage.uid(), nom: el.nom })),
+      })),
+      compteurs: (gabarit.compteurs || []).map((m) => ({ id: Storage.uid(), nom: m.nom, numero: '' })),
+      cles: (gabarit.cles || []).map((c) => ({ id: Storage.uid(), nom: c.nom })),
+    };
+    data.edlModeles.push(modele);
+    save();
+    populateEdlModeleSelect();
+    populateEdlApplyModeleSelect();
+    alert(`Modèle "${modele.nom}" créé à partir de ce bien. Vous pouvez maintenant supprimer ce bien s'il ne s'agissait que d'un brouillon (rubrique "Biens").`);
   });
 
   // ---------- Phase 2 : rédaction concrète (vétusté, photos, notes) ----------
@@ -3067,6 +3220,9 @@
     renderEdlGabaritRooms();
     renderEdlGabaritMeters();
     renderEdlGabaritCles();
+    populateEdlModeleSelect();
+    populateEdlApplyModeleSelect();
+    loadEdlModeleIntoEditor(byId('edl-modele-select').value);
     populateEdlRedacLocataireSelect();
     byId('edl-redac-date').value = new Date().toISOString().slice(0, 10);
     byId('edl-redac-libelle').value = '';
@@ -3221,6 +3377,7 @@
           facturesTravaux: parsed.facturesTravaux || [],
           bienGabarits: parsed.bienGabarits || [],
           edlRedactions: parsed.edlRedactions || [],
+          edlModeles: parsed.edlModeles || [],
         });
         save();
         showView('dashboard');
@@ -3271,6 +3428,7 @@
         facturesTravaux: parsed.facturesTravaux || [],
         bienGabarits: parsed.bienGabarits || [],
         edlRedactions: parsed.edlRedactions || [],
+        edlModeles: parsed.edlModeles || [],
       });
       save();
       showView('dashboard');

@@ -19,6 +19,7 @@ const Storage = (function () {
       facturesTravaux: [],
       bienGabarits: [],
       edlRedactions: [],
+      edlModeles: [],
     };
   }
 
