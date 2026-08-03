@@ -2546,6 +2546,9 @@
       compteurs: r.compteurs,
       signatureBailleur: r.signatureBailleur,
       signatureLocataire: r.signatureLocataire,
+      sciNom: data.sci.nom || '',
+      sciAdresse: data.sci.adresse || '',
+      sciSiret: data.sci.siret || '',
     };
   }
 
@@ -2599,6 +2602,55 @@
     return currentEdlRedaction;
   }
 
+  function canShareFile(file) {
+    try {
+      return !!(navigator.canShare && navigator.share && navigator.canShare({ files: [file] }));
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function openEdlEmailModal(r, ctx, blob) {
+    const loc = locataireById(r.locataireId);
+    const prefill = (loc && (loc.email1 || loc.email2)) || '';
+    const fileName = EdlPdf.filename(ctx);
+    const sensLabel = ctx.sens === 'sortant' ? 'de sortie' : "d'entrée";
+    const testFile = new File([blob], fileName, { type: 'application/pdf' });
+    const shareOk = canShareFile(testFile);
+    openModal('Envoyer par mail', `
+      <div class="field">
+        <label>Adresse e-mail du destinataire</label>
+        <input type="email" id="edl-mail-to" placeholder="locataire@exemple.fr" value="${escapeHTML(prefill)}">
+      </div>
+      <p class="charges-note">Le PDF a déjà été téléchargé sur cet appareil${shareOk ? '' : " — il faudra le joindre manuellement à l'e-mail"}.</p>
+      <div class="preview-actions">
+        ${shareOk ? '<button type="button" class="btn btn-primary" id="btn-edl-mail-share">Partager le PDF (pièce jointe automatique)</button>' : ''}
+        <button type="button" class="btn" id="btn-edl-mail-open">Ouvrir dans l'app mail</button>
+      </div>
+    `);
+    if (shareOk) {
+      byId('btn-edl-mail-share').addEventListener('click', async () => {
+        try {
+          await navigator.share({
+            files: [new File([blob], fileName, { type: 'application/pdf' })],
+            title: fileName,
+            text: `État des lieux ${sensLabel} — ${ctx.bienNom}`,
+          });
+          closeModal();
+        } catch (e) {
+          if (e.name !== 'AbortError') { console.error(e); alert('Le partage a échoué.'); }
+        }
+      });
+    }
+    byId('btn-edl-mail-open').addEventListener('click', () => {
+      const to = byId('edl-mail-to').value.trim();
+      const subject = encodeURIComponent(`État des lieux ${sensLabel} — ${ctx.bienNom}`);
+      const body = encodeURIComponent(`Bonjour,\n\nVeuillez trouver ci-joint l'état des lieux ${sensLabel} du logement situé ${ctx.bienAdresse || ''}.\n\nCordialement.`);
+      window.location.href = `mailto:${to}?subject=${subject}&body=${body}`;
+      closeModal();
+    });
+  }
+
   async function generateEdlPdf(r, btn) {
     const originalText = btn ? btn.textContent : null;
     if (btn) { btn.disabled = true; btn.textContent = 'Génération du PDF...'; }
@@ -2606,8 +2658,10 @@
       const ctx = buildEdlPdfContext(r);
       const doc = await EdlPdf.generate(ctx);
       doc.save(EdlPdf.filename(ctx));
-      await archiveEdlPdf(r, doc.output('blob'), ctx);
+      const blob = doc.output('blob');
+      await archiveEdlPdf(r, blob, ctx);
       renderEdlRedacHistory();
+      openEdlEmailModal(r, ctx, blob);
     } catch (e) {
       console.error(e);
       alert("Une erreur est survenue lors de la génération du PDF.");

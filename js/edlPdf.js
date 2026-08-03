@@ -57,32 +57,50 @@ const EdlPdf = (function () {
     return out;
   }
 
-  function drawContinuationHeader(doc, headerCtx) {
-    doc.setFont('times', 'italic');
-    doc.setFontSize(8.5);
-    doc.setTextColor(140);
-    doc.text(`${headerCtx.bienNom || ''} — État des lieux ${headerCtx.sensLabel || ''}`, MARGIN, 34);
+  function drawLetterhead(doc, ctx) {
+    let y = 40;
+    doc.setFont('times', 'bold');
+    doc.setFontSize(12);
     doc.setTextColor(20);
-    return 56;
+    doc.text(ctx.sciNom || '', PAGE_W / 2, y, { align: 'center' });
+    y += 13;
+    doc.setFont('times', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(110);
+    const adresseLine = (ctx.sciAdresse || '').replace(/\n/g, ' — ').trim();
+    if (adresseLine) {
+      doc.text(adresseLine, PAGE_W / 2, y, { align: 'center' });
+      y += 11;
+    }
+    if (ctx.sciSiret) {
+      doc.text(`SIRET : ${ctx.sciSiret}`, PAGE_W / 2, y, { align: 'center' });
+      y += 11;
+    }
+    doc.setTextColor(20);
+    y += 6;
+    doc.setDrawColor(180);
+    doc.setLineWidth(0.75);
+    doc.line(MARGIN, y, PAGE_W - MARGIN, y);
+    return y + 24;
   }
 
-  function ensureSpace(doc, state, needed, headerCtx) {
+  function ensureSpace(doc, state, needed, ctx) {
     if (state.y + needed > PAGE_H - MARGIN) {
       doc.addPage();
-      state.y = drawContinuationHeader(doc, headerCtx);
+      state.y = drawLetterhead(doc, ctx);
     }
   }
 
-  function writeWrapped(doc, state, text, x, maxWidth, lineHeight, headerCtx) {
+  function writeWrapped(doc, state, text, x, maxWidth, lineHeight, ctx) {
     const lines = doc.splitTextToSize(text, maxWidth);
     lines.forEach((line) => {
-      ensureSpace(doc, state, lineHeight, headerCtx);
+      ensureSpace(doc, state, lineHeight, ctx);
       doc.text(line, x, state.y);
       state.y += lineHeight;
     });
   }
 
-  function drawPhotoGrid(doc, state, photos, headerCtx) {
+  function drawPhotoGrid(doc, state, photos, ctx) {
     if (!photos.length) return;
     const cols = 3;
     const gap = 10;
@@ -90,7 +108,7 @@ const EdlPdf = (function () {
     const boxH = 90;
     photos.forEach((p, i) => {
       const col = i % cols;
-      if (col === 0) ensureSpace(doc, state, boxH + 8, headerCtx);
+      if (col === 0) ensureSpace(doc, state, boxH + 8, ctx);
       const x = MARGIN + col * (boxW + gap);
       const y = state.y;
       doc.setDrawColor(210);
@@ -107,8 +125,8 @@ const EdlPdf = (function () {
     });
   }
 
-  async function drawElement(doc, state, el, headerCtx) {
-    ensureSpace(doc, state, 16, headerCtx);
+  async function drawElement(doc, state, el, ctx) {
+    ensureSpace(doc, state, 16, ctx);
     doc.setFont('times', 'bold');
     doc.setFontSize(10.5);
     doc.setTextColor(20);
@@ -126,17 +144,17 @@ const EdlPdf = (function () {
       doc.setFont('times', 'italic');
       doc.setFontSize(9.5);
       doc.setTextColor(70);
-      writeWrapped(doc, state, el.note, MARGIN, CONTENT_W, 12.5, headerCtx);
+      writeWrapped(doc, state, el.note, MARGIN, CONTENT_W, 12.5, ctx);
       doc.setTextColor(20);
       state.y += 4;
     }
     const photos = await loadPhotos(el.files);
-    drawPhotoGrid(doc, state, photos, headerCtx);
+    drawPhotoGrid(doc, state, photos, ctx);
     state.y += 10;
   }
 
-  async function drawRoom(doc, state, room, headerCtx) {
-    ensureSpace(doc, state, 26, headerCtx);
+  async function drawRoom(doc, state, room, ctx) {
+    ensureSpace(doc, state, 26, ctx);
     doc.setFont('times', 'bold');
     doc.setFontSize(13);
     doc.setTextColor(20);
@@ -147,13 +165,13 @@ const EdlPdf = (function () {
     doc.line(MARGIN, state.y, PAGE_W - MARGIN, state.y);
     state.y += 14;
     for (const el of room.elements) {
-      await drawElement(doc, state, el, headerCtx);
+      await drawElement(doc, state, el, ctx);
     }
     state.y += 6;
   }
 
-  async function drawMeter(doc, state, m, headerCtx) {
-    ensureSpace(doc, state, 16, headerCtx);
+  async function drawMeter(doc, state, m, ctx) {
+    ensureSpace(doc, state, 16, ctx);
     doc.setFont('times', 'bold');
     doc.setFontSize(10.5);
     doc.setTextColor(20);
@@ -166,12 +184,12 @@ const EdlPdf = (function () {
     doc.setTextColor(20);
     state.y += 15;
     const photos = await loadPhotos(m.files);
-    drawPhotoGrid(doc, state, photos, headerCtx);
+    drawPhotoGrid(doc, state, photos, ctx);
     state.y += 10;
   }
 
-  function drawCover(doc, ctx) {
-    let y = 70;
+  function drawCover(doc, ctx, y0) {
+    let y = y0 + 26;
     doc.setFont('times', 'bold');
     doc.setFontSize(18);
     doc.setTextColor(20);
@@ -231,12 +249,12 @@ const EdlPdf = (function () {
     return { vetusteDiffs, meterDiffs, hasComparisonData };
   }
 
-  function drawEcartsSummary(doc, state, ctx, headerCtx) {
+  function drawEcartsSummary(doc, state, ctx) {
     if (ctx.sens !== 'sortant') return;
     const { vetusteDiffs, meterDiffs, hasComparisonData } = collectEcarts(ctx);
     if (!hasComparisonData) return;
 
-    ensureSpace(doc, state, 30, headerCtx);
+    ensureSpace(doc, state, 30, ctx);
     doc.setFont('times', 'bold');
     doc.setFontSize(13);
     doc.setTextColor(20);
@@ -251,39 +269,39 @@ const EdlPdf = (function () {
     doc.setTextColor(20);
     if (vetusteDiffs.length === 0 && meterDiffs.length === 0) {
       doc.setFont('times', 'normal');
-      writeWrapped(doc, state, "Aucun écart de vétusté ou de consommation constaté par rapport à l'état des lieux d'entrée.", MARGIN, CONTENT_W, 13, headerCtx);
+      writeWrapped(doc, state, "Aucun écart de vétusté ou de consommation constaté par rapport à l'état des lieux d'entrée.", MARGIN, CONTENT_W, 13, ctx);
       state.y += 10;
       return;
     }
     if (vetusteDiffs.length) {
-      ensureSpace(doc, state, 14, headerCtx);
+      ensureSpace(doc, state, 14, ctx);
       doc.setFont('times', 'bold');
       doc.text('Vétusté', MARGIN, state.y);
       state.y += 14;
       doc.setFont('times', 'normal');
       vetusteDiffs.forEach((d) => {
         const line = `${d.room} — ${d.element} : ${VETUSTE_LABELS[d.before] || 'Non renseigné'} → ${VETUSTE_LABELS[d.after] || 'Non renseigné'}`;
-        writeWrapped(doc, state, line, MARGIN, CONTENT_W, 13, headerCtx);
+        writeWrapped(doc, state, line, MARGIN, CONTENT_W, 13, ctx);
       });
       state.y += 6;
     }
     if (meterDiffs.length) {
-      ensureSpace(doc, state, 14, headerCtx);
+      ensureSpace(doc, state, 14, ctx);
       doc.setFont('times', 'bold');
       doc.text('Compteurs', MARGIN, state.y);
       state.y += 14;
       doc.setFont('times', 'normal');
       meterDiffs.forEach((d) => {
         const line = `${d.nom} : ${d.entree} → ${d.sortie} (consommation : ${d.conso})`;
-        writeWrapped(doc, state, line, MARGIN, CONTENT_W, 13, headerCtx);
+        writeWrapped(doc, state, line, MARGIN, CONTENT_W, 13, ctx);
       });
       state.y += 6;
     }
     state.y += 10;
   }
 
-  async function drawSignatures(doc, state, ctx, headerCtx) {
-    ensureSpace(doc, state, 150, headerCtx);
+  async function drawSignatures(doc, state, ctx) {
+    ensureSpace(doc, state, 150, ctx);
     doc.setFont('times', 'bold');
     doc.setFontSize(12);
     doc.setTextColor(20);
@@ -326,13 +344,16 @@ const EdlPdf = (function () {
     state.y = boxY + boxH + 10;
   }
 
-  function stampFooters(doc) {
+  function stampFooters(doc, ctx) {
     const total = doc.internal.getNumberOfPages();
+    const now = new Date();
+    const genLabel = `${ctx.sciNom || ''} — Édité le ${now.toLocaleDateString('fr-FR')} à ${now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`;
     for (let p = 1; p <= total; p++) {
       doc.setPage(p);
       doc.setFont('times', 'normal');
       doc.setFontSize(8);
       doc.setTextColor(140);
+      doc.text(genLabel, MARGIN, FOOTER_Y);
       doc.text(`Page ${p} / ${total}`, PAGE_W - MARGIN, FOOTER_Y, { align: 'right' });
       doc.setTextColor(20);
     }
@@ -341,17 +362,14 @@ const EdlPdf = (function () {
   async function generate(ctx) {
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ unit: 'pt', format: 'a4', compress: true });
-    const headerCtx = {
-      bienNom: ctx.bienNom,
-      sensLabel: ctx.sens === 'sortant' ? 'de sortie' : "d'entrée",
-    };
-    const state = { y: drawCover(doc, ctx) };
-    drawEcartsSummary(doc, state, ctx, headerCtx);
+    const state = { y: drawLetterhead(doc, ctx) };
+    state.y = drawCover(doc, ctx, state.y);
+    drawEcartsSummary(doc, state, ctx);
     for (const room of (ctx.pieces || [])) {
-      await drawRoom(doc, state, room, headerCtx);
+      await drawRoom(doc, state, room, ctx);
     }
     if (ctx.compteurs && ctx.compteurs.length) {
-      ensureSpace(doc, state, 30, headerCtx);
+      ensureSpace(doc, state, 30, ctx);
       doc.setFont('times', 'bold');
       doc.setFontSize(13);
       doc.setTextColor(20);
@@ -362,11 +380,11 @@ const EdlPdf = (function () {
       doc.line(MARGIN, state.y, PAGE_W - MARGIN, state.y);
       state.y += 14;
       for (const m of ctx.compteurs) {
-        await drawMeter(doc, state, m, headerCtx);
+        await drawMeter(doc, state, m, ctx);
       }
     }
-    await drawSignatures(doc, state, ctx, headerCtx);
-    stampFooters(doc);
+    await drawSignatures(doc, state, ctx);
+    stampFooters(doc, ctx);
     return doc;
   }
 
