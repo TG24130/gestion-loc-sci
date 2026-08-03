@@ -141,6 +141,7 @@
   let currentEdlRedaction = null;
   let currentEdlRedacSens = 'entrant';
   const EDL_METER_DEFAULTS = ['Électricité Heures Creuses', 'Électricité Heures Pleines', 'Eau', 'Gaz'];
+  const EDL_CLES_DEFAULTS = ["Clés de la porte d'entrée", 'Clés du portillon jardin', 'Clé du box extérieur', 'Clé de la boîte aux lettres', 'Manette bip'];
 
   // ---------- Navigation ----------
   document.querySelectorAll('.nav-btn').forEach((btn) => {
@@ -255,9 +256,10 @@
     }));
   }
 
-  function duplicateBien(bienId) {
+  function duplicateBien(bienId, options) {
+    const silent = !!(options && options.silent);
     const original = bienById(bienId);
-    if (!original) return;
+    if (!original) return null;
     const newBien = Object.assign({}, original, { id: Storage.uid(), nom: `${original.nom} (copie)` });
     data.biens.push(newBien);
     const gabarit = data.bienGabarits.find((g) => g.bienId === bienId);
@@ -272,11 +274,15 @@
           elements: room.elements.map((el) => ({ id: Storage.uid(), nom: el.nom })),
         })),
         compteurs: (gabarit.compteurs || []).map((m) => ({ id: Storage.uid(), nom: m.nom, numero: '' })),
+        cles: (gabarit.cles || []).map((c) => ({ id: Storage.uid(), nom: c.nom })),
       });
     }
     save();
     renderBiens();
-    alert(`Bien dupliqué : « ${newBien.nom} ».${gabarit ? ' Les pièces, éléments et compteurs ont été copiés (numéros de compteurs à ressaisir).' : ''} Pensez à corriger l'adresse et le loyer si besoin.`);
+    if (!silent) {
+      alert(`Bien dupliqué : « ${newBien.nom} ».${gabarit ? ' Les pièces, éléments, compteurs et clés ont été copiés (numéros de compteurs à ressaisir).' : ''} Pensez à corriger l'adresse et le loyer si besoin.`);
+    }
+    return newBien;
   }
 
   function openBienModal(existing) {
@@ -2110,6 +2116,17 @@
     if (prev && bienById(prev)) sel.value = prev;
   }
 
+  byId('btn-edl-duplicate-bien').addEventListener('click', () => {
+    const bienId = byId('edl-gabarit-bien').value;
+    if (!bienId) { alert("Sélectionnez d'abord un bien à dupliquer."); return; }
+    const newBien = duplicateBien(bienId, { silent: true });
+    if (!newBien) return;
+    populateEdlGabaritBienSelect();
+    byId('edl-gabarit-bien').value = newBien.id;
+    byId('edl-gabarit-bien').dispatchEvent(new Event('change'));
+    alert(`Bien dupliqué : « ${newBien.nom} ». Ses pièces, compteurs et clés ont été copiés — renommez-le, corrigez son adresse (panneau "Biens") puis ajustez si besoin ci-dessous.`);
+  });
+
   function renderEdlGabaritRooms() {
     const bienId = byId('edl-gabarit-bien').value;
     const list = byId('edl-rooms-list');
@@ -2122,6 +2139,7 @@
   byId('edl-gabarit-bien').addEventListener('change', () => {
     renderEdlGabaritRooms();
     renderEdlGabaritMeters();
+    renderEdlGabaritCles();
   });
 
   function collectEdlGabaritRooms() {
@@ -2177,21 +2195,59 @@
       .filter((m) => m.nom);
   }
 
+  function createCleRow(name) {
+    const div = document.createElement('div');
+    div.className = 'edl-meter-row';
+    div.innerHTML = `
+      <input type="text" class="edl-cle-name" placeholder="Nom de la clé / du badge">
+      <button type="button" class="btn btn-sm btn-danger edl-meter-remove">Supprimer</button>
+    `;
+    div.querySelector('.edl-cle-name').value = name || '';
+    div.querySelector('.edl-meter-remove').addEventListener('click', () => div.remove());
+    return div;
+  }
+
+  byId('edl-cle-chips').innerHTML = EDL_CLES_DEFAULTS
+    .map((name) => `<button type="button" class="field-chip" data-cle-name="${escapeHTML(name)}">+ ${escapeHTML(name)}</button>`)
+    .join('') + '<button type="button" class="field-chip" data-cle-name="">+ Autre clé / badge</button>';
+  byId('edl-cle-chips').querySelectorAll('[data-cle-name]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      byId('edl-cles-gabarit-list').appendChild(createCleRow(btn.dataset.cleName));
+    });
+  });
+
+  function renderEdlGabaritCles() {
+    const bienId = byId('edl-gabarit-bien').value;
+    const list = byId('edl-cles-gabarit-list');
+    list.innerHTML = '';
+    if (!bienId) return;
+    const gabarit = data.bienGabarits.find((g) => g.bienId === bienId);
+    (gabarit && gabarit.cles ? gabarit.cles : []).forEach((c) => list.appendChild(createCleRow(c.nom)));
+  }
+
+  function collectEdlGabaritCles() {
+    return [...document.querySelectorAll('#edl-cles-gabarit-list .edl-meter-row')]
+      .map((row) => ({ id: Storage.uid(), nom: row.querySelector('.edl-cle-name').value.trim() }))
+      .filter((c) => c.nom);
+  }
+
   byId('btn-edl-gabarit-save').addEventListener('click', () => {
     const bienId = byId('edl-gabarit-bien').value;
     if (!bienId) { alert("Ajoutez d'abord un bien, puis sélectionnez-le."); return; }
     const pieces = collectEdlGabaritRooms();
     const compteurs = collectEdlGabaritMeters();
+    const cles = collectEdlGabaritCles();
     let gabarit = data.bienGabarits.find((g) => g.bienId === bienId);
     if (gabarit) {
       gabarit.pieces = pieces;
       gabarit.compteurs = compteurs;
+      gabarit.cles = cles;
     } else {
-      gabarit = { id: Storage.uid(), bienId, pieces, compteurs };
+      gabarit = { id: Storage.uid(), bienId, pieces, compteurs, cles };
       data.bienGabarits.push(gabarit);
     }
     save();
-    alert('Pièces et compteurs enregistrés pour ce bien.');
+    alert('Pièces, compteurs et clés enregistrés pour ce bien.');
   });
 
   // ---------- Phase 2 : rédaction concrète (vétusté, photos, notes) ----------
@@ -2324,6 +2380,7 @@
         <span class="edl-redac-meter-name">${escapeHTML(m.nom)}${m.numero ? ` <span class="edl-redac-meter-numero">N° ${escapeHTML(m.numero)}</span>` : ''}</span>
         <input type="number" step="0.01" class="edl-redac-meter-index" placeholder="Index relevé">
       </div>
+      <input type="text" class="edl-redac-meter-consommation" placeholder="Consommation notée (ex : 120 kWh)">
       ${compareHTML}
       <div class="edl-photo-gallery"></div>
       <label class="edl-photo-add-label">+ Ajouter une photo
@@ -2331,6 +2388,7 @@
       </label>
     `;
     const indexInput = div.querySelector('.edl-redac-meter-index');
+    const consommationInput = div.querySelector('.edl-redac-meter-consommation');
     const compareConso = div.querySelector('.edl-compare-conso');
     function updateConso() {
       if (!compareConso) return;
@@ -2343,6 +2401,8 @@
       compareConso.textContent = ` — Consommation : ${sortie - entree}`;
     }
     indexInput.value = m.index === '' || m.index == null ? '' : m.index;
+    consommationInput.value = m.consommation || '';
+    consommationInput.addEventListener('input', (e) => { m.consommation = e.target.value; });
     updateConso();
     indexInput.addEventListener('input', (e) => { m.index = e.target.value; updateConso(); });
 
@@ -2376,6 +2436,64 @@
     byId('edl-redac-meters-title').hidden = !hasMeters;
     if (!hasMeters) return;
     currentEdlRedaction.compteurs.forEach((m) => container.appendChild(createEdlRedacMeter(m)));
+  }
+
+  function createEdlRedacCle(c) {
+    const div = document.createElement('div');
+    div.className = 'edl-redac-meter';
+    const vetusteOptions = EDL_VETUSTE_OPTIONS.map((o) => `<option value="${o.value}">${escapeHTML(o.label)}</option>`).join('');
+    const compareHTML = c.nombreEntree !== undefined
+      ? `<div class="edl-compare-line">À l'entrée : <strong>${escapeHTML(c.nombreEntree === '' ? '—' : String(c.nombreEntree))}</strong> — <strong>${escapeHTML(edlVetusteLabel(c.vetusteEntree))}</strong></div>`
+      : '';
+    div.innerHTML = `
+      <div class="edl-redac-meter-header">
+        <span class="edl-redac-meter-name">${escapeHTML(c.nom)}</span>
+        <input type="number" step="1" class="edl-redac-cle-nombre" placeholder="Nombre">
+        <select class="edl-redac-cle-vetuste">${vetusteOptions}</select>
+      </div>
+      ${compareHTML}
+      <div class="edl-photo-gallery"></div>
+      <label class="edl-photo-add-label">+ Ajouter une photo
+        <input type="file" accept="image/*" capture="environment" multiple hidden>
+      </label>
+    `;
+    const nombreInput = div.querySelector('.edl-redac-cle-nombre');
+    const vetusteSelect = div.querySelector('.edl-redac-cle-vetuste');
+    nombreInput.value = c.nombre === '' || c.nombre == null ? '' : c.nombre;
+    nombreInput.addEventListener('input', (e) => { c.nombre = e.target.value; });
+    vetusteSelect.value = c.vetuste || '';
+    vetusteSelect.addEventListener('change', (e) => { c.vetuste = e.target.value; });
+
+    const gallery = div.querySelector('.edl-photo-gallery');
+    renderEdlPhotoGallery(gallery, c);
+
+    const fileInput = div.querySelector('input[type="file"]');
+    fileInput.addEventListener('change', async () => {
+      const files = [...fileInput.files];
+      fileInput.value = '';
+      for (const file of files) {
+        const fileId = Storage.uid();
+        try {
+          await FilesDb.saveFile(fileId, file);
+          c.files.push({ fileId, fileName: file.name });
+        } catch (e) {
+          console.error(e);
+          alert("Une photo n'a pas pu être enregistrée.");
+        }
+      }
+      renderEdlPhotoGallery(gallery, c);
+    });
+
+    return div;
+  }
+
+  function renderEdlRedacCles() {
+    const container = byId('edl-redac-cles');
+    container.innerHTML = '';
+    const hasCles = !!(currentEdlRedaction && currentEdlRedaction.cles && currentEdlRedaction.cles.length > 0);
+    byId('edl-redac-cles-title').hidden = !hasCles;
+    if (!hasCles) return;
+    currentEdlRedaction.cles.forEach((c) => container.appendChild(createEdlRedacCle(c)));
   }
 
   // ---------- Signature locataire (canvas) ----------
@@ -2495,6 +2613,8 @@
     byId('edl-redac-rooms').innerHTML = '';
     byId('edl-redac-meters').innerHTML = '';
     byId('edl-redac-meters-title').hidden = true;
+    byId('edl-redac-cles').innerHTML = '';
+    byId('edl-redac-cles-title').hidden = true;
     byId('edl-redac-actions').hidden = true;
     byId('edl-redac-current-label').textContent = '—';
     byId('edl-redac-compare-note').hidden = true;
@@ -2517,6 +2637,7 @@
     }
     const basePieces = entrant ? entrant.pieces : (gabarit ? gabarit.pieces : []);
     const baseCompteurs = entrant ? (entrant.compteurs || []) : (gabarit ? (gabarit.compteurs || []) : []);
+    const baseCles = entrant ? (entrant.cles || []) : (gabarit ? (gabarit.cles || []) : []);
     currentEdlRedaction = {
       id: null,
       bienId,
@@ -2543,14 +2664,25 @@
         nom: m.nom,
         numero: m.numero || '',
         index: '',
+        consommation: '',
         files: [],
         indexEntree: entrant ? (m.index === '' || m.index == null ? '' : m.index) : undefined,
+      })),
+      cles: baseCles.map((c) => ({
+        id: Storage.uid(),
+        nom: c.nom,
+        nombre: '',
+        vetuste: '',
+        files: [],
+        nombreEntree: entrant ? (c.nombre === '' || c.nombre == null ? '' : c.nombre) : undefined,
+        vetusteEntree: entrant ? (c.vetuste || '') : undefined,
       })),
       signatureBailleur: '',
       signatureLocataire: '',
     };
     renderEdlRedacRooms();
     renderEdlRedacMeters();
+    renderEdlRedacCles();
     updateEdlRedacLabels();
     updateEdlRedacCompareNote(entrant);
     renderEdlSignatureBailleur();
@@ -2578,6 +2710,7 @@
       dateLabel: r.date ? new Date(`${r.date}T00:00:00`).toLocaleDateString('fr-FR') : '—',
       pieces: r.pieces,
       compteurs: r.compteurs,
+      cles: r.cles,
       signatureBailleur: r.signatureBailleur,
       signatureLocataire: r.signatureLocataire,
       sciNom: data.sci.nom || '',
@@ -2766,6 +2899,7 @@
     document.querySelectorAll('#edl-redac-type-toggle .toggle-btn').forEach((b) => b.classList.toggle('active', b.dataset.edlRedacType === r.sens));
     renderEdlRedacRooms();
     renderEdlRedacMeters();
+    renderEdlRedacCles();
     updateEdlRedacLabels();
     updateEdlRedacCompareNote(r.entrantRedactionId ? data.edlRedactions.find((x) => x.id === r.entrantRedactionId) : null);
     renderEdlSignatureBailleur();
@@ -2790,6 +2924,11 @@
     }
     for (const m of (r.compteurs || [])) {
       for (const f of (m.files || [])) {
+        try { await FilesDb.deleteFile(f.fileId); } catch (e) { console.error(e); }
+      }
+    }
+    for (const c of (r.cles || [])) {
+      for (const f of (c.files || [])) {
         try { await FilesDb.deleteFile(f.fileId); } catch (e) { console.error(e); }
       }
     }
@@ -2861,6 +3000,7 @@
           { id: Storage.uid(), nom: 'Chambre 1', type: 'chambre', elements: EDL_ROOM_TYPES.chambre.elements.map((nom) => ({ id: Storage.uid(), nom })) },
         ],
         compteurs: EDL_METER_DEFAULTS.map((nom) => ({ id: Storage.uid(), nom })),
+        cles: EDL_CLES_DEFAULTS.map((nom) => ({ id: Storage.uid(), nom })),
       };
       data.bienGabarits.push(gabarit);
     }
@@ -2880,6 +3020,11 @@
       }
       for (const m of (r.compteurs || [])) {
         for (const f of (m.files || [])) {
+          try { await FilesDb.deleteFile(f.fileId); } catch (e) { console.error(e); }
+        }
+      }
+      for (const c of (r.cles || [])) {
+        for (const f of (c.files || [])) {
           try { await FilesDb.deleteFile(f.fileId); } catch (e) { console.error(e); }
         }
       }
@@ -2921,6 +3066,7 @@
     populateEdlGabaritBienSelect();
     renderEdlGabaritRooms();
     renderEdlGabaritMeters();
+    renderEdlGabaritCles();
     populateEdlRedacLocataireSelect();
     byId('edl-redac-date').value = new Date().toISOString().slice(0, 10);
     byId('edl-redac-libelle').value = '';
@@ -3014,6 +3160,10 @@
         for (const m of (r.compteurs || [])) {
           if (!m.files || m.files.length === 0) continue;
           await addFiles(`${baseFolder}/compteurs-${slugify(m.nom)}`, { date: r.date, files: m.files });
+        }
+        for (const c of (r.cles || [])) {
+          if (!c.files || c.files.length === 0) continue;
+          await addFiles(`${baseFolder}/cles-${slugify(c.nom)}`, { date: r.date, files: c.files });
         }
       }
 

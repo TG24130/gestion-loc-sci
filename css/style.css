@@ -569,6 +569,10 @@ html.qf-locked .app{display:none;}
   width:150px;padding:8px 10px;border:1px solid var(--border);border-radius:7px;
   font-size:13px;background:var(--card-bg);color:var(--text);
 }
+.edl-meter-row .edl-cle-name{
+  flex:1;padding:8px 10px;border:1px solid var(--border);border-radius:7px;
+  font-size:13px;background:var(--card-bg);color:var(--text);
+}
 .edl-redac-meter{
   border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:14px;background:var(--bg);
 }
@@ -578,6 +582,18 @@ html.qf-locked .app{display:none;}
 .edl-redac-meter-index{
   padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-size:13px;
   background:var(--card-bg);color:var(--text);width:150px;
+}
+.edl-redac-meter-consommation{
+  width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-size:13px;
+  background:var(--card-bg);color:var(--text);margin-bottom:8px;box-sizing:border-box;
+}
+.edl-redac-cle-nombre{
+  padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-size:13px;
+  background:var(--card-bg);color:var(--text);width:90px;
+}
+.edl-redac-cle-vetuste{
+  padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-size:12.5px;
+  background:var(--card-bg);color:var(--text);
 }
 
 /* Signatures (Phase 4) */

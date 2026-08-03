@@ -184,7 +184,35 @@ const EdlPdf = (function () {
     doc.text(idxLabel, PAGE_W - MARGIN, state.y, { align: 'right' });
     doc.setTextColor(20);
     state.y += 15;
+    if (m.consommation) {
+      doc.setFont('times', 'italic');
+      doc.setFontSize(9.5);
+      doc.setTextColor(70);
+      writeWrapped(doc, state, `Consommation notée : ${m.consommation}`, MARGIN, CONTENT_W, 12.5, ctx);
+      doc.setTextColor(20);
+      state.y += 4;
+    }
     const photos = await loadPhotos(m.files);
+    drawPhotoGrid(doc, state, photos, ctx);
+    state.y += 10;
+  }
+
+  async function drawCle(doc, state, c, ctx) {
+    ensureSpace(doc, state, 16, ctx);
+    doc.setFont('times', 'bold');
+    doc.setFontSize(10.5);
+    doc.setTextColor(20);
+    doc.text(c.nom, MARGIN, state.y);
+    const nombreLabel = (c.nombre === '' || c.nombre == null) ? 'Nombre non renseigné' : `Nombre : ${c.nombre}`;
+    const vetusteLabel = VETUSTE_LABELS[c.vetuste] || '';
+    const rightLabel = vetusteLabel ? `${nombreLabel} — ${vetusteLabel}` : nombreLabel;
+    doc.setFont('times', 'normal');
+    doc.setFontSize(9.5);
+    doc.setTextColor(90);
+    doc.text(rightLabel, PAGE_W - MARGIN, state.y, { align: 'right' });
+    doc.setTextColor(20);
+    state.y += 15;
+    const photos = await loadPhotos(c.files);
     drawPhotoGrid(doc, state, photos, ctx);
     state.y += 10;
   }
@@ -245,14 +273,26 @@ const EdlPdf = (function () {
         meterDiffs.push({ nom: m.nom, entree, sortie, conso: sortie - entree });
       }
     });
+    const cleDiffs = [];
+    (ctx.cles || []).forEach((c) => {
+      if (c.nombreEntree === undefined) return;
+      const nombreBefore = c.nombreEntree === '' ? null : Number(c.nombreEntree);
+      const nombreAfter = c.nombre === '' || c.nombre == null ? null : Number(c.nombre);
+      const vetusteBefore = c.vetusteEntree || '';
+      const vetusteAfter = c.vetuste || '';
+      if (nombreBefore !== nombreAfter || vetusteBefore !== vetusteAfter) {
+        cleDiffs.push({ nom: c.nom, nombreBefore, nombreAfter, vetusteBefore, vetusteAfter });
+      }
+    });
     const hasComparisonData = (ctx.pieces || []).some((room) => (room.elements || []).some((el) => el.vetusteEntree !== undefined))
-      || (ctx.compteurs || []).some((m) => m.indexEntree !== undefined);
-    return { vetusteDiffs, meterDiffs, hasComparisonData };
+      || (ctx.compteurs || []).some((m) => m.indexEntree !== undefined)
+      || (ctx.cles || []).some((c) => c.nombreEntree !== undefined);
+    return { vetusteDiffs, meterDiffs, cleDiffs, hasComparisonData };
   }
 
   function drawEcartsSummary(doc, state, ctx) {
     if (ctx.sens !== 'sortant') return;
-    const { vetusteDiffs, meterDiffs, hasComparisonData } = collectEcarts(ctx);
+    const { vetusteDiffs, meterDiffs, cleDiffs, hasComparisonData } = collectEcarts(ctx);
     if (!hasComparisonData) return;
 
     ensureSpace(doc, state, 30, ctx);
@@ -268,9 +308,9 @@ const EdlPdf = (function () {
 
     doc.setFontSize(9.5);
     doc.setTextColor(20);
-    if (vetusteDiffs.length === 0 && meterDiffs.length === 0) {
+    if (vetusteDiffs.length === 0 && meterDiffs.length === 0 && cleDiffs.length === 0) {
       doc.setFont('times', 'normal');
-      writeWrapped(doc, state, "Aucun écart de vétusté ou de consommation constaté par rapport à l'état des lieux d'entrée.", MARGIN, CONTENT_W, 13, ctx);
+      writeWrapped(doc, state, "Aucun écart de vétusté, de consommation ou de clés/badges constaté par rapport à l'état des lieux d'entrée.", MARGIN, CONTENT_W, 13, ctx);
       state.y += 10;
       return;
     }
@@ -294,6 +334,20 @@ const EdlPdf = (function () {
       doc.setFont('times', 'normal');
       meterDiffs.forEach((d) => {
         const line = `${d.nom} : ${d.entree} → ${d.sortie} (consommation : ${d.conso})`;
+        writeWrapped(doc, state, line, MARGIN, CONTENT_W, 13, ctx);
+      });
+      state.y += 6;
+    }
+    if (cleDiffs.length) {
+      ensureSpace(doc, state, 14, ctx);
+      doc.setFont('times', 'bold');
+      doc.text('Clés et badges', MARGIN, state.y);
+      state.y += 14;
+      doc.setFont('times', 'normal');
+      cleDiffs.forEach((d) => {
+        const nombreLabel = `${d.nombreBefore == null ? '—' : d.nombreBefore} → ${d.nombreAfter == null ? '—' : d.nombreAfter}`;
+        const vetusteLabel = `${VETUSTE_LABELS[d.vetusteBefore] || 'Non renseigné'} → ${VETUSTE_LABELS[d.vetusteAfter] || 'Non renseigné'}`;
+        const line = `${d.nom} : ${nombreLabel} — ${vetusteLabel}`;
         writeWrapped(doc, state, line, MARGIN, CONTENT_W, 13, ctx);
       });
       state.y += 6;
@@ -382,6 +436,21 @@ const EdlPdf = (function () {
       state.y += 14;
       for (const m of ctx.compteurs) {
         await drawMeter(doc, state, m, ctx);
+      }
+    }
+    if (ctx.cles && ctx.cles.length) {
+      ensureSpace(doc, state, 30, ctx);
+      doc.setFont('times', 'bold');
+      doc.setFontSize(13);
+      doc.setTextColor(20);
+      doc.text('Clés et badges', MARGIN, state.y);
+      state.y += 8;
+      doc.setDrawColor(180);
+      doc.setLineWidth(0.75);
+      doc.line(MARGIN, state.y, PAGE_W - MARGIN, state.y);
+      state.y += 14;
+      for (const c of ctx.cles) {
+        await drawCle(doc, state, c, ctx);
       }
     }
     await drawSignatures(doc, state, ctx);

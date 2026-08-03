@@ -6,7 +6,7 @@
 <title>Gestion Loc SCI</title>
 <meta name="description" content="Gestion locative de SCI : quittances, baux, charges, documents et crédits.">
 <meta name="theme-color" content="#2f6fed">
-<link rel="manifest" href="manifest.json?v=2026072117">
+<link rel="manifest" href="manifest.json?v=2026072118">
 <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -14,7 +14,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Gestion Loc SCI">
 <meta name="mobile-web-app-capable" content="yes">
-<link rel="stylesheet" href="css/style.css?v=2026072117">
+<link rel="stylesheet" href="css/style.css?v=2026072118">
 </head>
 <body>
 <script>
@@ -340,6 +340,10 @@
           <label>Bien</label>
           <select id="edl-gabarit-bien"></select>
         </div>
+        <div class="preview-actions" style="margin-top:10px;">
+          <button type="button" class="btn btn-sm" id="btn-edl-duplicate-bien">Dupliquer ce bien (pièces, compteurs, clés)</button>
+        </div>
+        <p class="charges-note" style="margin:8px 0 0;">Utile pour des biens identiques (ex : MAISON 1 à 5) : dupliquez un bien déjà configuré pour éviter de ressaisir toutes ses pièces et éléments.</p>
       </div>
 
       <div class="panel">
@@ -355,6 +359,11 @@
         <p class="charges-note" style="margin:0 0 12px;">Cliquez pour ajouter un compteur. Renommez ou supprimez librement selon ce qui est présent sur ce bien (ex : 2 compteurs d'eau, pas de gaz...).</p>
         <div class="field-chips" id="edl-meter-chips"></div>
         <div id="edl-meters-gabarit-list"></div>
+
+        <h3 class="edl-redac-room-title">Clés et badges du bien</h3>
+        <p class="charges-note" style="margin:0 0 12px;">Cliquez pour ajouter une clé/un badge. Renommez ou supprimez librement selon ce qui est présent sur ce bien.</p>
+        <div class="field-chips" id="edl-cle-chips"></div>
+        <div id="edl-cles-gabarit-list"></div>
       </div>
 
       <div class="panel">
@@ -388,6 +397,9 @@
         <div id="edl-redac-rooms"></div>
         <h3 class="edl-redac-room-title" id="edl-redac-meters-title" hidden>Relevé des compteurs</h3>
         <div id="edl-redac-meters"></div>
+
+        <h3 class="edl-redac-room-title" id="edl-redac-cles-title" hidden>Clés et badges</h3>
+        <div id="edl-redac-cles"></div>
 
         <h3 class="edl-redac-room-title">Signatures</h3>
         <div class="edl-signature-row">
@@ -931,13 +943,13 @@
 
 <script src="js/vendor/jspdf.umd.min.js"></script>
 <script src="js/vendor/jszip.min.js"></script>
-<script src="js/numberToWords.js?v=2026072117"></script>
-<script src="js/storage.js?v=2026072117"></script>
-<script src="js/filesDb.js?v=2026072117"></script>
-<script src="js/documents.js?v=2026072117"></script>
-<script src="js/pdfBuilder.js?v=2026072117"></script>
-<script src="js/richTextPdf.js?v=2026072117"></script>
-<script src="js/edlPdf.js?v=2026072117"></script>
-<script src="js/app.js?v=2026072117"></script>
+<script src="js/numberToWords.js?v=2026072118"></script>
+<script src="js/storage.js?v=2026072118"></script>
+<script src="js/filesDb.js?v=2026072118"></script>
+<script src="js/documents.js?v=2026072118"></script>
+<script src="js/pdfBuilder.js?v=2026072118"></script>
+<script src="js/richTextPdf.js?v=2026072118"></script>
+<script src="js/edlPdf.js?v=2026072118"></script>
+<script src="js/app.js?v=2026072118"></script>
 </body>
 </html>
