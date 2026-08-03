@@ -565,11 +565,16 @@ html.qf-locked .app{display:none;}
   flex:1;padding:8px 10px;border:1px solid var(--border);border-radius:7px;
   font-size:13px;background:var(--card-bg);color:var(--text);
 }
+.edl-meter-row .edl-meter-numero{
+  width:150px;padding:8px 10px;border:1px solid var(--border);border-radius:7px;
+  font-size:13px;background:var(--card-bg);color:var(--text);
+}
 .edl-redac-meter{
   border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:14px;background:var(--bg);
 }
 .edl-redac-meter-header{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;}
 .edl-redac-meter-name{font-weight:700;font-size:14px;}
+.edl-redac-meter-numero{font-weight:400;font-size:12px;color:var(--text-muted);}
 .edl-redac-meter-index{
   padding:7px 10px;border:1px solid var(--border);border-radius:7px;font-size:13px;
   background:var(--card-bg);color:var(--text);width:150px;

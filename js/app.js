@@ -236,11 +236,13 @@
         <td>${euros(b.charges)}</td>
         <td class="actions-cell">
           <button class="btn btn-sm" data-edit-bien="${b.id}">Modifier</button>
+          <button class="btn btn-sm" data-dup-bien="${b.id}">Dupliquer</button>
           <button class="btn btn-sm btn-danger" data-del-bien="${b.id}">Supprimer</button>
         </td>
       </tr>`;
     });
     tbody.querySelectorAll('[data-edit-bien]').forEach((btn) => btn.addEventListener('click', () => openBienModal(bienById(btn.dataset.editBien))));
+    tbody.querySelectorAll('[data-dup-bien]').forEach((btn) => btn.addEventListener('click', () => duplicateBien(btn.dataset.dupBien)));
     tbody.querySelectorAll('[data-del-bien]').forEach((btn) => btn.addEventListener('click', () => {
       const id = btn.dataset.delBien;
       const used = data.locataires.some((l) => l.bienId === id);
@@ -250,6 +252,30 @@
         save(); renderBiens();
       }
     }));
+  }
+
+  function duplicateBien(bienId) {
+    const original = bienById(bienId);
+    if (!original) return;
+    const newBien = Object.assign({}, original, { id: Storage.uid(), nom: `${original.nom} (copie)` });
+    data.biens.push(newBien);
+    const gabarit = data.bienGabarits.find((g) => g.bienId === bienId);
+    if (gabarit) {
+      data.bienGabarits.push({
+        id: Storage.uid(),
+        bienId: newBien.id,
+        pieces: gabarit.pieces.map((room) => ({
+          id: Storage.uid(),
+          nom: room.nom,
+          type: room.type,
+          elements: room.elements.map((el) => ({ id: Storage.uid(), nom: el.nom })),
+        })),
+        compteurs: (gabarit.compteurs || []).map((m) => ({ id: Storage.uid(), nom: m.nom, numero: '' })),
+      });
+    }
+    save();
+    renderBiens();
+    alert(`Bien dupliqué : « ${newBien.nom} ».${gabarit ? ' Les pièces, éléments et compteurs ont été copiés (numéros de compteurs à ressaisir).' : ''} Pensez à corriger l'adresse et le loyer si besoin.`);
   }
 
   function openBienModal(existing) {
@@ -2108,14 +2134,16 @@
     })).filter((r) => r.nom);
   }
 
-  function createMeterRow(name) {
+  function createMeterRow(name, numero) {
     const div = document.createElement('div');
     div.className = 'edl-meter-row';
     div.innerHTML = `
       <input type="text" class="edl-meter-name" placeholder="Nom du compteur">
+      <input type="text" class="edl-meter-numero" placeholder="N° de compteur">
       <button type="button" class="btn btn-sm btn-danger edl-meter-remove">Supprimer</button>
     `;
     div.querySelector('.edl-meter-name').value = name || '';
+    div.querySelector('.edl-meter-numero').value = numero || '';
     div.querySelector('.edl-meter-remove').addEventListener('click', () => div.remove());
     return div;
   }
@@ -2135,12 +2163,16 @@
     list.innerHTML = '';
     if (!bienId) return;
     const gabarit = data.bienGabarits.find((g) => g.bienId === bienId);
-    (gabarit && gabarit.compteurs ? gabarit.compteurs : []).forEach((m) => list.appendChild(createMeterRow(m.nom)));
+    (gabarit && gabarit.compteurs ? gabarit.compteurs : []).forEach((m) => list.appendChild(createMeterRow(m.nom, m.numero)));
   }
 
   function collectEdlGabaritMeters() {
     return [...document.querySelectorAll('#edl-meters-gabarit-list .edl-meter-row')]
-      .map((row) => ({ id: Storage.uid(), nom: row.querySelector('.edl-meter-name').value.trim() }))
+      .map((row) => ({
+        id: Storage.uid(),
+        nom: row.querySelector('.edl-meter-name').value.trim(),
+        numero: row.querySelector('.edl-meter-numero').value.trim(),
+      }))
       .filter((m) => m.nom);
   }
 
@@ -2288,7 +2320,7 @@
       : '';
     div.innerHTML = `
       <div class="edl-redac-meter-header">
-        <span class="edl-redac-meter-name">${escapeHTML(m.nom)}</span>
+        <span class="edl-redac-meter-name">${escapeHTML(m.nom)}${m.numero ? ` <span class="edl-redac-meter-numero">N° ${escapeHTML(m.numero)}</span>` : ''}</span>
         <input type="number" step="0.01" class="edl-redac-meter-index" placeholder="Index relevé">
       </div>
       ${compareHTML}
@@ -2508,6 +2540,7 @@
       compteurs: baseCompteurs.map((m) => ({
         id: Storage.uid(),
         nom: m.nom,
+        numero: m.numero || '',
         index: '',
         files: [],
         indexEntree: entrant ? (m.index === '' || m.index == null ? '' : m.index) : undefined,

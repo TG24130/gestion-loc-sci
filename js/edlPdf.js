@@ -175,7 +175,7 @@ const EdlPdf = (function () {
     doc.setFont('times', 'bold');
     doc.setFontSize(10.5);
     doc.setTextColor(20);
-    doc.text(m.nom, MARGIN, state.y);
+    doc.text(m.numero ? `${m.nom} (N° ${m.numero})` : m.nom, MARGIN, state.y);
     const idxLabel = (m.index === '' || m.index == null) ? 'Non relevé' : `Index relevé : ${m.index}`;
     doc.setFont('times', 'normal');
     doc.setFontSize(9.5);
