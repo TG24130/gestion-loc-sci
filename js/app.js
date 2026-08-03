@@ -2549,30 +2549,38 @@
     };
   }
 
-  async function generateEdlPdf(r, btn) {
-    const originalText = btn ? btn.textContent : null;
-    if (btn) { btn.disabled = true; btn.textContent = 'Génération du PDF...'; }
-    try {
-      const ctx = buildEdlPdfContext(r);
-      const doc = await EdlPdf.generate(ctx);
-      doc.save(EdlPdf.filename(ctx));
-    } catch (e) {
-      console.error(e);
-      alert("Une erreur est survenue lors de la génération du PDF.");
-    } finally {
-      if (btn) { btn.disabled = false; btn.textContent = originalText; }
+  async function archiveEdlPdf(r, blob, ctx) {
+    const fileId = Storage.uid();
+    await FilesDb.saveFile(fileId, blob);
+    const fileName = EdlPdf.filename(ctx);
+    const defaultLibelle = ctx.sens === 'sortant' ? 'État des lieux de sortie (rédigé)' : "État des lieux d'entrée (rédigé)";
+    let entry = r.etatsDesLieuxId ? data.etatsDesLieux.find((e) => e.id === r.etatsDesLieuxId) : null;
+    if (entry) {
+      for (const f of entry.files) {
+        try { await FilesDb.deleteFile(f.fileId); } catch (e) { console.error(e); }
+      }
+      entry.locataireId = r.locataireId;
+      entry.sens = r.sens;
+      entry.date = r.date;
+      entry.libelle = r.libelle || defaultLibelle;
+      entry.files = [{ fileId, fileName }];
+    } else {
+      entry = {
+        id: Storage.uid(),
+        locataireId: r.locataireId,
+        sens: r.sens,
+        date: r.date,
+        libelle: r.libelle || defaultLibelle,
+        files: [{ fileId, fileName }],
+      };
+      data.etatsDesLieux.push(entry);
+      r.etatsDesLieuxId = entry.id;
     }
+    save();
   }
 
-  byId('btn-edl-redac-pdf').addEventListener('click', (e) => {
-    if (!currentEdlRedaction) return;
-    currentEdlRedaction.libelle = byId('edl-redac-libelle').value.trim();
-    captureCurrentEdlSignatures();
-    generateEdlPdf(currentEdlRedaction, e.currentTarget);
-  });
-
-  byId('btn-edl-redac-save').addEventListener('click', () => {
-    if (!currentEdlRedaction) return;
+  function persistCurrentEdlRedaction() {
+    if (!currentEdlRedaction) return null;
     currentEdlRedaction.libelle = byId('edl-redac-libelle').value.trim();
     captureCurrentEdlSignatures();
     const now = Date.now();
@@ -2588,6 +2596,36 @@
       data.edlRedactions.push(currentEdlRedaction);
     }
     save();
+    return currentEdlRedaction;
+  }
+
+  async function generateEdlPdf(r, btn) {
+    const originalText = btn ? btn.textContent : null;
+    if (btn) { btn.disabled = true; btn.textContent = 'Génération du PDF...'; }
+    try {
+      const ctx = buildEdlPdfContext(r);
+      const doc = await EdlPdf.generate(ctx);
+      doc.save(EdlPdf.filename(ctx));
+      await archiveEdlPdf(r, doc.output('blob'), ctx);
+      renderEdlRedacHistory();
+    } catch (e) {
+      console.error(e);
+      alert("Une erreur est survenue lors de la génération du PDF.");
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = originalText; }
+    }
+  }
+
+  byId('btn-edl-redac-pdf').addEventListener('click', (e) => {
+    const r = persistCurrentEdlRedaction();
+    if (!r) return;
+    renderEdlRedacHistory();
+    renderEdlSignatureLocataire();
+    generateEdlPdf(r, e.currentTarget);
+  });
+
+  byId('btn-edl-redac-save').addEventListener('click', () => {
+    if (!persistCurrentEdlRedaction()) return;
     renderEdlRedacHistory();
     renderEdlSignatureLocataire();
     alert('Brouillon enregistré.');
@@ -2650,7 +2688,11 @@
   async function deleteEdlRedaction(id) {
     const r = data.edlRedactions.find((x) => x.id === id);
     if (!r) return;
-    if (!confirm('Supprimer cet état des lieux rédigé, avec toutes ses photos ?')) return;
+    const archived = r.etatsDesLieuxId ? data.etatsDesLieux.find((e) => e.id === r.etatsDesLieuxId) : null;
+    const warning = archived
+      ? "Supprimer cet état des lieux rédigé, avec toutes ses photos et son PDF archivé dans « États des lieux » ?"
+      : 'Supprimer cet état des lieux rédigé, avec toutes ses photos ?';
+    if (!confirm(warning)) return;
     for (const room of r.pieces) {
       for (const el of room.elements) {
         for (const f of (el.files || [])) {
@@ -2663,10 +2705,18 @@
         try { await FilesDb.deleteFile(f.fileId); } catch (e) { console.error(e); }
       }
     }
+    if (archived) {
+      for (const f of archived.files) {
+        try { await FilesDb.deleteFile(f.fileId); } catch (e) { console.error(e); }
+      }
+      data.etatsDesLieux = data.etatsDesLieux.filter((e) => e.id !== archived.id);
+    }
     data.edlRedactions = data.edlRedactions.filter((x) => x.id !== id);
     if (currentEdlRedaction && currentEdlRedaction.id === id) clearCurrentEdlRedaction();
     save();
     renderEdlRedacHistory();
+    renderEdlStatusGrid();
+    renderEdlHistoryTable();
   }
 
   byId('edl-gabarit-bien').addEventListener('change', () => {
