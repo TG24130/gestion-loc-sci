@@ -207,6 +207,81 @@ const EdlPdf = (function () {
     return y;
   }
 
+  function collectEcarts(ctx) {
+    const vetusteDiffs = [];
+    (ctx.pieces || []).forEach((room) => {
+      (room.elements || []).forEach((el) => {
+        if (el.vetusteEntree === undefined) return;
+        const before = el.vetusteEntree || '';
+        const after = el.vetuste || '';
+        if (before !== after) vetusteDiffs.push({ room: room.nom, element: el.nom, before, after });
+      });
+    });
+    const meterDiffs = [];
+    (ctx.compteurs || []).forEach((m) => {
+      if (m.indexEntree === undefined) return;
+      const entree = Number(m.indexEntree);
+      const sortie = Number(m.index);
+      if (m.indexEntree !== '' && m.index !== '' && !Number.isNaN(entree) && !Number.isNaN(sortie)) {
+        meterDiffs.push({ nom: m.nom, entree, sortie, conso: sortie - entree });
+      }
+    });
+    const hasComparisonData = (ctx.pieces || []).some((room) => (room.elements || []).some((el) => el.vetusteEntree !== undefined))
+      || (ctx.compteurs || []).some((m) => m.indexEntree !== undefined);
+    return { vetusteDiffs, meterDiffs, hasComparisonData };
+  }
+
+  function drawEcartsSummary(doc, state, ctx, headerCtx) {
+    if (ctx.sens !== 'sortant') return;
+    const { vetusteDiffs, meterDiffs, hasComparisonData } = collectEcarts(ctx);
+    if (!hasComparisonData) return;
+
+    ensureSpace(doc, state, 30, headerCtx);
+    doc.setFont('times', 'bold');
+    doc.setFontSize(13);
+    doc.setTextColor(20);
+    doc.text("Résumé des écarts avec l'état des lieux d'entrée", MARGIN, state.y);
+    state.y += 8;
+    doc.setDrawColor(180);
+    doc.setLineWidth(0.75);
+    doc.line(MARGIN, state.y, PAGE_W - MARGIN, state.y);
+    state.y += 16;
+
+    doc.setFontSize(9.5);
+    doc.setTextColor(20);
+    if (vetusteDiffs.length === 0 && meterDiffs.length === 0) {
+      doc.setFont('times', 'normal');
+      writeWrapped(doc, state, "Aucun écart de vétusté ou de consommation constaté par rapport à l'état des lieux d'entrée.", MARGIN, CONTENT_W, 13, headerCtx);
+      state.y += 10;
+      return;
+    }
+    if (vetusteDiffs.length) {
+      ensureSpace(doc, state, 14, headerCtx);
+      doc.setFont('times', 'bold');
+      doc.text('Vétusté', MARGIN, state.y);
+      state.y += 14;
+      doc.setFont('times', 'normal');
+      vetusteDiffs.forEach((d) => {
+        const line = `${d.room} — ${d.element} : ${VETUSTE_LABELS[d.before] || 'Non renseigné'} → ${VETUSTE_LABELS[d.after] || 'Non renseigné'}`;
+        writeWrapped(doc, state, line, MARGIN, CONTENT_W, 13, headerCtx);
+      });
+      state.y += 6;
+    }
+    if (meterDiffs.length) {
+      ensureSpace(doc, state, 14, headerCtx);
+      doc.setFont('times', 'bold');
+      doc.text('Compteurs', MARGIN, state.y);
+      state.y += 14;
+      doc.setFont('times', 'normal');
+      meterDiffs.forEach((d) => {
+        const line = `${d.nom} : ${d.entree} → ${d.sortie} (consommation : ${d.conso})`;
+        writeWrapped(doc, state, line, MARGIN, CONTENT_W, 13, headerCtx);
+      });
+      state.y += 6;
+    }
+    state.y += 10;
+  }
+
   async function drawSignatures(doc, state, ctx, headerCtx) {
     ensureSpace(doc, state, 150, headerCtx);
     doc.setFont('times', 'bold');
@@ -271,6 +346,7 @@ const EdlPdf = (function () {
       sensLabel: ctx.sens === 'sortant' ? 'de sortie' : "d'entrée",
     };
     const state = { y: drawCover(doc, ctx) };
+    drawEcartsSummary(doc, state, ctx, headerCtx);
     for (const room of (ctx.pieces || [])) {
       await drawRoom(doc, state, room, headerCtx);
     }

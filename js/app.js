@@ -9,6 +9,12 @@
   function bienById(id) { return data.biens.find((b) => b.id === id); }
   function locataireById(id) { return data.locataires.find((l) => l.id === id); }
 
+  function findLatestEntrantRedaction(bienId, locataireId) {
+    return data.edlRedactions
+      .filter((r) => r.bienId === bienId && r.locataireId === locataireId && r.sens === 'entrant')
+      .sort((a, b) => (b.date || '').localeCompare(a.date || ''))[0] || null;
+  }
+
   const MAX_DOC_PAGES = 10;
   // Un document (bail / état des lieux) peut regrouper plusieurs pages scannées.
   // Compatible avec l'ancien format à fichier unique (fileId/fileName).
@@ -2196,15 +2202,24 @@
     }
   }
 
+  function edlVetusteLabel(v) {
+    const opt = EDL_VETUSTE_OPTIONS.find((o) => o.value === v);
+    return opt && opt.value ? opt.label : '—';
+  }
+
   function createEdlRedacElement(el) {
     const div = document.createElement('div');
     div.className = 'edl-redac-element';
     const vetusteOptions = EDL_VETUSTE_OPTIONS.map((o) => `<option value="${o.value}">${escapeHTML(o.label)}</option>`).join('');
+    const compareHTML = el.vetusteEntree !== undefined
+      ? `<div class="edl-compare-line">État à l'entrée : <strong>${escapeHTML(edlVetusteLabel(el.vetusteEntree))}</strong></div>`
+      : '';
     div.innerHTML = `
       <div class="edl-redac-element-header">
         <span class="edl-redac-element-name">${escapeHTML(el.nom)}</span>
         <select class="edl-redac-element-vetuste">${vetusteOptions}</select>
       </div>
+      ${compareHTML}
       <textarea class="edl-redac-element-note" rows="1" placeholder="Note (optionnel)"></textarea>
       <div class="edl-photo-gallery"></div>
       <label class="edl-photo-add-label">+ Ajouter une photo
@@ -2212,8 +2227,15 @@
       </label>
     `;
     const vetusteSelect = div.querySelector('.edl-redac-element-vetuste');
+    const compareLine = div.querySelector('.edl-compare-line');
+    function updateCompareHighlight() {
+      if (!compareLine) return;
+      const diff = !!el.vetuste && el.vetusteEntree !== undefined && el.vetuste !== el.vetusteEntree;
+      compareLine.classList.toggle('edl-compare-diff', diff);
+    }
     vetusteSelect.value = el.vetuste || '';
-    vetusteSelect.addEventListener('change', (e) => { el.vetuste = e.target.value; });
+    updateCompareHighlight();
+    vetusteSelect.addEventListener('change', (e) => { el.vetuste = e.target.value; updateCompareHighlight(); });
 
     const noteInput = div.querySelector('.edl-redac-element-note');
     noteInput.value = el.note || '';
@@ -2261,19 +2283,35 @@
   function createEdlRedacMeter(m) {
     const div = document.createElement('div');
     div.className = 'edl-redac-meter';
+    const compareHTML = m.indexEntree !== undefined
+      ? `<div class="edl-compare-line">Index à l'entrée : <strong>${escapeHTML(m.indexEntree === '' ? '—' : String(m.indexEntree))}</strong><span class="edl-compare-conso"></span></div>`
+      : '';
     div.innerHTML = `
       <div class="edl-redac-meter-header">
         <span class="edl-redac-meter-name">${escapeHTML(m.nom)}</span>
         <input type="number" step="0.01" class="edl-redac-meter-index" placeholder="Index relevé">
       </div>
+      ${compareHTML}
       <div class="edl-photo-gallery"></div>
       <label class="edl-photo-add-label">+ Ajouter une photo
         <input type="file" accept="image/*" capture="environment" multiple hidden>
       </label>
     `;
     const indexInput = div.querySelector('.edl-redac-meter-index');
+    const compareConso = div.querySelector('.edl-compare-conso');
+    function updateConso() {
+      if (!compareConso) return;
+      const entree = Number(m.indexEntree);
+      const sortie = Number(m.index);
+      if (m.indexEntree === '' || m.indexEntree == null || m.index === '' || m.index == null || Number.isNaN(entree) || Number.isNaN(sortie)) {
+        compareConso.textContent = '';
+        return;
+      }
+      compareConso.textContent = ` — Consommation : ${sortie - entree}`;
+    }
     indexInput.value = m.index === '' || m.index == null ? '' : m.index;
-    indexInput.addEventListener('input', (e) => { m.index = e.target.value; });
+    updateConso();
+    indexInput.addEventListener('input', (e) => { m.index = e.target.value; updateConso(); });
 
     const gallery = div.querySelector('.edl-photo-gallery');
     renderEdlPhotoGallery(gallery, m);
@@ -2402,6 +2440,23 @@
     byId('edl-redac-current-label').textContent = `${loc ? loc.nom : '—'} — ${sensLabel} — ${dateLabel}`;
   }
 
+  function updateEdlRedacCompareNote(entrant) {
+    const note = byId('edl-redac-compare-note');
+    if (currentEdlRedacSens !== 'sortant') {
+      note.hidden = true;
+      return;
+    }
+    if (entrant) {
+      const dateLabel = entrant.date ? new Date(`${entrant.date}T00:00:00`).toLocaleDateString('fr-FR') : '—';
+      note.textContent = `Structure et écarts basés sur l'état des lieux d'entrée du ${dateLabel} pour ce locataire.`;
+      note.classList.remove('edl-compare-warn');
+    } else {
+      note.textContent = "Aucun état des lieux d'entrée trouvé pour ce locataire dans cet outil — structure reprise du gabarit du bien, sans comparaison possible.";
+      note.classList.add('edl-compare-warn');
+    }
+    note.hidden = false;
+  }
+
   function clearCurrentEdlRedaction() {
     currentEdlRedaction = null;
     byId('edl-redac-rooms').innerHTML = '';
@@ -2409,6 +2464,7 @@
     byId('edl-redac-meters-title').hidden = true;
     byId('edl-redac-actions').hidden = true;
     byId('edl-redac-current-label').textContent = '—';
+    byId('edl-redac-compare-note').hidden = true;
     renderEdlSignatureBailleur();
     renderEdlSignatureLocataire();
   }
@@ -2421,10 +2477,13 @@
     if (!locataireId) { alert("Ce bien n'a pas de locataire enregistré."); return; }
     if (!date) { alert('Renseignez une date.'); return; }
     const gabarit = data.bienGabarits.find((g) => g.bienId === bienId);
-    if (!gabarit || gabarit.pieces.length === 0) {
+    const entrant = currentEdlRedacSens === 'sortant' ? findLatestEntrantRedaction(bienId, locataireId) : null;
+    if (!entrant && (!gabarit || gabarit.pieces.length === 0)) {
       alert("Ce bien n'a pas encore de pièces configurées (panneau 2 ci-dessus) — configurez-les d'abord.");
       return;
     }
+    const basePieces = entrant ? entrant.pieces : (gabarit ? gabarit.pieces : []);
+    const baseCompteurs = entrant ? (entrant.compteurs || []) : (gabarit ? (gabarit.compteurs || []) : []);
     currentEdlRedaction = {
       id: null,
       bienId,
@@ -2432,7 +2491,8 @@
       sens: currentEdlRedacSens,
       date,
       libelle: byId('edl-redac-libelle').value.trim(),
-      pieces: gabarit.pieces.map((room) => ({
+      entrantRedactionId: entrant ? entrant.id : null,
+      pieces: basePieces.map((room) => ({
         id: Storage.uid(),
         nom: room.nom,
         type: room.type,
@@ -2442,13 +2502,15 @@
           vetuste: '',
           note: '',
           files: [],
+          vetusteEntree: entrant ? (el.vetuste || '') : undefined,
         })),
       })),
-      compteurs: (gabarit.compteurs || []).map((m) => ({
+      compteurs: baseCompteurs.map((m) => ({
         id: Storage.uid(),
         nom: m.nom,
         index: '',
         files: [],
+        indexEntree: entrant ? (m.index === '' || m.index == null ? '' : m.index) : undefined,
       })),
       signatureBailleur: '',
       signatureLocataire: '',
@@ -2456,6 +2518,7 @@
     renderEdlRedacRooms();
     renderEdlRedacMeters();
     updateEdlRedacLabels();
+    updateEdlRedacCompareNote(entrant);
     renderEdlSignatureBailleur();
     renderEdlSignatureLocataire();
     byId('edl-redac-actions').hidden = false;
@@ -2578,6 +2641,7 @@
     renderEdlRedacRooms();
     renderEdlRedacMeters();
     updateEdlRedacLabels();
+    updateEdlRedacCompareNote(r.entrantRedactionId ? data.edlRedactions.find((x) => x.id === r.entrantRedactionId) : null);
     renderEdlSignatureBailleur();
     renderEdlSignatureLocataire();
     byId('edl-redac-actions').hidden = false;
