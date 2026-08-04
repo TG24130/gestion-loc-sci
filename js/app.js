@@ -159,8 +159,21 @@
 
   // ---------- Navigation ----------
   document.querySelectorAll('.nav-btn').forEach((btn) => {
-    btn.addEventListener('click', () => showView(btn.dataset.view));
+    btn.addEventListener('click', () => {
+      showView(btn.dataset.view);
+      closeSidebar();
+    });
   });
+
+  // Menu lateral escamotable (mobile) : le bouton hamburger et le fond assombri
+  // n'ont d'effet visuel qu'en dessous de 880px (voir style.css), donc rien a
+  // faire de special ici pour le bureau.
+  function openSidebar() { document.querySelector('.app').classList.add('sidebar-open'); }
+  function closeSidebar() { document.querySelector('.app').classList.remove('sidebar-open'); }
+  byId('sidebar-toggle').addEventListener('click', () => {
+    document.querySelector('.app').classList.toggle('sidebar-open');
+  });
+  byId('sidebar-overlay').addEventListener('click', closeSidebar);
 
   document.querySelectorAll('.nav-group-toggle').forEach((btn) => {
     btn.addEventListener('click', () => {
