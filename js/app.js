@@ -101,6 +101,7 @@
   let currentChargeCategory = null;
 
   const ADMIN_DOC_CATEGORIES = {
+    ag: 'AG',
     dpe: 'DPE',
     conformites: 'Conformités électrique, gaz et eau',
     daact: 'DAACT',
@@ -361,9 +362,12 @@
     tbody.querySelectorAll('[data-del-loc]').forEach((btn) => btn.addEventListener('click', () => deleteLocataireCascade(btn.dataset.delLoc)));
   }
 
-  // Supprimer un locataire supprime aussi tout ce qui lui est rattache (sinon ces
-  // enregistrements deviennent invisibles mais restent en stockage indefiniment,
-  // avec leurs fichiers/photos orphelins dans IndexedDB).
+  // Un locataire avec de l'historique (documents, bail, EDL...) ne doit pas etre
+  // supprime "en un clic" : les SCI ont une obligation de conservation de ces
+  // pieces pendant plusieurs annees. Le chemin par defaut est donc de le classer
+  // en Ancien locataire (rien n'est supprime, tout reste consultable dans la
+  // rubrique "Anciens locataires") ; la suppression definitive reste possible
+  // mais demande une confirmation separee et explicite.
   async function deleteLocataireCascade(id) {
     const loc = locataireById(id);
     if (!loc) return;
@@ -376,10 +380,34 @@
     const totalRelated = relatedDocuments.length + relatedBaux.length + relatedEtatsDesLieux.length
       + relatedDocsLoc.length + relatedBailRedactions.length + relatedEdlRedactions.length;
 
-    const warning = totalRelated > 0
-      ? `Supprimer « ${loc.nom} » supprimera aussi définitivement ${totalRelated} élément(s) associé(s) (documents générés, baux, états des lieux, rédactions...) et leurs pièces jointes. Continuer ?`
-      : 'Supprimer ce locataire ?';
-    if (!confirm(warning)) return;
+    if (totalRelated === 0) {
+      if (!confirm('Supprimer ce locataire ?')) return;
+      data.locataires = data.locataires.filter((l) => l.id !== id);
+      save();
+      renderLocataires();
+      renderDashboard();
+      return;
+    }
+
+    const archiveInstead = confirm(
+      `« ${loc.nom} » a ${totalRelated} élément(s) associé(s) (documents, bail, état des lieux...).\n\n`
+      + "Pour conserver cet historique (obligation de conservation des pièces d'une SCI), cliquez sur OK pour le classer en « Ancien locataire » : rien n'est supprimé, tout reste consultable dans la rubrique \"Anciens locataires\".\n\n"
+      + 'Cliquez sur Annuler pour voir plutôt les options de suppression définitive.'
+    );
+    if (archiveInstead) {
+      loc.actif = false;
+      save();
+      renderLocataires();
+      renderDashboard();
+      alert(`« ${loc.nom} » a été classé en Ancien locataire. Retrouvez-le dans la rubrique "Anciens locataires" — tous ses documents restent accessibles.`);
+      return;
+    }
+
+    const hardDelete = confirm(
+      `Supprimer DÉFINITIVEMENT « ${loc.nom} » et ses ${totalRelated} élément(s) associé(s) (documents, baux, états des lieux, photos...) ?\n\n`
+      + 'Cette action est IRRÉVERSIBLE et peut ne pas respecter vos obligations légales de conservation des documents. À réserver aux cas où ces données ne doivent vraiment plus exister (ex : doublon, erreur de saisie).'
+    );
+    if (!hardDelete) return;
 
     for (const b of relatedBaux) await deleteRecordFiles(b);
     for (const e of relatedEtatsDesLieux) await deleteRecordFiles(e);
