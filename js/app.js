@@ -2,9 +2,22 @@
   const data = Storage.load();
 
   // ---------- Utilities ----------
-  function save() { Storage.save(data); }
+  function save() {
+    const ok = Storage.save(data);
+    if (!ok) {
+      alert("⚠️ La sauvegarde a échoué (stockage plein ou indisponible). Vos dernières modifications n'ont probablement PAS été enregistrées.\n\nExportez vos données immédiatement (bouton \"Exporter mes données (.zip)\" dans le menu de gauche) avant de continuer, puis libérez de la place si besoin.");
+    }
+    return ok;
+  }
   function euros(n) { return Documents.fmtEUR(n) + ' €'; }
   function byId(id) { return document.getElementById(id); }
+  function todayISO() {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
 
   function bienById(id) { return data.biens.find((b) => b.id === id); }
   function locataireById(id) { return data.locataires.find((l) => l.id === id); }
@@ -219,7 +232,9 @@
   }
 
   function escapeHTML(str) {
-    return String(str == null ? '' : str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return String(str == null ? '' : str)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
   // ---------- Biens ----------
@@ -343,13 +358,45 @@
       </tr>`;
     });
     tbody.querySelectorAll('[data-edit-loc]').forEach((btn) => btn.addEventListener('click', () => openLocataireModal(locataireById(btn.dataset.editLoc))));
-    tbody.querySelectorAll('[data-del-loc]').forEach((btn) => btn.addEventListener('click', () => {
-      const id = btn.dataset.delLoc;
-      if (confirm('Supprimer ce locataire ?')) {
-        data.locataires = data.locataires.filter((l) => l.id !== id);
-        save(); renderLocataires();
-      }
-    }));
+    tbody.querySelectorAll('[data-del-loc]').forEach((btn) => btn.addEventListener('click', () => deleteLocataireCascade(btn.dataset.delLoc)));
+  }
+
+  // Supprimer un locataire supprime aussi tout ce qui lui est rattache (sinon ces
+  // enregistrements deviennent invisibles mais restent en stockage indefiniment,
+  // avec leurs fichiers/photos orphelins dans IndexedDB).
+  async function deleteLocataireCascade(id) {
+    const loc = locataireById(id);
+    if (!loc) return;
+    const relatedDocuments = data.documents.filter((d) => d.locataireId === id);
+    const relatedBaux = data.baux.filter((b) => b.locataireId === id);
+    const relatedEtatsDesLieux = data.etatsDesLieux.filter((e) => e.locataireId === id);
+    const relatedDocsLoc = data.documentsLocataires.filter((d) => d.locataireId === id);
+    const relatedBailRedactions = data.bailRedactions.filter((r) => r.locataireId === id);
+    const relatedEdlRedactions = data.edlRedactions.filter((r) => r.locataireId === id);
+    const totalRelated = relatedDocuments.length + relatedBaux.length + relatedEtatsDesLieux.length
+      + relatedDocsLoc.length + relatedBailRedactions.length + relatedEdlRedactions.length;
+
+    const warning = totalRelated > 0
+      ? `Supprimer « ${loc.nom} » supprimera aussi définitivement ${totalRelated} élément(s) associé(s) (documents générés, baux, états des lieux, rédactions...) et leurs pièces jointes. Continuer ?`
+      : 'Supprimer ce locataire ?';
+    if (!confirm(warning)) return;
+
+    for (const b of relatedBaux) await deleteRecordFiles(b);
+    for (const e of relatedEtatsDesLieux) await deleteRecordFiles(e);
+    for (const d of relatedDocsLoc) await deleteRecordFiles(d);
+    for (const r of relatedEdlRedactions) await purgeEdlRedactionFiles(r);
+
+    data.documents = data.documents.filter((d) => d.locataireId !== id);
+    data.baux = data.baux.filter((b) => b.locataireId !== id);
+    data.etatsDesLieux = data.etatsDesLieux.filter((e) => e.locataireId !== id);
+    data.documentsLocataires = data.documentsLocataires.filter((d) => d.locataireId !== id);
+    data.bailRedactions = data.bailRedactions.filter((r) => r.locataireId !== id);
+    data.edlRedactions = data.edlRedactions.filter((r) => r.locataireId !== id);
+    data.locataires = data.locataires.filter((l) => l.id !== id);
+
+    save();
+    renderLocataires();
+    renderDashboard();
   }
 
   function openLocataireModal(existing) {
@@ -467,8 +514,12 @@
   }
 
   function downloadPdf(type, ctx) {
-    const doc = PdfBuilder.generate(type, ctx);
-    doc.save(PdfBuilder.filename(type, ctx));
+    // La signature est toujours reprise depuis "Ma SCI" au moment du telechargement
+    // (jamais stockee dans l'historique) pour ne pas dupliquer une image en base64
+    // dans chaque document sauvegarde.
+    const fullCtx = Object.assign({}, ctx, { signatureDataUrl: data.sci.signature || '' });
+    const doc = PdfBuilder.generate(type, fullCtx);
+    doc.save(PdfBuilder.filename(type, fullCtx));
   }
 
   // ---------- Parametres (Mon SCI) ----------
@@ -591,7 +642,7 @@
     byId('fields-libre').hidden = type !== 'libre';
     byId('field-periode').hidden = type === 'libre' || type === 'avenant';
     if (type === 'avenant') {
-      byId('avenant-date-effet').value = byId('avenant-date-effet').value || new Date().toISOString().slice(0, 10);
+      byId('avenant-date-effet').value = byId('avenant-date-effet').value || todayISO();
       renderAvenantChargesEditor(AVENANT_DEFAULT_LINES);
     }
     resetPreview();
@@ -701,9 +752,10 @@
       locataireNom: l.nom,
       locataireBlock,
       locationAdresse: bien.adresse,
+      periode,
       periodeLabel,
       ville: byId('doc-ville').value.trim() || data.sci.ville || '',
-      signatureDataUrl: data.sci.signature || '',
+      dateDuJour: Documents.todayFR(),
     };
 
     let montant = null;
@@ -765,6 +817,10 @@
     });
     save();
     renderDashboard();
+    // Un nouveau clic sans re-generer l'apercu creerait un doublon dans
+    // l'historique et fausserait les totaux du tableau de bord.
+    byId('btn-download-pdf').disabled = true;
+    lastGenerated = null;
   });
 
   // ---------- Charges locatives ----------
@@ -774,7 +830,7 @@
     byId('charges-subtitle').textContent = 'Suivi annuel et justificatifs par logement';
 
     populateChargeBienSelect();
-    byId('charge-date').value = new Date().toISOString().slice(0, 10);
+    byId('charge-date').value = todayISO();
     byId('charge-montant').value = '';
     byId('charge-libelle').value = '';
     byId('charge-fichier').value = '';
@@ -1054,13 +1110,13 @@
 
   function renderAnciensLocatairesView() {
     populateAncLocataireSelect();
-    byId('anc-bail-date').value = new Date().toISOString().slice(0, 10);
+    byId('anc-bail-date').value = todayISO();
     byId('anc-bail-libelle').value = '';
     byId('anc-bail-fichier').value = '';
-    byId('anc-edl-date').value = new Date().toISOString().slice(0, 10);
+    byId('anc-edl-date').value = todayISO();
     byId('anc-edl-libelle').value = '';
     byId('anc-edl-fichier').value = '';
-    byId('anc-doc-date').value = new Date().toISOString().slice(0, 10);
+    byId('anc-doc-date').value = todayISO();
     byId('anc-doc-libelle').value = '';
     byId('anc-doc-fichier').value = '';
     renderAncPanels();
@@ -1148,7 +1204,7 @@
     }
     data.baux.push(record);
     save();
-    byId('anc-bail-date').value = new Date().toISOString().slice(0, 10);
+    byId('anc-bail-date').value = todayISO();
     byId('anc-bail-libelle').value = '';
     byId('anc-bail-fichier').value = '';
     renderAncBailTable();
@@ -1232,7 +1288,7 @@
     }
     data.etatsDesLieux.push(record);
     save();
-    byId('anc-edl-date').value = new Date().toISOString().slice(0, 10);
+    byId('anc-edl-date').value = todayISO();
     byId('anc-edl-libelle').value = '';
     byId('anc-edl-fichier').value = '';
     renderAncEdlTable();
@@ -1301,7 +1357,7 @@
     }
     data.documentsLocataires.push(record);
     save();
-    byId('anc-doc-date').value = new Date().toISOString().slice(0, 10);
+    byId('anc-doc-date').value = todayISO();
     byId('anc-doc-libelle').value = '';
     byId('anc-doc-fichier').value = '';
     renderAncDocTable();
@@ -1310,7 +1366,7 @@
   // ---------- Bail ----------
   function renderBailView() {
     populateBailLocataireSelect();
-    byId('bail-date').value = new Date().toISOString().slice(0, 10);
+    byId('bail-date').value = todayISO();
     byId('bail-libelle').value = '';
     byId('bail-fichier').value = '';
     renderBailStatusGrid();
@@ -1413,7 +1469,7 @@
     }
     data.baux.push(record);
     save();
-    byId('bail-date').value = new Date().toISOString().slice(0, 10);
+    byId('bail-date').value = todayISO();
     byId('bail-libelle').value = '';
     byId('bail-fichier').value = '';
     renderBailStatusGrid();
@@ -1425,7 +1481,7 @@
 
   function renderEtatsLieuxView() {
     populateEdlLocataireSelect();
-    byId('edl-date').value = new Date().toISOString().slice(0, 10);
+    byId('edl-date').value = todayISO();
     byId('edl-libelle').value = '';
     byId('edl-fichier').value = '';
     renderEdlStatusGrid();
@@ -1550,7 +1606,7 @@
     }
     data.etatsDesLieux.push(record);
     save();
-    byId('edl-date').value = new Date().toISOString().slice(0, 10);
+    byId('edl-date').value = todayISO();
     byId('edl-libelle').value = '';
     byId('edl-fichier').value = '';
     renderEdlStatusGrid();
@@ -1563,7 +1619,7 @@
   function renderDocsAdminView(cat) {
     currentDocsAdminCategory = cat;
     byId('docsadmin-title').textContent = ADMIN_DOC_CATEGORIES[cat] || 'Documents administratifs';
-    byId('docsadmin-date').value = new Date().toISOString().slice(0, 10);
+    byId('docsadmin-date').value = todayISO();
     byId('docsadmin-libelle').value = '';
     byId('docsadmin-fichier').value = '';
     renderDocsAdminTable();
@@ -1635,7 +1691,7 @@
     }
     data.documentsAdmin.push(record);
     save();
-    byId('docsadmin-date').value = new Date().toISOString().slice(0, 10);
+    byId('docsadmin-date').value = todayISO();
     byId('docsadmin-libelle').value = '';
     byId('docsadmin-fichier').value = '';
     renderDocsAdminTable();
@@ -1645,7 +1701,7 @@
   function renderCreditsView(cat) {
     currentCreditCategory = cat;
     byId('credits-title').textContent = CREDIT_CATEGORIES[cat] || 'Crédits';
-    byId('credits-date').value = new Date().toISOString().slice(0, 10);
+    byId('credits-date').value = todayISO();
     byId('credits-libelle').value = '';
     byId('credits-fichier').value = '';
     renderCreditsTable();
@@ -1717,7 +1773,7 @@
     }
     data.credits.push(record);
     save();
-    byId('credits-date').value = new Date().toISOString().slice(0, 10);
+    byId('credits-date').value = todayISO();
     byId('credits-libelle').value = '';
     byId('credits-fichier').value = '';
     renderCreditsTable();
@@ -1727,7 +1783,7 @@
   function renderFacturesTravauxView(cat) {
     currentFacturesTravauxCategory = cat;
     byId('facturestravaux-title').textContent = FACTURES_TRAVAUX_CATEGORIES[cat] || 'Factures et travaux';
-    byId('facturestravaux-date').value = new Date().toISOString().slice(0, 10);
+    byId('facturestravaux-date').value = todayISO();
     byId('facturestravaux-libelle').value = '';
     byId('facturestravaux-fichier').value = '';
     renderFacturesTravauxTable();
@@ -1799,7 +1855,7 @@
     }
     data.facturesTravaux.push(record);
     save();
-    byId('facturestravaux-date').value = new Date().toISOString().slice(0, 10);
+    byId('facturestravaux-date').value = todayISO();
     byId('facturestravaux-libelle').value = '';
     byId('facturestravaux-fichier').value = '';
     renderFacturesTravauxTable();
@@ -1821,6 +1877,14 @@
     { key: 'DATE_DU_JOUR', label: 'Date du jour' },
   ];
   let currentRedactionDraftId = null;
+  // Avertit avant fermeture/rechargement de l'onglet si un brouillon (bail ou EDL)
+  // n'a pas ete enregistre depuis sa creation/derniere modification.
+  let hasUnsavedWork = false;
+  window.addEventListener('beforeunload', (e) => {
+    if (!hasUnsavedWork) return;
+    e.preventDefault();
+    e.returnValue = '';
+  });
 
   try { document.execCommand('defaultParagraphSeparator', false, 'p'); } catch (e) { /* ignore */ }
 
@@ -1918,6 +1982,7 @@
     byId('redaction-libelle').value = '';
     updateRedactionLabels();
     renderRedactionHistory();
+    hasUnsavedWork = false;
   });
 
   byId('btn-redaction-new').addEventListener('click', () => {
@@ -1930,7 +1995,10 @@
     byId('redaction-libelle').value = 'Bail initial';
     byId('redaction-editor').innerHTML = substitutePlaceholders(data.bailModele || '', locataireId);
     updateRedactionLabels();
+    hasUnsavedWork = true;
   });
+
+  byId('redaction-editor').addEventListener('input', () => { hasUnsavedWork = true; });
 
   function saveRedactionDraft() {
     const locataireId = byId('redaction-locataire').value;
@@ -1947,6 +2015,7 @@
         existing.html = html;
         existing.updatedAt = now.getTime();
         save();
+        hasUnsavedWork = false;
         return existing;
       }
     }
@@ -1954,6 +2023,7 @@
     data.bailRedactions.push(record);
     currentRedactionDraftId = record.id;
     save();
+    hasUnsavedWork = false;
     return record;
   }
 
@@ -2433,8 +2503,10 @@
       const thumb = document.createElement('div');
       thumb.className = 'edl-photo-thumb';
       thumb.innerHTML = '<img><button type="button" class="edl-photo-remove">&times;</button>';
-      thumb.querySelector('img').src = url;
-      thumb.querySelector('img').addEventListener('click', () => openStoredFile(f.fileId, f.fileName));
+      const img = thumb.querySelector('img');
+      img.addEventListener('load', () => URL.revokeObjectURL(url), { once: true });
+      img.src = url;
+      img.addEventListener('click', () => openStoredFile(f.fileId, f.fileName));
       thumb.querySelector('.edl-photo-remove').addEventListener('click', async () => {
         el.files = el.files.filter((x) => x.fileId !== f.fileId);
         try { await FilesDb.deleteFile(f.fileId); } catch (e) { console.error(e); }
@@ -2442,6 +2514,37 @@
       });
       container.appendChild(thumb);
     }
+  }
+
+  // Redimensionne une photo cote client avant stockage : une photo de telephone
+  // (plusieurs Mo) n'a pas besoin d'etre conservee en pleine resolution pour un
+  // etat des lieux, et ca allege fortement le PDF genere et le stockage IndexedDB.
+  // En cas d'echec (format non decodable, etc.), le fichier original est conserve.
+  function resizeImageFile(file, maxDim, quality) {
+    return new Promise((resolve) => {
+      if (!file.type || !file.type.startsWith('image/')) { resolve(file); return; }
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        let { width, height } = img;
+        if (width <= maxDim && height <= maxDim) { resolve(file); return; }
+        const scale = maxDim / Math.max(width, height);
+        width = Math.round(width * scale);
+        height = Math.round(height * scale);
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        canvas.toBlob((blob) => {
+          if (!blob) { resolve(file); return; }
+          resolve(new File([blob], file.name.replace(/\.\w+$/, '') + '.jpg', { type: 'image/jpeg' }));
+        }, 'image/jpeg', quality);
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+      img.src = url;
+    });
   }
 
   function edlVetusteLabel(v) {
@@ -2493,7 +2596,8 @@
       for (const file of files) {
         const fileId = Storage.uid();
         try {
-          await FilesDb.saveFile(fileId, file);
+          const optimized = await resizeImageFile(file, 1600, 0.82);
+          await FilesDb.saveFile(fileId, optimized);
           el.files.push({ fileId, fileName: file.name });
         } catch (e) {
           console.error(e);
@@ -2569,7 +2673,8 @@
       for (const file of files) {
         const fileId = Storage.uid();
         try {
-          await FilesDb.saveFile(fileId, file);
+          const optimized = await resizeImageFile(file, 1600, 0.82);
+          await FilesDb.saveFile(fileId, optimized);
           m.files.push({ fileId, fileName: file.name });
         } catch (e) {
           console.error(e);
@@ -2627,7 +2732,8 @@
       for (const file of files) {
         const fileId = Storage.uid();
         try {
-          await FilesDb.saveFile(fileId, file);
+          const optimized = await resizeImageFile(file, 1600, 0.82);
+          await FilesDb.saveFile(fileId, optimized);
           c.files.push({ fileId, fileName: file.name });
         } catch (e) {
           console.error(e);
@@ -2700,7 +2806,7 @@
   function renderEdlSignatureBailleur() {
     const box = byId('edl-signature-bailleur-box');
     box.innerHTML = data.sci.signature
-      ? `<img src="${data.sci.signature}" alt="Signature bailleur">`
+      ? `<img src="${escapeHTML(data.sci.signature)}" alt="Signature bailleur">`
       : '<span class="signature-empty">Aucune signature enregistrée (configurez-la dans "Ma SCI")</span>';
   }
 
@@ -2763,6 +2869,7 @@
 
   function clearCurrentEdlRedaction() {
     currentEdlRedaction = null;
+    hasUnsavedWork = false;
     byId('edl-redac-rooms').innerHTML = '';
     byId('edl-redac-meters').innerHTML = '';
     byId('edl-redac-meters-title').hidden = true;
@@ -2841,6 +2948,7 @@
     renderEdlSignatureBailleur();
     renderEdlSignatureLocataire();
     byId('edl-redac-actions').hidden = false;
+    hasUnsavedWork = true;
   });
 
   function captureCurrentEdlSignatures() {
@@ -2919,6 +3027,7 @@
       data.edlRedactions.push(currentEdlRedaction);
     }
     save();
+    hasUnsavedWork = false;
     return currentEdlRedaction;
   }
 
@@ -3060,14 +3169,7 @@
     byId('edl-redac-actions').hidden = false;
   }
 
-  async function deleteEdlRedaction(id) {
-    const r = data.edlRedactions.find((x) => x.id === id);
-    if (!r) return;
-    const archived = r.etatsDesLieuxId ? data.etatsDesLieux.find((e) => e.id === r.etatsDesLieuxId) : null;
-    const warning = archived
-      ? "Supprimer cet état des lieux rédigé, avec toutes ses photos et son PDF archivé dans « États des lieux » ?"
-      : 'Supprimer cet état des lieux rédigé, avec toutes ses photos ?';
-    if (!confirm(warning)) return;
+  async function purgeEdlRedactionFiles(r) {
     for (const room of r.pieces) {
       for (const el of room.elements) {
         for (const f of (el.files || [])) {
@@ -3085,12 +3187,24 @@
         try { await FilesDb.deleteFile(f.fileId); } catch (e) { console.error(e); }
       }
     }
+    const archived = r.etatsDesLieuxId ? data.etatsDesLieux.find((e) => e.id === r.etatsDesLieuxId) : null;
     if (archived) {
       for (const f of archived.files) {
         try { await FilesDb.deleteFile(f.fileId); } catch (e) { console.error(e); }
       }
       data.etatsDesLieux = data.etatsDesLieux.filter((e) => e.id !== archived.id);
     }
+  }
+
+  async function deleteEdlRedaction(id) {
+    const r = data.edlRedactions.find((x) => x.id === id);
+    if (!r) return;
+    const archived = r.etatsDesLieuxId ? data.etatsDesLieux.find((e) => e.id === r.etatsDesLieuxId) : null;
+    const warning = archived
+      ? "Supprimer cet état des lieux rédigé, avec toutes ses photos et son PDF archivé dans « États des lieux » ?"
+      : 'Supprimer cet état des lieux rédigé, avec toutes ses photos ?';
+    if (!confirm(warning)) return;
+    await purgeEdlRedactionFiles(r);
     data.edlRedactions = data.edlRedactions.filter((x) => x.id !== id);
     if (currentEdlRedaction && currentEdlRedaction.id === id) clearCurrentEdlRedaction();
     save();
@@ -3131,7 +3245,7 @@
         adresseDestinataire: '',
         loyer: 650,
         charges: 50,
-        dateEntree: new Date().toISOString().slice(0, 10),
+        dateEntree: todayISO(),
         lieuNaissance: '',
         dateNaissance: '',
         email1: 'test.locataire@exemple.fr',
@@ -3224,7 +3338,7 @@
     populateEdlApplyModeleSelect();
     loadEdlModeleIntoEditor(byId('edl-modele-select').value);
     populateEdlRedacLocataireSelect();
-    byId('edl-redac-date').value = new Date().toISOString().slice(0, 10);
+    byId('edl-redac-date').value = todayISO();
     byId('edl-redac-libelle').value = '';
     currentEdlRedacSens = 'entrant';
     document.querySelectorAll('#edl-redac-type-toggle .toggle-btn').forEach((b) => b.classList.toggle('active', b.dataset.edlRedacType === 'entrant'));
@@ -3329,7 +3443,7 @@
       const blob = await zip.generateAsync({ type: 'blob' });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
-      const stamp = new Date().toISOString().slice(0, 10);
+      const stamp = todayISO();
       a.href = url;
       a.download = `quittance-facile-sauvegarde-${stamp}.zip`;
       a.click();
@@ -3450,5 +3564,11 @@
     window.addEventListener('load', () => {
       navigator.serviceWorker.register('sw.js').catch(() => { /* file:// ou hors ligne : sans effet */ });
     });
+  }
+
+  // Reduit le risque que le navigateur (surtout mobile) libere le stockage local
+  // sous pression memoire, ce qui perdrait photos/PDF archives dans IndexedDB.
+  if (navigator.storage && navigator.storage.persist) {
+    navigator.storage.persist().catch(() => { /* sans effet si refuse */ });
   }
 })();

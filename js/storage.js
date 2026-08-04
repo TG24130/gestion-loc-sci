@@ -4,6 +4,7 @@ const Storage = (function () {
 
   function defaultData() {
     return {
+      schemaVersion: 1,
       sci: { nom: '', adresse: '', ville: '', email: '', tel: '', siret: '', signature: '', capitalSocial: '', gerant: '' },
       biens: [],
       locataires: [],
@@ -36,7 +37,13 @@ const Storage = (function () {
   }
 
   function save(data) {
-    localStorage.setItem(KEY, JSON.stringify(data));
+    try {
+      localStorage.setItem(KEY, JSON.stringify(data));
+      return true;
+    } catch (e) {
+      console.error('Échec de la sauvegarde locale (quota dépassé ou stockage indisponible)', e);
+      return false;
+    }
   }
 
   function uid() {
