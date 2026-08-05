@@ -58,23 +58,6 @@
     return !html || !html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim();
   }
 
-  // Hachage simple (non cryptographique) du code de verrouillage : évite de stocker
-  // le code en clair dans localStorage. Ce verrou est un frein à l'accès de passage,
-  // pas une vraie protection (le code source de l'appli est public).
-  function simpleHash(str) {
-    const input = 'qf-lock-2025:' + str;
-    let h1 = 0xdeadbeef;
-    let h2 = 0x41c6ce57;
-    for (let i = 0; i < input.length; i++) {
-      const ch = input.charCodeAt(i);
-      h1 = Math.imul(h1 ^ ch, 2654435761);
-      h2 = Math.imul(h2 ^ ch, 1597334677);
-    }
-    h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
-    h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
-    return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16);
-  }
-
   const DOC_LABELS = {
     quittance: 'Quittance de loyer',
     'recu-partiel': 'Reçu partiel',
@@ -592,52 +575,38 @@
     alert('Informations enregistrées.');
   });
 
-  // ---------- Verrouillage de l'application ----------
-  const LOCK_KEY = 'qf_lock_hash';
-
-  function renderLockStatus() {
-    const hasLock = !!localStorage.getItem(LOCK_KEY);
-    byId('lock-status').textContent = hasLock ? 'Verrouillage activé' : 'Aucun code défini';
-  }
-
-  byId('btn-lock-save').addEventListener('click', () => {
-    const code = byId('lock-new-code').value.trim();
-    const confirm2 = byId('lock-new-code-confirm').value.trim();
-    if (!code) { alert('Renseignez un code.'); return; }
-    if (code.length < 4) { alert('Le code doit contenir au moins 4 caractères.'); return; }
-    if (code !== confirm2) { alert('Les deux codes ne correspondent pas.'); return; }
-    localStorage.setItem(LOCK_KEY, simpleHash(code));
-    byId('lock-new-code').value = '';
-    byId('lock-new-code-confirm').value = '';
-    renderLockStatus();
-    alert('Code enregistré. Il sera demandé au prochain chargement de l\'application.');
-  });
-
-  byId('btn-lock-remove').addEventListener('click', () => {
-    if (!localStorage.getItem(LOCK_KEY)) { alert('Aucun verrouillage actif.'); return; }
-    if (!confirm('Désactiver le verrouillage de l\'application ?')) return;
-    localStorage.removeItem(LOCK_KEY);
-    renderLockStatus();
-    alert('Verrouillage désactivé.');
-  });
-
-  function attemptUnlock() {
-    const input = byId('lock-code-input');
-    const stored = localStorage.getItem(LOCK_KEY);
-    if (!stored || simpleHash(input.value) === stored) {
+  // ---------- Authentification (Firebase, voir js/firebaseAuth.js) ----------
+  window.addEventListener('qf-auth-change', (e) => {
+    const user = e.detail.user;
+    if (user) {
       document.documentElement.classList.remove('qf-locked');
-      byId('lock-error').hidden = true;
-      input.value = '';
+      byId('login-error').hidden = true;
+      byId('login-form').reset();
+      byId('account-email').textContent = user.email || '—';
     } else {
-      byId('lock-error').hidden = false;
-      input.value = '';
-      input.focus();
+      document.documentElement.classList.add('qf-locked');
+      byId('account-email').textContent = '—';
     }
-  }
+  });
 
-  byId('lock-unlock-btn').addEventListener('click', attemptUnlock);
-  byId('lock-code-input').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') attemptUnlock();
+  byId('login-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const email = byId('login-email').value.trim();
+    const password = byId('login-password').value;
+    const btn = byId('login-submit-btn');
+    byId('login-error').hidden = true;
+    btn.disabled = true;
+    window.QfAuth.signIn(email, password)
+      .catch(() => {
+        byId('login-error').hidden = false;
+      })
+      .finally(() => {
+        btn.disabled = false;
+      });
+  });
+
+  byId('btn-logout').addEventListener('click', () => {
+    window.QfAuth.signOut();
   });
 
   function renderSignaturePreview() {

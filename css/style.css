@@ -473,8 +473,6 @@ html.qf-locked .app{display:none;}
   border:1px solid var(--border);
   border-radius:8px;
   font-size:16px;
-  text-align:center;
-  letter-spacing:4px;
   margin-bottom:14px;
   background:var(--bg);
   color:var(--text);
