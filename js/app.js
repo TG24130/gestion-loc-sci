@@ -7,6 +7,11 @@
     if (!ok) {
       alert("⚠️ La sauvegarde a échoué (stockage plein ou indisponible). Vos dernières modifications n'ont probablement PAS été enregistrées.\n\nExportez vos données immédiatement (bouton \"Exporter mes données (.zip)\" dans le menu de gauche) avant de continuer, puis libérez de la place si besoin.");
     }
+    if (window.QfSync && window.QfAuth && window.QfAuth.currentUser) {
+      window.QfSync.save(window.QfAuth.currentUser.uid, data).catch((e) => {
+        console.error('Échec de la synchronisation cloud (les données restent enregistrées localement)', e);
+      });
+    }
     return ok;
   }
   function euros(n) { return Documents.fmtEUR(n) + ' €'; }
@@ -167,7 +172,11 @@
     });
   });
 
+  let currentView = 'dashboard';
+  function refreshCurrentView() { showView(currentView); }
+
   function showView(view) {
+    currentView = view;
     const isCharges = view.indexOf('charges-') === 0;
     const isDocsAdmin = view.indexOf('docsadmin-') === 0;
     const isCredits = view.indexOf('credits-') === 0;
@@ -576,6 +585,19 @@
   });
 
   // ---------- Authentification (Firebase, voir js/firebaseAuth.js) ----------
+  // Changement distant reçu depuis Firestore (autre appareil, ou premier
+  // démarrage sur ce compte). remoteData === null signifie qu'aucun document
+  // n'existe encore pour ce compte : on y pousse alors les données locales
+  // actuelles comme point de départ.
+  function onRemoteData(remoteData) {
+    if (remoteData === null) {
+      save();
+      return;
+    }
+    Object.assign(data, Storage.mergeWithDefaults(remoteData));
+    refreshCurrentView();
+  }
+
   window.addEventListener('qf-auth-change', (e) => {
     const user = e.detail.user;
     if (user) {
@@ -583,9 +605,11 @@
       byId('login-error').hidden = true;
       byId('login-form').reset();
       byId('account-email').textContent = user.email || '—';
+      if (window.QfSync) window.QfSync.start(user.uid, onRemoteData);
     } else {
       document.documentElement.classList.add('qf-locked');
       byId('account-email').textContent = '—';
+      if (window.QfSync) window.QfSync.stop();
     }
   });
 
