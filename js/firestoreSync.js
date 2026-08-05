@@ -1,14 +1,15 @@
 // Synchronisation des données métier avec Firestore. Un document Firestore
-// est limité à 1 Mo : avec des années de données réelles (signatures
+// est limité à 1 Mo : avec des données réelles accumulées (signatures
 // intégrées dans les baux rédigés, historique de documents...), un seul
 // document pour tout `data` dépasse cette limite, et même `documents` seul
-// (historique des quittances/reçus/etc., non borné dans le temps) peut la
-// dépasser à lui seul après plusieurs années d'usage réel. On découpe donc
-// en plusieurs documents par catégorie, et `documents` est en plus réparti
-// par année pour rester loin de la limite indéfiniment.
+// (historique des quittances/reçus/etc., non borné) peut la dépasser à lui
+// seul. On découpe donc en plusieurs documents par catégorie, et
+// `documents` est en plus réparti en lots de taille fixe (indépendant des
+// dates : un simple découpage par année ne suffit pas si l'activité est
+// concentrée sur peu d'années) pour rester loin de la limite indéfiniment.
 // Expose window.QfSync pour que js/app.js (script classique) puisse s'y
 // brancher.
-import { firebaseApp } from './firebaseInit.js?v=2026072136';
+import { firebaseApp } from './firebaseInit.js?v=2026072138';
 import {
   initializeFirestore,
   persistentLocalCache,
@@ -31,7 +32,8 @@ const db = initializeFirestore(firebaseApp, {
 // Le document "meta" regroupe les champs toujours petits. Chaque autre clé
 // de js/storage.js (defaultData), sauf "documents", a son propre document,
 // nommé comme la clé, contenant { [clé]: valeur }. "documents" est réparti
-// dans des documents "documents_<année>" (voir yearBucketsOf).
+// dans des documents "documents_0", "documents_1", ... par lots de
+// DOC_CHUNK_SIZE entrées (voir chunksOf).
 const META_KEYS = ['schemaVersion', 'sci', 'bailModele', 'syncMeta'];
 const ARRAY_KEYS = [
   'biens', 'locataires', 'charges', 'baux', 'etatsDesLieux',
@@ -39,21 +41,24 @@ const ARRAY_KEYS = [
   'facturesTravaux', 'bienGabarits', 'edlRedactions', 'edlModeles',
 ];
 const DOC_BUCKET_PREFIX = 'documents_';
+// Nombre d'entrées par lot : marge large (une entrée dépasse rarement
+// quelques centaines d'octets, donc 100 par lot reste très loin de 1 Mo).
+const DOC_CHUNK_SIZE = 100;
 
-function yearBucketsOf(items) {
-  const buckets = {};
-  (items || []).forEach((item) => {
-    const year = item.createdAt ? String(new Date(item.createdAt).getFullYear()) : 'sans-date';
-    (buckets[year] = buckets[year] || []).push(item);
-  });
-  return buckets;
+function chunksOf(items) {
+  const arr = items || [];
+  const chunks = [];
+  for (let i = 0; i < arr.length; i += DOC_CHUNK_SIZE) {
+    chunks.push(arr.slice(i, i + DOC_CHUNK_SIZE));
+  }
+  return chunks;
 }
 
 let unsubscribe = null;
-// Années de "documents" connues (vues côté serveur, ou écrites par ce
-// client) : permet de vider proprement une année devenue vide au lieu de
-// laisser une donnée périmée trainer dans un document qu'on ne réécrit plus.
-let knownDocumentYears = [];
+// Identifiants de lots "documents" connus (vus côté serveur, ou écrits par
+// ce client) : permet de vider proprement un lot devenu vide/obsolète au
+// lieu de laisser une donnée périmée trainer dans un document plus réécrit.
+let knownDocumentBucketIds = [];
 
 function dataCollectionFor(uid) {
   return collection(db, 'users', uid, 'data');
@@ -69,19 +74,20 @@ async function save(uid, data) {
     batch.set(doc(dataCollectionFor(uid), k), { [k]: data[k] || [] });
   });
 
-  const buckets = yearBucketsOf(data.documents);
-  const currentYears = Object.keys(buckets);
-  const allYears = Array.from(new Set([...knownDocumentYears, ...currentYears]));
-  allYears.forEach((year) => {
-    batch.set(doc(dataCollectionFor(uid), DOC_BUCKET_PREFIX + year), { documents: buckets[year] || [] });
+  const chunks = chunksOf(data.documents);
+  const currentIds = chunks.map((_, i) => DOC_BUCKET_PREFIX + i);
+  const allIds = Array.from(new Set([...knownDocumentBucketIds, ...currentIds]));
+  allIds.forEach((id) => {
+    const idx = currentIds.indexOf(id);
+    batch.set(doc(dataCollectionFor(uid), id), { documents: idx >= 0 ? chunks[idx] : [] });
   });
 
   await batch.commit();
-  knownDocumentYears = currentYears;
+  knownDocumentBucketIds = currentIds;
 }
 
 // Reconstruit l'objet `data` à plat à partir des documents individuels
-// { meta: {...}, biens: {biens:[...]}, ..., documents_2024: {documents:[...]}, ... }
+// { meta: {...}, biens: {biens:[...]}, ..., documents_0: {documents:[...]}, ... }
 function reconstruct(docsById) {
   const out = {};
   if (docsById.meta) Object.assign(out, docsById.meta);
@@ -116,9 +122,8 @@ function start(uid, onRemoteChange) {
       if (snap.metadata.fromCache || snap.metadata.hasPendingWrites) return;
       const docsById = {};
       snap.forEach((d) => { docsById[d.id] = d.data(); });
-      knownDocumentYears = Object.keys(docsById)
-        .filter((id) => id.indexOf(DOC_BUCKET_PREFIX) === 0)
-        .map((id) => id.slice(DOC_BUCKET_PREFIX.length));
+      knownDocumentBucketIds = Object.keys(docsById)
+        .filter((id) => id.indexOf(DOC_BUCKET_PREFIX) === 0);
       // On se base sur la présence du document "meta" (toujours écrit en
       // premier par save()), pas sur "la collection a au moins un document" :
       // un résidu d'un ancien schéma (ex: un vieux document "main") ne doit
@@ -131,14 +136,13 @@ function start(uid, onRemoteChange) {
     },
     (err) => {
       console.error('Erreur de synchronisation Firestore', err);
-      alert('⚠️ Erreur de synchronisation cloud (lecture) :\n\n' + (err && err.message ? err.message : err));
     }
   );
 }
 
 function stop() {
   if (unsubscribe) { unsubscribe(); unsubscribe = null; }
-  knownDocumentYears = [];
+  knownDocumentBucketIds = [];
 }
 
 window.QfSync = { save, start, stop };
