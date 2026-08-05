@@ -1,7 +1,7 @@
 // Synchronisation des données métier avec Firestore (un seul document par
 // compte, qui reprend exactement la structure de js/storage.js). Expose
 // window.QfSync pour que js/app.js (script classique) puisse s'y brancher.
-import { firebaseApp } from './firebaseInit.js';
+import { firebaseApp } from './firebaseInit.js?v=2026072130';
 import {
   initializeFirestore,
   persistentLocalCache,
