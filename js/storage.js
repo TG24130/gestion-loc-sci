@@ -21,6 +21,9 @@ const Storage = (function () {
       bienGabarits: [],
       edlRedactions: [],
       edlModeles: [],
+      // Horodatage de la dernière sauvegarde, pour repérer une modification
+      // faite depuis un autre appareil (stratégie "dernière écriture gagne").
+      syncMeta: { updatedAt: '', updatedBy: '' },
     };
   }
 
@@ -50,5 +53,11 @@ const Storage = (function () {
     return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
   }
 
-  return { load, save, uid };
+  // Complète un objet de données partiel (ex: reçu de Firestore, éventuellement
+  // d'un schéma plus ancien) avec les clés par défaut manquantes.
+  function mergeWithDefaults(partial) {
+    return Object.assign(defaultData(), partial || {});
+  }
+
+  return { load, save, uid, mergeWithDefaults };
 })();

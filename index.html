@@ -1,12 +1,12 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="fr" class="qf-locked">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Gestion Loc SCI</title>
 <meta name="description" content="Gestion locative de SCI : quittances, baux, charges, documents et crédits.">
 <meta name="theme-color" content="#2f6fed">
-<link rel="manifest" href="manifest.json?v=2026072124">
+<link rel="manifest" href="manifest.json?v=2026072130">
 <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -14,27 +14,24 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Gestion Loc SCI">
 <meta name="mobile-web-app-capable" content="yes">
-<link rel="stylesheet" href="css/style.css?v=2026072124">
+<link rel="stylesheet" href="css/style.css?v=2026072130">
+<script type="module" src="js/firebaseAuth.js?v=2026072130"></script>
+<script type="module" src="js/firestoreSync.js?v=2026072130"></script>
+<script type="module" src="js/firebaseStorageSync.js?v=2026072130"></script>
 </head>
 <body>
-<script>
-  (function () {
-    try {
-      if (localStorage.getItem('qf_lock_hash')) {
-        document.documentElement.classList.add('qf-locked');
-      }
-    } catch (e) { /* ignore */ }
-  })();
-</script>
 
 <div id="lock-overlay" class="lock-overlay">
   <div class="lock-box">
     <div class="brand-mark" style="margin:0 auto 16px;">GLS</div>
     <h2>Gestion Loc SCI</h2>
-    <p>Entrez le code d'accès</p>
-    <input type="password" id="lock-code-input" autocomplete="off" placeholder="Code d'accès">
-    <button class="btn btn-primary" id="lock-unlock-btn">Déverrouiller</button>
-    <p class="lock-error" id="lock-error" hidden>Code incorrect.</p>
+    <p>Connectez-vous pour continuer</p>
+    <form id="login-form">
+      <input type="email" id="login-email" autocomplete="username" placeholder="Adresse e-mail" required>
+      <input type="password" id="login-password" autocomplete="current-password" placeholder="Mot de passe" required>
+      <button type="submit" class="btn btn-primary" id="login-submit-btn">Se connecter</button>
+    </form>
+    <p class="lock-error" id="login-error" hidden>Adresse e-mail ou mot de passe incorrect.</p>
   </div>
 </div>
 
@@ -676,25 +673,25 @@
       </div>
 
       <div class="panel">
-        <h2>Verrouillage de l'application</h2>
+        <h2>Connexion</h2>
         <p class="charges-note" style="margin:0 0 14px;">
-          Statut : <strong id="lock-status">Aucun code défini</strong><br>
-          Ce code est propre à cet appareil/installation (il n'est pas inclus dans l'export .zip).
-          À noter : le code source de cette appli étant public, ce verrouillage dissuade un accès de passage
-          mais ne protège pas contre quelqu'un de techniquement averti.
+          Connecté en tant que <strong id="account-email">—</strong>.
         </p>
-        <div class="field">
-          <label>Nouveau code</label>
-          <input type="text" id="lock-new-code" placeholder="Ex : 4821">
-        </div>
-        <div class="field">
-          <label>Confirmer le nouveau code</label>
-          <input type="text" id="lock-new-code-confirm" placeholder="Retapez le code">
-        </div>
         <div class="preview-actions">
-          <button class="btn btn-primary" id="btn-lock-save">Enregistrer le code</button>
-          <button class="btn btn-danger" id="btn-lock-remove">Désactiver le verrouillage</button>
+          <button class="btn btn-danger" id="btn-logout">Se déconnecter</button>
         </div>
+      </div>
+
+      <div class="panel">
+        <h2>Synchronisation cloud</h2>
+        <p class="charges-note" style="margin:0 0 14px;">
+          Envoie vers le cloud les fichiers (photos, PDF) déjà présents sur cet appareil mais pas encore synchronisés — utile après une mise à jour de l'app, ou pour vérifier que tout est bien sauvegardé.
+        </p>
+        <div class="preview-actions">
+          <button class="btn" id="btn-migrate-files">Envoyer mes fichiers existants vers le cloud</button>
+        </div>
+        <p class="charges-note" id="migrate-files-status" style="margin:10px 0 0;"></p>
+        <p class="charges-note" id="sync-meta-status" style="margin:6px 0 0;"></p>
       </div>
     </section>
 
@@ -991,13 +988,13 @@
 
 <script src="js/vendor/jspdf.umd.min.js"></script>
 <script src="js/vendor/jszip.min.js"></script>
-<script src="js/numberToWords.js?v=2026072124"></script>
-<script src="js/storage.js?v=2026072124"></script>
-<script src="js/filesDb.js?v=2026072124"></script>
-<script src="js/documents.js?v=2026072124"></script>
-<script src="js/pdfBuilder.js?v=2026072124"></script>
-<script src="js/richTextPdf.js?v=2026072124"></script>
-<script src="js/edlPdf.js?v=2026072124"></script>
-<script src="js/app.js?v=2026072124"></script>
+<script src="js/numberToWords.js?v=2026072130"></script>
+<script src="js/storage.js?v=2026072130"></script>
+<script src="js/filesDb.js?v=2026072130"></script>
+<script src="js/documents.js?v=2026072130"></script>
+<script src="js/pdfBuilder.js?v=2026072130"></script>
+<script src="js/richTextPdf.js?v=2026072130"></script>
+<script src="js/edlPdf.js?v=2026072130"></script>
+<script src="js/app.js?v=2026072130"></script>
 </body>
 </html>

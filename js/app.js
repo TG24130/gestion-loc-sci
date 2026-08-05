@@ -2,10 +2,22 @@
   const data = Storage.load();
 
   // ---------- Utilities ----------
+  function deviceId() {
+    let id = localStorage.getItem('qf_device_id');
+    if (!id) { id = Storage.uid(); localStorage.setItem('qf_device_id', id); }
+    return id;
+  }
+
   function save() {
+    data.syncMeta = { updatedAt: new Date().toISOString(), updatedBy: deviceId() };
     const ok = Storage.save(data);
     if (!ok) {
       alert("⚠️ La sauvegarde a échoué (stockage plein ou indisponible). Vos dernières modifications n'ont probablement PAS été enregistrées.\n\nExportez vos données immédiatement (bouton \"Exporter mes données (.zip)\" dans le menu de gauche) avant de continuer, puis libérez de la place si besoin.");
+    }
+    if (window.QfSync && window.QfAuth && window.QfAuth.currentUser) {
+      window.QfSync.save(window.QfAuth.currentUser.uid, data).catch((e) => {
+        console.error('Échec de la synchronisation cloud (les données restent enregistrées localement)', e);
+      });
     }
     return ok;
   }
@@ -56,23 +68,6 @@
 
   function isHtmlEmpty(html) {
     return !html || !html.replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').trim();
-  }
-
-  // Hachage simple (non cryptographique) du code de verrouillage : évite de stocker
-  // le code en clair dans localStorage. Ce verrou est un frein à l'accès de passage,
-  // pas une vraie protection (le code source de l'appli est public).
-  function simpleHash(str) {
-    const input = 'qf-lock-2025:' + str;
-    let h1 = 0xdeadbeef;
-    let h2 = 0x41c6ce57;
-    for (let i = 0; i < input.length; i++) {
-      const ch = input.charCodeAt(i);
-      h1 = Math.imul(h1 ^ ch, 2654435761);
-      h2 = Math.imul(h2 ^ ch, 1597334677);
-    }
-    h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
-    h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
-    return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16);
   }
 
   const DOC_LABELS = {
@@ -184,7 +179,11 @@
     });
   });
 
+  let currentView = 'dashboard';
+  function refreshCurrentView() { showView(currentView); }
+
   function showView(view) {
+    currentView = view;
     const isCharges = view.indexOf('charges-') === 0;
     const isDocsAdmin = view.indexOf('docsadmin-') === 0;
     const isCredits = view.indexOf('credits-') === 0;
@@ -575,9 +574,17 @@
     byId('sci-email').value = data.sci.email || '';
     byId('sci-tel').value = data.sci.tel || '';
     renderSignaturePreview();
-    renderLockStatus();
-    byId('lock-new-code').value = '';
-    byId('lock-new-code-confirm').value = '';
+    updateSyncMetaStatus();
+  }
+
+  function updateSyncMetaStatus() {
+    const el = byId('sync-meta-status');
+    if (!el) return;
+    if (!data.syncMeta || !data.syncMeta.updatedAt) { el.textContent = ''; return; }
+    const d = new Date(data.syncMeta.updatedAt);
+    const when = isNaN(d) ? '' : d.toLocaleString('fr-FR');
+    const fromHere = data.syncMeta.updatedBy === deviceId();
+    el.textContent = when ? `Dernière modification : ${when}${fromHere ? '' : ' (depuis un autre appareil)'}.` : '';
   }
   byId('btn-save-sci').addEventListener('click', () => {
     data.sci.nom = byId('sci-nom').value.trim();
@@ -592,52 +599,60 @@
     alert('Informations enregistrées.');
   });
 
-  // ---------- Verrouillage de l'application ----------
-  const LOCK_KEY = 'qf_lock_hash';
-
-  function renderLockStatus() {
-    const hasLock = !!localStorage.getItem(LOCK_KEY);
-    byId('lock-status').textContent = hasLock ? 'Verrouillage activé' : 'Aucun code défini';
-  }
-
-  byId('btn-lock-save').addEventListener('click', () => {
-    const code = byId('lock-new-code').value.trim();
-    const confirm2 = byId('lock-new-code-confirm').value.trim();
-    if (!code) { alert('Renseignez un code.'); return; }
-    if (code.length < 4) { alert('Le code doit contenir au moins 4 caractères.'); return; }
-    if (code !== confirm2) { alert('Les deux codes ne correspondent pas.'); return; }
-    localStorage.setItem(LOCK_KEY, simpleHash(code));
-    byId('lock-new-code').value = '';
-    byId('lock-new-code-confirm').value = '';
-    renderLockStatus();
-    alert('Code enregistré. Il sera demandé au prochain chargement de l\'application.');
-  });
-
-  byId('btn-lock-remove').addEventListener('click', () => {
-    if (!localStorage.getItem(LOCK_KEY)) { alert('Aucun verrouillage actif.'); return; }
-    if (!confirm('Désactiver le verrouillage de l\'application ?')) return;
-    localStorage.removeItem(LOCK_KEY);
-    renderLockStatus();
-    alert('Verrouillage désactivé.');
-  });
-
-  function attemptUnlock() {
-    const input = byId('lock-code-input');
-    const stored = localStorage.getItem(LOCK_KEY);
-    if (!stored || simpleHash(input.value) === stored) {
-      document.documentElement.classList.remove('qf-locked');
-      byId('lock-error').hidden = true;
-      input.value = '';
-    } else {
-      byId('lock-error').hidden = false;
-      input.value = '';
-      input.focus();
+  // ---------- Authentification (Firebase, voir js/firebaseAuth.js) ----------
+  // Changement distant reçu depuis Firestore (autre appareil, ou premier
+  // démarrage sur ce compte). remoteData === null signifie qu'aucun document
+  // n'existe encore pour ce compte : on y pousse alors les données locales
+  // actuelles comme point de départ.
+  function onRemoteData(remoteData) {
+    if (remoteData === null) {
+      save();
+      return;
     }
+    Object.assign(data, Storage.mergeWithDefaults(remoteData));
+    refreshCurrentView();
   }
 
-  byId('lock-unlock-btn').addEventListener('click', attemptUnlock);
-  byId('lock-code-input').addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') attemptUnlock();
+  window.addEventListener('qf-auth-change', (e) => {
+    const user = e.detail.user;
+    if (user) {
+      document.documentElement.classList.remove('qf-locked');
+      byId('login-error').hidden = true;
+      byId('login-form').reset();
+      byId('account-email').textContent = user.email || '—';
+      if (window.QfSync) window.QfSync.start(user.uid, onRemoteData);
+      FilesDb.retryPendingUploads().catch((e) => console.error(e));
+    } else {
+      document.documentElement.classList.add('qf-locked');
+      byId('account-email').textContent = '—';
+      if (window.QfSync) window.QfSync.stop();
+    }
+  });
+
+  // Retente les fichiers dont l'envoi cloud avait échoué (hors-ligne ou
+  // erreur réseau) dès que le navigateur retrouve une connexion.
+  window.addEventListener('online', () => {
+    FilesDb.retryPendingUploads().catch((e) => console.error(e));
+  });
+
+  byId('login-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const email = byId('login-email').value.trim();
+    const password = byId('login-password').value;
+    const btn = byId('login-submit-btn');
+    byId('login-error').hidden = true;
+    btn.disabled = true;
+    window.QfAuth.signIn(email, password)
+      .catch(() => {
+        byId('login-error').hidden = false;
+      })
+      .finally(() => {
+        btn.disabled = false;
+      });
+  });
+
+  byId('btn-logout').addEventListener('click', () => {
+    window.QfAuth.signOut();
   });
 
   function renderSignaturePreview() {
@@ -3604,6 +3619,53 @@
       btn.textContent = originalText;
     }
   }
+
+  // ---------- Migration des fichiers existants vers le cloud (Phase 4 sync) ----------
+  // Reprend les mêmes conteneurs que l'export ZIP, mais se contente de
+  // collecter les fileId (pas de chemin/dossier nécessaire ici).
+  function collectAllFileIds() {
+    const ids = [];
+    const addFrom = (record) => filesOf(record).forEach((f) => { if (f.fileId) ids.push(f.fileId); });
+    data.charges.forEach(addFrom);
+    data.baux.forEach(addFrom);
+    data.etatsDesLieux.forEach(addFrom);
+    data.documentsAdmin.forEach(addFrom);
+    data.documentsLocataires.forEach(addFrom);
+    data.credits.forEach(addFrom);
+    data.facturesTravaux.forEach(addFrom);
+    data.edlRedactions.forEach((r) => {
+      r.pieces.forEach((room) => room.elements.forEach((el) => addFrom({ files: el.files || [] })));
+      (r.compteurs || []).forEach((m) => addFrom({ files: m.files || [] }));
+      (r.cles || []).forEach((c) => addFrom({ files: c.files || [] }));
+    });
+    return ids;
+  }
+
+  byId('btn-migrate-files').addEventListener('click', async () => {
+    const uid = window.QfAuth && window.QfAuth.currentUser ? window.QfAuth.currentUser.uid : null;
+    if (!uid || !window.QfFileSync) { alert('Vous devez être connecté pour synchroniser vos fichiers.'); return; }
+    const btn = byId('btn-migrate-files');
+    const status = byId('migrate-files-status');
+    const ids = collectAllFileIds();
+    btn.disabled = true;
+    let done = 0, ok = 0, missing = 0, failed = 0;
+    for (const fileId of ids) {
+      status.textContent = `Envoi en cours... (${done}/${ids.length})`;
+      try {
+        const blob = await FilesDb.getFile(fileId);
+        if (!blob) { missing++; } else {
+          await window.QfFileSync.upload(uid, fileId, blob);
+          ok++;
+        }
+      } catch (e) {
+        console.error('Échec de la migration du fichier', fileId, e);
+        failed++;
+      }
+      done++;
+    }
+    btn.disabled = false;
+    status.textContent = `Terminé : ${ok} fichier(s) envoyé(s)${missing ? `, ${missing} introuvable(s) localement` : ''}${failed ? `, ${failed} échec(s)` : ''} sur ${ids.length}.`;
+  });
 
   // ---------- Init ----------
   renderDashboard();
