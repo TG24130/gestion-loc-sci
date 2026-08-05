@@ -3598,6 +3598,53 @@
     }
   }
 
+  // ---------- Migration des fichiers existants vers le cloud (Phase 4 sync) ----------
+  // Reprend les mêmes conteneurs que l'export ZIP, mais se contente de
+  // collecter les fileId (pas de chemin/dossier nécessaire ici).
+  function collectAllFileIds() {
+    const ids = [];
+    const addFrom = (record) => filesOf(record).forEach((f) => { if (f.fileId) ids.push(f.fileId); });
+    data.charges.forEach(addFrom);
+    data.baux.forEach(addFrom);
+    data.etatsDesLieux.forEach(addFrom);
+    data.documentsAdmin.forEach(addFrom);
+    data.documentsLocataires.forEach(addFrom);
+    data.credits.forEach(addFrom);
+    data.facturesTravaux.forEach(addFrom);
+    data.edlRedactions.forEach((r) => {
+      r.pieces.forEach((room) => room.elements.forEach((el) => addFrom({ files: el.files || [] })));
+      (r.compteurs || []).forEach((m) => addFrom({ files: m.files || [] }));
+      (r.cles || []).forEach((c) => addFrom({ files: c.files || [] }));
+    });
+    return ids;
+  }
+
+  byId('btn-migrate-files').addEventListener('click', async () => {
+    const uid = window.QfAuth && window.QfAuth.currentUser ? window.QfAuth.currentUser.uid : null;
+    if (!uid || !window.QfFileSync) { alert('Vous devez être connecté pour synchroniser vos fichiers.'); return; }
+    const btn = byId('btn-migrate-files');
+    const status = byId('migrate-files-status');
+    const ids = collectAllFileIds();
+    btn.disabled = true;
+    let done = 0, ok = 0, missing = 0, failed = 0;
+    for (const fileId of ids) {
+      status.textContent = `Envoi en cours... (${done}/${ids.length})`;
+      try {
+        const blob = await FilesDb.getFile(fileId);
+        if (!blob) { missing++; } else {
+          await window.QfFileSync.upload(uid, fileId, blob);
+          ok++;
+        }
+      } catch (e) {
+        console.error('Échec de la migration du fichier', fileId, e);
+        failed++;
+      }
+      done++;
+    }
+    btn.disabled = false;
+    status.textContent = `Terminé : ${ok} fichier(s) envoyé(s)${missing ? `, ${missing} introuvable(s) localement` : ''}${failed ? `, ${failed} échec(s)` : ''} sur ${ids.length}.`;
+  });
+
   // ---------- Init ----------
   renderDashboard();
   renderGenererOptions();
