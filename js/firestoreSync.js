@@ -8,7 +8,7 @@
 // par année pour rester loin de la limite indéfiniment.
 // Expose window.QfSync pour que js/app.js (script classique) puisse s'y
 // brancher.
-import { firebaseApp } from './firebaseInit.js?v=2026072135';
+import { firebaseApp } from './firebaseInit.js?v=2026072136';
 import {
   initializeFirestore,
   persistentLocalCache,
@@ -131,6 +131,7 @@ function start(uid, onRemoteChange) {
     },
     (err) => {
       console.error('Erreur de synchronisation Firestore', err);
+      alert('⚠️ Erreur de synchronisation cloud (lecture) :\n\n' + (err && err.message ? err.message : err));
     }
   );
 }

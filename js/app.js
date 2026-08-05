@@ -17,6 +17,7 @@
     if (window.QfSync && window.QfAuth && window.QfAuth.currentUser) {
       window.QfSync.save(window.QfAuth.currentUser.uid, data).catch((e) => {
         console.error('Échec de la synchronisation cloud (les données restent enregistrées localement)', e);
+        alert('⚠️ Échec de la synchronisation cloud (vos données restent enregistrées sur cet appareil) :\n\n' + (e && e.message ? e.message : e));
       });
     }
     return ok;
