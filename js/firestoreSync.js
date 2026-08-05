@@ -6,7 +6,7 @@
 // limite même si une catégorie grossit plus que les autres.
 // Expose window.QfSync pour que js/app.js (script classique) puisse s'y
 // brancher.
-import { firebaseApp } from './firebaseInit.js?v=2026072132';
+import { firebaseApp } from './firebaseInit.js?v=2026072133';
 import {
   initializeFirestore,
   persistentLocalCache,
@@ -37,10 +37,6 @@ const ARRAY_KEYS = [
 ];
 
 let unsubscribe = null;
-// JSON des données reconstruites lors de la dernière écriture faite par CE
-// client, pour ignorer l'écho de ses propres écritures dans onSnapshot
-// (évite un rafraîchissement inutile de l'UI juste après un enregistrement).
-let lastWrittenJSON = null;
 
 function dataCollectionFor(uid) {
   return collection(db, 'users', uid, 'data');
@@ -49,10 +45,6 @@ function dataCollectionFor(uid) {
 async function save(uid, data) {
   const meta = {};
   META_KEYS.forEach((k) => { meta[k] = data[k]; });
-
-  const flat = { ...meta };
-  ARRAY_KEYS.forEach((k) => { flat[k] = data[k] || []; });
-  lastWrittenJSON = JSON.stringify(flat);
 
   const batch = writeBatch(db);
   batch.set(doc(dataCollectionFor(uid), 'meta'), meta);
@@ -74,30 +66,29 @@ function reconstruct(docsById) {
 }
 
 // onRemoteChange(remoteData) est appelé avec les données distantes à chaque
-// changement réel (hors écho de nos propres écritures), ou avec null si
-// aucun document n'existe encore pour ce compte (premier démarrage).
+// changement confirmé par le serveur, ou avec null si aucun document
+// n'existe encore pour ce compte (premier démarrage).
 function start(uid, onRemoteChange) {
   stop();
   unsubscribe = onSnapshot(
     dataCollectionFor(uid),
     (snap) => {
+      // On n'agit JAMAIS sur un instantané optimiste/local : ni sur le cache
+      // local (potentiellement périmé, ex: juste après une suppression
+      // manuelle côté serveur pas encore reflétée partout), ni sur nos
+      // propres écritures encore en attente de confirmation (hasPendingWrites
+      // — un batch de 15 documents peut n'être que partiellement reflété
+      // dans un instantané intermédiaire, ce qui donnerait une reconstruction
+      // incohérente si on l'appliquait). On attend une confirmation serveur
+      // complète avant de toucher aux données locales.
+      if (snap.metadata.fromCache || snap.metadata.hasPendingWrites) return;
       if (snap.empty) {
-        // Ne décide "aucune donnée cloud, j'envoie les miennes" que sur un
-        // état confirmé par le serveur, jamais sur un simple instantané du
-        // cache local (potentiellement périmé, ex: juste après une
-        // suppression manuelle côté serveur pas encore reflétée partout) —
-        // cette décision pousse (et donc écrase côté cloud) les données
-        // locales, elle ne doit pas se baser sur une donnée douteuse.
-        if (snap.metadata.fromCache) return;
         onRemoteChange(null);
         return;
       }
       const docsById = {};
       snap.forEach((d) => { docsById[d.id] = d.data(); });
-      const remoteData = reconstruct(docsById);
-      const json = JSON.stringify(remoteData);
-      if (json === lastWrittenJSON) return;
-      onRemoteChange(remoteData);
+      onRemoteChange(reconstruct(docsById));
     },
     (err) => {
       console.error('Erreur de synchronisation Firestore', err);
@@ -107,7 +98,6 @@ function start(uid, onRemoteChange) {
 
 function stop() {
   if (unsubscribe) { unsubscribe(); unsubscribe = null; }
-  lastWrittenJSON = null;
 }
 
 window.QfSync = { save, start, stop };
