@@ -18,7 +18,7 @@ const FilesDb = (function () {
     return dbPromise;
   }
 
-  async function saveFile(id, blob) {
+  async function putLocal(id, blob) {
     const db = await openDb();
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE, 'readwrite');
@@ -28,7 +28,7 @@ const FilesDb = (function () {
     });
   }
 
-  async function getFile(id) {
+  async function getLocal(id) {
     const db = await openDb();
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE, 'readonly');
@@ -38,7 +38,7 @@ const FilesDb = (function () {
     });
   }
 
-  async function deleteFile(id) {
+  async function deleteLocal(id) {
     const db = await openDb();
     return new Promise((resolve, reject) => {
       const tx = db.transaction(STORE, 'readwrite');
@@ -46,6 +46,48 @@ const FilesDb = (function () {
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
+  }
+
+  function currentUid() {
+    return window.QfAuth && window.QfAuth.currentUser ? window.QfAuth.currentUser.uid : null;
+  }
+
+  async function saveFile(id, blob) {
+    await putLocal(id, blob);
+    const uid = currentUid();
+    if (window.QfFileSync && uid) {
+      window.QfFileSync.upload(uid, id, blob).catch((e) => {
+        console.error("Échec de l'envoi du fichier vers le cloud (reste disponible localement)", e);
+      });
+    }
+  }
+
+  async function getFile(id) {
+    const local = await getLocal(id);
+    if (local) return local;
+    const uid = currentUid();
+    if (window.QfFileSync && uid) {
+      try {
+        const remote = await window.QfFileSync.download(uid, id);
+        if (remote) {
+          await putLocal(id, remote);
+          return remote;
+        }
+      } catch (e) {
+        console.error('Échec du téléchargement du fichier depuis le cloud', e);
+      }
+    }
+    return null;
+  }
+
+  async function deleteFile(id) {
+    await deleteLocal(id);
+    const uid = currentUid();
+    if (window.QfFileSync && uid) {
+      window.QfFileSync.remove(uid, id).catch((e) => {
+        console.error('Échec de la suppression du fichier dans le cloud', e);
+      });
+    }
   }
 
   return { saveFile, getFile, deleteFile };
