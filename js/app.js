@@ -211,6 +211,7 @@
 
   document.querySelectorAll('[data-action="quick-quittance"]').forEach((b) => b.addEventListener('click', () => showView('generer')));
   document.querySelectorAll('[data-action="quick-edl"]').forEach((b) => b.addEventListener('click', () => showView('edl-redaction')));
+  document.querySelectorAll('[data-action="quick-redaction-bail"]').forEach((b) => b.addEventListener('click', () => showView('redaction-bail')));
   document.querySelectorAll('[data-action="quick-locataire"], [data-action="new-locataire"]').forEach((b) => b.addEventListener('click', () => openLocataireModal()));
   document.querySelectorAll('[data-action="quick-bien"], [data-action="new-bien"]').forEach((b) => b.addEventListener('click', () => openBienModal()));
 
@@ -1916,6 +1917,7 @@
     { key: 'SCI_SIRET', label: 'SIRET' },
     { key: 'VILLE', label: 'Ville' },
     { key: 'DATE_DU_JOUR', label: 'Date du jour' },
+    { key: 'SIGNATURE_BAILLEUR', label: 'Signature du bailleur' },
   ];
   let currentRedactionDraftId = null;
   // Avertit avant fermeture/rechargement de l'onglet si un brouillon (bail ou EDL)
@@ -1996,6 +1998,12 @@
       const value = multilineKeys.indexOf(key) !== -1 ? nl2brLocal(raw[key]) : escapeHTML(raw[key]);
       result = result.split(`{{${key}}}`).join(value);
     });
+    // Contrairement aux autres jetons (texte simple), celui-ci s'insere comme
+    // une vraie image (reprise de la signature enregistree dans "Ma SCI").
+    const signatureHTML = data.sci.signature
+      ? `<img class="rte-editor-sig" src="${escapeHTML(data.sci.signature)}" alt="Signature du bailleur">`
+      : '<em>(Signature du bailleur non configurée — rubrique "Ma SCI")</em>';
+    result = result.split('{{SIGNATURE_BAILLEUR}}').join(signatureHTML);
     return result;
   }
 

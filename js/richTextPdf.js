@@ -3,6 +3,17 @@
 // gras/italique/souligné seulement si TOUT son texte l'est (les titres d'articles
 // rédigés en gras sur une ligne entière, cas le plus courant, sont donc préservés).
 const RichTextPdf = (function () {
+  // Une image marquee de cette classe (ex: la signature du bailleur inseree via
+  // un placeholder) est rendue comme une vraie image dans le PDF plutot que
+  // d'etre ignorée (le reste du moteur ne traite que du texte). Doit se trouver
+  // seule dans son paragraphe.
+  const SIGNATURE_IMG_CLASS = 'rte-editor-sig';
+
+  function findSignatureImg(el) {
+    if (el.tagName === 'IMG' && el.classList.contains(SIGNATURE_IMG_CLASS)) return el;
+    return el.querySelector ? el.querySelector(`img.${SIGNATURE_IMG_CLASS}`) : null;
+  }
+
   function extractBlocks(root) {
     const blocks = [];
     let pendingInline = [];
@@ -20,7 +31,12 @@ const RichTextPdf = (function () {
       const tag = node.nodeType === 1 ? node.tagName : null;
       if (tag === 'P' || tag === 'DIV') {
         flushPending();
-        blocks.push({ kind: 'p', el: node });
+        const img = findSignatureImg(node);
+        if (img) {
+          blocks.push({ kind: 'img', el: img });
+        } else {
+          blocks.push({ kind: 'p', el: node });
+        }
       } else if (tag === 'UL' || tag === 'OL') {
         flushPending();
         Array.from(node.children).forEach((li) => {
@@ -80,7 +96,7 @@ const RichTextPdf = (function () {
   }
 
   function isEmpty(root) {
-    return extractBlocks(root).every((b) => analyzeBlock(b.el).text === '');
+    return extractBlocks(root).every((b) => b.kind !== 'img' && analyzeBlock(b.el).text === '');
   }
 
   function render(doc, root, opts) {
@@ -114,6 +130,22 @@ const RichTextPdf = (function () {
     }
 
     blocks.forEach((block) => {
+      if (block.kind === 'img') {
+        const h = 55;
+        const naturalW = block.el.naturalWidth || 200;
+        const naturalH = block.el.naturalHeight || 80;
+        const w = Math.min(maxWidth, h * (naturalW / naturalH));
+        ensureSpace(h + 6, false, false);
+        try {
+          const format = /^data:image\/png/i.test(block.el.src) ? 'PNG' : 'JPEG';
+          doc.addImage(block.el.src, format, x, y, w, h, undefined, 'FAST');
+        } catch (e) {
+          console.error("Impossible d'insérer la signature dans le PDF", e);
+        }
+        y += h + 6;
+        return;
+      }
+
       const { text, bold, italic, underline } = analyzeBlock(block.el);
       setStyle(bold, italic);
 
