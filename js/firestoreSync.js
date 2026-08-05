@@ -6,7 +6,7 @@
 // limite même si une catégorie grossit plus que les autres.
 // Expose window.QfSync pour que js/app.js (script classique) puisse s'y
 // brancher.
-import { firebaseApp } from './firebaseInit.js?v=2026072133';
+import { firebaseApp } from './firebaseInit.js?v=2026072134';
 import {
   initializeFirestore,
   persistentLocalCache,
@@ -82,12 +82,16 @@ function start(uid, onRemoteChange) {
       // incohérente si on l'appliquait). On attend une confirmation serveur
       // complète avant de toucher aux données locales.
       if (snap.metadata.fromCache || snap.metadata.hasPendingWrites) return;
-      if (snap.empty) {
+      const docsById = {};
+      snap.forEach((d) => { docsById[d.id] = d.data(); });
+      // On se base sur la présence du document "meta" (toujours écrit en
+      // premier par save()), pas sur "la collection a au moins un document" :
+      // un résidu d'un ancien schéma (ex: un vieux document "main") ne doit
+      // pas faire croire que le compte a déjà de vraies données synchronisées.
+      if (!docsById.meta) {
         onRemoteChange(null);
         return;
       }
-      const docsById = {};
-      snap.forEach((d) => { docsById[d.id] = d.data(); });
       onRemoteChange(reconstruct(docsById));
     },
     (err) => {
