@@ -11,7 +11,7 @@
 // contenu) pour rester loin de la limite quelle que soit la donnée.
 // Expose window.QfSync pour que js/app.js (script classique) puisse s'y
 // brancher.
-import { firebaseApp } from './firebaseInit.js?v=2026072139';
+import { firebaseApp } from './firebaseInit.js?v=2026072140';
 import {
   initializeFirestore,
   persistentLocalCache,

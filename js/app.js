@@ -17,7 +17,10 @@
     if (window.QfSync && window.QfAuth && window.QfAuth.currentUser) {
       window.QfSync.save(window.QfAuth.currentUser.uid, data).catch((e) => {
         console.error('Échec de la synchronisation cloud (les données restent enregistrées localement)', e);
+        alert('DIAGNOSTIC — échec envoi cloud :\n\n' + (e && e.message ? e.message : e));
       });
+    } else {
+      alert('DIAGNOSTIC — sauvegarde locale seulement (QfSync:' + !!window.QfSync + ' QfAuth:' + !!(window.QfAuth) + ' user:' + !!(window.QfAuth && window.QfAuth.currentUser) + ')');
     }
     return ok;
   }
