@@ -2,7 +2,14 @@
   const data = Storage.load();
 
   // ---------- Utilities ----------
+  function deviceId() {
+    let id = localStorage.getItem('qf_device_id');
+    if (!id) { id = Storage.uid(); localStorage.setItem('qf_device_id', id); }
+    return id;
+  }
+
   function save() {
+    data.syncMeta = { updatedAt: new Date().toISOString(), updatedBy: deviceId() };
     const ok = Storage.save(data);
     if (!ok) {
       alert("⚠️ La sauvegarde a échoué (stockage plein ou indisponible). Vos dernières modifications n'ont probablement PAS été enregistrées.\n\nExportez vos données immédiatement (bouton \"Exporter mes données (.zip)\" dans le menu de gauche) avant de continuer, puis libérez de la place si besoin.");
@@ -567,9 +574,17 @@
     byId('sci-email').value = data.sci.email || '';
     byId('sci-tel').value = data.sci.tel || '';
     renderSignaturePreview();
-    renderLockStatus();
-    byId('lock-new-code').value = '';
-    byId('lock-new-code-confirm').value = '';
+    updateSyncMetaStatus();
+  }
+
+  function updateSyncMetaStatus() {
+    const el = byId('sync-meta-status');
+    if (!el) return;
+    if (!data.syncMeta || !data.syncMeta.updatedAt) { el.textContent = ''; return; }
+    const d = new Date(data.syncMeta.updatedAt);
+    const when = isNaN(d) ? '' : d.toLocaleString('fr-FR');
+    const fromHere = data.syncMeta.updatedBy === deviceId();
+    el.textContent = when ? `Dernière modification : ${when}${fromHere ? '' : ' (depuis un autre appareil)'}.` : '';
   }
   byId('btn-save-sci').addEventListener('click', () => {
     data.sci.nom = byId('sci-nom').value.trim();
@@ -606,11 +621,18 @@
       byId('login-form').reset();
       byId('account-email').textContent = user.email || '—';
       if (window.QfSync) window.QfSync.start(user.uid, onRemoteData);
+      FilesDb.retryPendingUploads().catch((e) => console.error(e));
     } else {
       document.documentElement.classList.add('qf-locked');
       byId('account-email').textContent = '—';
       if (window.QfSync) window.QfSync.stop();
     }
+  });
+
+  // Retente les fichiers dont l'envoi cloud avait échoué (hors-ligne ou
+  // erreur réseau) dès que le navigateur retrouve une connexion.
+  window.addEventListener('online', () => {
+    FilesDb.retryPendingUploads().catch((e) => console.error(e));
   });
 
   byId('login-form').addEventListener('submit', (e) => {

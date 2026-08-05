@@ -21,6 +21,9 @@ const Storage = (function () {
       bienGabarits: [],
       edlRedactions: [],
       edlModeles: [],
+      // Horodatage de la dernière sauvegarde, pour repérer une modification
+      // faite depuis un autre appareil (stratégie "dernière écriture gagne").
+      syncMeta: { updatedAt: '', updatedBy: '' },
     };
   }
 

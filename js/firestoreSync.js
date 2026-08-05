@@ -3,13 +3,22 @@
 // window.QfSync pour que js/app.js (script classique) puisse s'y brancher.
 import { firebaseApp } from './firebaseInit.js';
 import {
-  getFirestore,
+  initializeFirestore,
+  persistentLocalCache,
+  persistentSingleTabManager,
   doc,
   setDoc,
   onSnapshot,
 } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
 
-const db = getFirestore(firebaseApp);
+// Cache local persistant (IndexedDB) : les écritures faites hors-ligne sont
+// mises en file d'attente automatiquement par le SDK et envoyées dès que la
+// connexion revient (usage terrain visé par ce projet — ex: état des lieux
+// rédigé dans un logement mal couvert). Un seul onglet à la fois gère ce
+// cache (l'app n'est normalement ouverte que sur un appareil à la fois).
+const db = initializeFirestore(firebaseApp, {
+  localCache: persistentLocalCache({ tabManager: persistentSingleTabManager({}) }),
+});
 
 let unsubscribe = null;
 // JSON de la dernière écriture faite par CE client, pour ignorer l'écho de
