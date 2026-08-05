@@ -4,12 +4,14 @@
 // document pour tout `data` dépasse cette limite, et même `documents` seul
 // (historique des quittances/reçus/etc., non borné) peut la dépasser à lui
 // seul. On découpe donc en plusieurs documents par catégorie, et
-// `documents` est en plus réparti en lots de taille fixe (indépendant des
-// dates : un simple découpage par année ne suffit pas si l'activité est
-// concentrée sur peu d'années) pour rester loin de la limite indéfiniment.
+// `documents` est en plus réparti en lots dont la taille RÉELLE en octets
+// est bornée (ni un découpage par année, ni un simple découpage par nombre
+// d'entrées ne suffisent : l'activité peut être concentrée sur une seule
+// année, et une entrée peut peser beaucoup plus qu'une autre selon son
+// contenu) pour rester loin de la limite quelle que soit la donnée.
 // Expose window.QfSync pour que js/app.js (script classique) puisse s'y
 // brancher.
-import { firebaseApp } from './firebaseInit.js?v=2026072138';
+import { firebaseApp } from './firebaseInit.js?v=2026072139';
 import {
   initializeFirestore,
   persistentLocalCache,
@@ -32,8 +34,8 @@ const db = initializeFirestore(firebaseApp, {
 // Le document "meta" regroupe les champs toujours petits. Chaque autre clé
 // de js/storage.js (defaultData), sauf "documents", a son propre document,
 // nommé comme la clé, contenant { [clé]: valeur }. "documents" est réparti
-// dans des documents "documents_0", "documents_1", ... par lots de
-// DOC_CHUNK_SIZE entrées (voir chunksOf).
+// dans des documents "documents_0", "documents_1", ... par lots dont la
+// taille en octets est bornée (voir chunksOf).
 const META_KEYS = ['schemaVersion', 'sci', 'bailModele', 'syncMeta'];
 const ARRAY_KEYS = [
   'biens', 'locataires', 'charges', 'baux', 'etatsDesLieux',
@@ -41,16 +43,29 @@ const ARRAY_KEYS = [
   'facturesTravaux', 'bienGabarits', 'edlRedactions', 'edlModeles',
 ];
 const DOC_BUCKET_PREFIX = 'documents_';
-// Nombre d'entrées par lot : marge large (une entrée dépasse rarement
-// quelques centaines d'octets, donc 100 par lot reste très loin de 1 Mo).
-const DOC_CHUNK_SIZE = 100;
+// Découpage par taille réelle (pas par nombre d'entrées, ni par date) : la
+// taille d'une entrée peut varier fortement (le champ `ctx` embarque le
+// contexte complet du document généré), donc seul un budget en octets
+// garantit de rester sous la limite Firestore de 1 Mo, quelle que soit la
+// répartition. Marge large sous 1 048 576 (encodage Firestore + wrapper).
+const MAX_CHUNK_BYTES = 500000;
 
 function chunksOf(items) {
   const arr = items || [];
   const chunks = [];
-  for (let i = 0; i < arr.length; i += DOC_CHUNK_SIZE) {
-    chunks.push(arr.slice(i, i + DOC_CHUNK_SIZE));
-  }
+  let current = [];
+  let currentBytes = 0;
+  arr.forEach((item) => {
+    const itemBytes = JSON.stringify(item).length;
+    if (current.length > 0 && currentBytes + itemBytes > MAX_CHUNK_BYTES) {
+      chunks.push(current);
+      current = [];
+      currentBytes = 0;
+    }
+    current.push(item);
+    currentBytes += itemBytes;
+  });
+  if (current.length > 0) chunks.push(current);
   return chunks;
 }
 
