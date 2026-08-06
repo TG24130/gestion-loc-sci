@@ -50,7 +50,11 @@ function loadSyncModule(server, owner) {
   const file = path.join(__dirname, '..', 'js', 'firestoreSync.js');
   let src = fs.readFileSync(file, 'utf8');
   // Retire les imports ES (CDN Firebase) : ils sont remplacés par des stubs.
-  src = src.replace(/^import[\s\S]*?firebase-firestore\.js';\n/m, '');
+  // (\r? : le dépôt est en CRLF sous Windows.)
+  src = src.replace(/^import[\s\S]*?firebase-firestore\.js';\r?\n/m, '');
+  if (/^import/m.test(src)) {
+    throw new Error('Les imports ES n\'ont pas pu être retirés — le harnais de test est désynchronisé du module.');
+  }
 
   const sandbox = {
     console,

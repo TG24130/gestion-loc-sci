@@ -604,9 +604,26 @@
   // démarrage sur ce compte). remoteData === null signifie qu'aucun document
   // n'existe encore pour ce compte : on y pousse alors les données locales
   // actuelles comme point de départ.
+  // L'appareil contient-il de vraies données métier ? Sert de garde-fou avant
+  // de publier quoi que ce soit vers le cloud.
+  function hasLocalContent() {
+    const lists = ['biens', 'locataires', 'documents', 'charges', 'baux', 'etatsDesLieux',
+      'documentsAdmin', 'documentsLocataires', 'credits', 'bailRedactions',
+      'facturesTravaux', 'bienGabarits', 'edlRedactions', 'edlModeles'];
+    if (lists.some((k) => Array.isArray(data[k]) && data[k].length > 0)) return true;
+    return !!(data.sci && (data.sci.nom || data.sci.siret));
+  }
+
   function onRemoteData(remoteData) {
     if (remoteData === null) {
-      save();
+      // Le cloud n'a pas (encore) de données exploitables. On n'y publie la
+      // copie locale QUE si elle contient réellement quelque chose : un
+      // appareil vide (navigation privée, nouveau profil, cache navigateur
+      // effacé, nouvelle installation) ne doit JAMAIS pouvoir remplacer les
+      // données du cloud par du vide — ce vide redescendrait ensuite sur les
+      // autres appareils.
+      if (hasLocalContent()) save();
+      else console.warn('Aucune donnée locale : rien n\'est publié vers le cloud (protection).');
       return;
     }
     Object.assign(data, Storage.mergeWithDefaults(remoteData));
