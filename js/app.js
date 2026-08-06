@@ -1,6 +1,25 @@
 (function () {
   const data = Storage.load();
 
+  // D'anciennes versions recopiaient la signature de la SCI (image base64 de
+  // plusieurs centaines de Ko) dans CHAQUE état des lieux et dans CHAQUE
+  // document généré. Cumulé sur des années, cela saturait le stockage local du
+  // navigateur — plafonné à ~5 Mo sur iOS, d'où l'échec d'enregistrement sur le
+  // téléphone. La signature de référence vit dans "Ma SCI" et est réinjectée au
+  // moment de générer le PDF : ces copies ne servent donc à rien.
+  // Renvoie true si quelque chose a été allégé.
+  function purgeSignaturesDupliquees(d) {
+    let changed = false;
+    (d.edlRedactions || []).forEach((r) => {
+      if (r && 'signatureBailleur' in r) { delete r.signatureBailleur; changed = true; }
+    });
+    (d.documents || []).forEach((doc) => {
+      if (doc && doc.ctx && 'signatureDataUrl' in doc.ctx) { delete doc.ctx.signatureDataUrl; changed = true; }
+    });
+    return changed;
+  }
+  if (purgeSignaturesDupliquees(data)) Storage.save(data);
+
   // ---------- Utilities ----------
   function deviceId() {
     let id = localStorage.getItem('qf_device_id');
@@ -627,6 +646,11 @@
       return;
     }
     Object.assign(data, Storage.mergeWithDefaults(remoteData));
+    // Les données venues du cloud peuvent encore contenir les anciennes copies
+    // de signature : on les allège ici aussi, sinon un appareil déjà nettoyé
+    // les récupérerait à chaque synchronisation. Si on a allégé quelque chose,
+    // save() renvoie la version épurée vers le cloud pour les autres appareils.
+    if (purgeSignaturesDupliquees(data)) { save(); refreshCurrentView(); return; }
     // Un changement venu du cloud doit AUSSI être écrit dans le stockage local :
     // sinon un simple rechargement de page relit l'ancienne copie locale et la
     // modification faite depuis l'autre appareil disparaît de l'écran.
@@ -3024,7 +3048,6 @@
         nombreEntree: entrant ? (c.nombre === '' || c.nombre == null ? '' : c.nombre) : undefined,
         vetusteEntree: entrant ? (c.vetuste || '') : undefined,
       })),
-      signatureBailleur: '',
       signatureLocataire: '',
     };
     renderEdlRedacRooms();
@@ -3043,7 +3066,12 @@
     if (!edlSigCanvas.hidden && edlSigHasStroke) {
       currentEdlRedaction.signatureLocataire = edlSigCanvas.toDataURL('image/png');
     }
-    currentEdlRedaction.signatureBailleur = data.sci.signature || '';
+    // La signature du bailleur n'est PAS recopiée dans l'état des lieux : elle
+    // est reprise depuis "Ma SCI" au moment de générer le PDF (même principe
+    // que downloadPdf pour les quittances). La dupliquer ajoutait une image
+    // base64 de plusieurs centaines de Ko à CHAQUE état des lieux, ce qui
+    // saturait le stockage local du téléphone (plafonné à 5 Mo sur iOS).
+    delete currentEdlRedaction.signatureBailleur;
   }
 
   function buildEdlPdfContext(r) {
@@ -3059,7 +3087,8 @@
       pieces: r.pieces,
       compteurs: r.compteurs,
       cles: r.cles,
-      signatureBailleur: r.signatureBailleur,
+      // Toujours reprise depuis "Ma SCI", jamais stockée dans la fiche.
+      signatureBailleur: data.sci.signature || '',
       signatureLocataire: r.signatureLocataire,
       sciNom: data.sci.nom || '',
       sciAdresse: data.sci.adresse || '',
