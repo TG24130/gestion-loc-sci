@@ -2767,6 +2767,7 @@
   function renderEdlRedacRooms() {
     const container = byId('edl-redac-rooms');
     container.innerHTML = '';
+    byId('edl-redac-rooms-title').hidden = !currentEdlRedaction;
     if (!currentEdlRedaction) return;
     currentEdlRedaction.pieces.forEach((room) => {
       const roomEl = document.createElement('div');
@@ -2844,9 +2845,15 @@
   function renderEdlRedacMeters() {
     const container = byId('edl-redac-meters');
     container.innerHTML = '';
-    const hasMeters = !!(currentEdlRedaction && currentEdlRedaction.compteurs && currentEdlRedaction.compteurs.length > 0);
-    byId('edl-redac-meters-title').hidden = !hasMeters;
-    if (!hasMeters) return;
+    // Tant qu'une rédaction est en cours, la section reste TOUJOURS visible :
+    // la masquer quand le bien n'a pas de compteur configuré donnait
+    // l'impression que la saisie des index n'existait pas dans l'application.
+    byId('edl-redac-meters-title').hidden = !currentEdlRedaction;
+    if (!currentEdlRedaction) return;
+    if (!currentEdlRedaction.compteurs || currentEdlRedaction.compteurs.length === 0) {
+      container.innerHTML = '<p class="charges-note">Aucun compteur n\'est configuré pour ce bien. Ajoutez-les au panneau <strong>3. Compteurs du bien</strong> ci-dessus (nom et numéro), enregistrez, puis recréez cet état des lieux : les champs d\'index et de photos apparaîtront ici.</p>';
+      return;
+    }
     currentEdlRedaction.compteurs.forEach((m) => container.appendChild(createEdlRedacMeter(m)));
   }
 
@@ -2903,9 +2910,13 @@
   function renderEdlRedacCles() {
     const container = byId('edl-redac-cles');
     container.innerHTML = '';
-    const hasCles = !!(currentEdlRedaction && currentEdlRedaction.cles && currentEdlRedaction.cles.length > 0);
-    byId('edl-redac-cles-title').hidden = !hasCles;
-    if (!hasCles) return;
+    // Même principe que pour les compteurs : la section reste visible.
+    byId('edl-redac-cles-title').hidden = !currentEdlRedaction;
+    if (!currentEdlRedaction) return;
+    if (!currentEdlRedaction.cles || currentEdlRedaction.cles.length === 0) {
+      container.innerHTML = '<p class="charges-note">Aucune clé ni badge n\'est configuré pour ce bien. Ajoutez-les au panneau <strong>Clés et badges du bien</strong> ci-dessus, enregistrez, puis recréez cet état des lieux.</p>';
+      return;
+    }
     currentEdlRedaction.cles.forEach((c) => container.appendChild(createEdlRedacCle(c)));
   }
 
@@ -3025,6 +3036,7 @@
     currentEdlRedaction = null;
     hasUnsavedWork = false;
     byId('edl-redac-rooms').innerHTML = '';
+    byId('edl-redac-rooms-title').hidden = true;
     byId('edl-redac-meters').innerHTML = '';
     byId('edl-redac-meters-title').hidden = true;
     byId('edl-redac-cles').innerHTML = '';
