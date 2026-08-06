@@ -1,0 +1,52 @@
+# Déploiement du site sur GitHub Pages.
+#
+# Remplace le workflow automatique "pages-build-deployment" (déploiement
+# depuis une branche), dont l'étape "deploy" échouait systématiquement en
+# "Timeout reached, aborting!" le 06/08/2026, alors que la construction
+# réussissait en 21 s. Ce pipeline-ci utilise les actions officielles
+# actions/deploy-pages, indépendantes de celui qui restait bloqué.
+#
+# Le site est un site statique servi depuis la racine du dépôt : il n'y a
+# donc rien à construire, on publie le dépôt tel quel.
+
+name: Déploiement GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  # Permet de relancer un déploiement à la main depuis l'onglet Actions,
+  # sans avoir à créer un commit vide.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Un seul déploiement à la fois, mais SANS annuler celui en cours : c'est
+# l'annulation en chaîne qui avait produit les "Deployment cancelled".
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Récupération du dépôt
+        uses: actions/checkout@v4
+
+      - name: Configuration de Pages
+        uses: actions/configure-pages@v5
+
+      - name: Préparation de l'archive du site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+
+      - name: Déploiement
+        id: deployment
+        uses: actions/deploy-pages@v4
