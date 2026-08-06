@@ -17,7 +17,7 @@
 // pas touché, et aucune fiche seule n'approche la limite de 1 Mo.
 //
 // Expose window.QfSync pour que js/app.js (script classique) puisse s'y brancher.
-import { firebaseApp } from './firebaseInit.js?v=2026080602';
+import { firebaseApp } from './firebaseInit.js?v=2026080603';
 import {
   initializeFirestore,
   persistentLocalCache,
@@ -301,6 +301,20 @@ window.QfSync = {
   },
   start,
   stop,
+  // État interne, consultable depuis la console du navigateur pour
+  // diagnostiquer une synchronisation qui ne démarre pas :
+  //   QfSync._state()
+  // serveurRepondu=false signifie qu'aucun instantané confirmé par le serveur
+  // n'est jamais arrivé (connexion bloquée/hors-ligne), donc rien n'est publié.
+  _state() {
+    return {
+      ecouteActive: !!unsubscribe,
+      serveurRepondu: shadowFromServer,
+      documentsCotéServeur: shadow.size,
+      donneesTransmisesALApp: hasEmitted,
+      sauvegardeEnAttente: !!pendingSave,
+    };
+  },
   // Exposé pour les tests automatisés (voir tests/syncLogic.test.js).
   _internals: { buildDesired, rebuild, sigOf, recordKey, safeKey },
 };
