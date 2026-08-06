@@ -1,17 +1,23 @@
-// Synchronisation des données métier avec Firestore. Un document Firestore
-// est limité à 1 Mo : avec des données réelles accumulées (signatures
-// intégrées dans les baux rédigés, historique de documents...), un seul
-// document pour tout `data` dépasse cette limite, et même `documents` seul
-// (historique des quittances/reçus/etc., non borné) peut la dépasser à lui
-// seul. On découpe donc en plusieurs documents par catégorie, et
-// `documents` est en plus réparti en lots dont la taille RÉELLE en octets
-// est bornée (ni un découpage par année, ni un simple découpage par nombre
-// d'entrées ne suffisent : l'activité peut être concentrée sur une seule
-// année, et une entrée peut peser beaucoup plus qu'une autre selon son
-// contenu) pour rester loin de la limite quelle que soit la donnée.
-// Expose window.QfSync pour que js/app.js (script classique) puisse s'y
-// brancher.
-import { firebaseApp } from './firebaseInit.js?v=2026072140';
+// Synchronisation des données métier avec Firestore.
+//
+// Modèle : UNE FICHE = UN DOCUMENT FIRESTORE.
+//   users/{uid}/data/meta              -> champs simples (sci, bailModele...)
+//   users/{uid}/data/rec-<cat>-<clé>   -> une fiche (un bien, une quittance...)
+//
+// Ce découpage remplace l'ancien modèle "un gros document par catégorie", qui
+// posait deux problèmes graves constatés en production :
+//   1. la limite Firestore de 1 Mo par document était dépassée dès que
+//      l'historique réel grossissait (échec silencieux de toute la synchro) ;
+//   2. chaque appareil réécrivait la totalité d'une catégorie à partir de sa
+//      copie locale, donc un appareil qui n'avait pas encore reçu la fiche
+//      créée sur l'autre appareil l'effaçait du cloud.
+//
+// Ici, un appareil n'écrit QUE les fiches qu'il a réellement modifiées (diff
+// avec le dernier état serveur connu) : il ne peut plus effacer ce qu'il n'a
+// pas touché, et aucune fiche seule n'approche la limite de 1 Mo.
+//
+// Expose window.QfSync pour que js/app.js (script classique) puisse s'y brancher.
+import { firebaseApp } from './firebaseInit.js?v=2026080601';
 import {
   initializeFirestore,
   persistentLocalCache,
@@ -24,130 +30,249 @@ import {
 
 // Cache local persistant (IndexedDB) : les écritures faites hors-ligne sont
 // mises en file d'attente automatiquement par le SDK et envoyées dès que la
-// connexion revient (usage terrain visé par ce projet — ex: état des lieux
-// rédigé dans un logement mal couvert). Un seul onglet à la fois gère ce
-// cache (l'app n'est normalement ouverte que sur un appareil à la fois).
+// connexion revient (usage terrain : état des lieux rédigé sans réseau).
 const db = initializeFirestore(firebaseApp, {
   localCache: persistentLocalCache({ tabManager: persistentSingleTabManager({}) }),
 });
 
-// Le document "meta" regroupe les champs toujours petits. Chaque autre clé
-// de js/storage.js (defaultData), sauf "documents", a son propre document,
-// nommé comme la clé, contenant { [clé]: valeur }. "documents" est réparti
-// dans des documents "documents_0", "documents_1", ... par lots dont la
-// taille en octets est bornée (voir chunksOf).
+// Champs simples, regroupés dans l'unique document "meta" (toujours petits).
 const META_KEYS = ['schemaVersion', 'sci', 'bailModele', 'syncMeta'];
-const ARRAY_KEYS = [
-  'biens', 'locataires', 'charges', 'baux', 'etatsDesLieux',
+// Tableaux de fiches, éclatés en un document Firestore par fiche.
+const RECORD_KEYS = [
+  'biens', 'locataires', 'documents', 'charges', 'baux', 'etatsDesLieux',
   'documentsAdmin', 'documentsLocataires', 'credits', 'bailRedactions',
   'facturesTravaux', 'bienGabarits', 'edlRedactions', 'edlModeles',
 ];
-const DOC_BUCKET_PREFIX = 'documents_';
-// Découpage par taille réelle (pas par nombre d'entrées, ni par date) : la
-// taille d'une entrée peut varier fortement (le champ `ctx` embarque le
-// contexte complet du document généré), donc seul un budget en octets
-// garantit de rester sous la limite Firestore de 1 Mo, quelle que soit la
-// répartition. Marge large sous 1 048 576 (encodage Firestore + wrapper).
-const MAX_CHUNK_BYTES = 500000;
 
-function chunksOf(items) {
-  const arr = items || [];
-  const chunks = [];
-  let current = [];
-  let currentBytes = 0;
-  arr.forEach((item) => {
-    const itemBytes = JSON.stringify(item).length;
-    if (current.length > 0 && currentBytes + itemBytes > MAX_CHUNK_BYTES) {
-      chunks.push(current);
-      current = [];
-      currentBytes = 0;
-    }
-    current.push(item);
-    currentBytes += itemBytes;
-  });
-  if (current.length > 0) chunks.push(current);
-  return chunks;
+const META_ID = 'meta';
+const REC_PREFIX = 'rec-';
+// Firestore limite un lot à 500 opérations : marge de sécurité.
+const MAX_BATCH_OPS = 400;
+// Garde-fou : une fiche seule ne doit jamais approcher la limite de 1 Mo.
+const MAX_RECORD_BYTES = 900000;
+
+// ---------- Clés de documents ----------
+
+function hash36(str) {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0).toString(36);
 }
 
+// Un identifiant de document Firestore ne peut pas contenir "/" ni être "."
+// ou "..". Les ids générés par l'app (Storage.uid) sont alphanumériques, mais
+// des données importées pourraient contenir autre chose : on nettoie, et on
+// suffixe par une empreinte de l'original si le nettoyage a changé quelque
+// chose, pour ne pas faire collisionner deux fiches distinctes.
+function safeKey(raw) {
+  const s = String(raw);
+  const clean = s.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 80);
+  return clean === s ? s : clean + '~' + hash36(s);
+}
+
+// Les fiches de l'app portent toutes un id (Storage.uid). Pour une éventuelle
+// fiche sans id (donnée ancienne ou importée), on retombe sur une empreinte du
+// contenu : stable tant que la fiche ne change pas, donc toujours sans écrasement.
+function recordKey(rec) {
+  if (rec && typeof rec.id === 'string' && rec.id !== '') return safeKey(rec.id);
+  return 'h' + hash36(JSON.stringify(rec));
+}
+
+function recordDocId(cat, key) {
+  return REC_PREFIX + cat + '-' + key;
+}
+
+// ---------- Représentation d'un document ----------
+// Chaque document Firestore a la même forme : { c: catégorie, i: rang, j: JSON }.
+// Stocker la fiche en JSON (plutôt qu'en champs Firestore natifs) évite tous les
+// pièges de conversion (valeurs undefined, tableaux imbriqués des états des
+// lieux...) et rend la comparaison "a changé / n'a pas changé" triviale.
+
+function sigOf(docData) {
+  if (!docData) return '';
+  return (docData.c || '') + '|' + (docData.i == null ? '' : docData.i) + '|' + (docData.j || '');
+}
+
+// Construit l'état complet voulu (docId -> { c, i, j }) à partir de `data`.
+function buildDesired(data) {
+  const desired = new Map();
+
+  const meta = {};
+  META_KEYS.forEach((k) => { meta[k] = data[k]; });
+  desired.set(META_ID, { c: '_meta', i: 0, j: JSON.stringify(meta) });
+
+  RECORD_KEYS.forEach((cat) => {
+    const list = Array.isArray(data[cat]) ? data[cat] : [];
+    const seen = new Set();
+    list.forEach((rec, index) => {
+      let key = recordKey(rec);
+      // Deux fiches ne peuvent pas partager la même clé : on désambiguïse.
+      while (seen.has(key)) key = key + '_' + index;
+      seen.add(key);
+      desired.set(recordDocId(cat, key), { c: cat, i: index, j: JSON.stringify(rec) });
+    });
+  });
+
+  return desired;
+}
+
+// Reconstruit l'objet `data` à partir des documents Firestore.
+// Renvoie null si le document "meta" est absent : le compte n'a pas encore de
+// données synchronisées (un résidu d'un ancien schéma ne doit pas faire croire
+// le contraire).
+function rebuild(docsById) {
+  const metaDoc = docsById.get(META_ID);
+  if (!metaDoc || !metaDoc.j) return null;
+
+  let out;
+  try {
+    out = JSON.parse(metaDoc.j);
+  } catch (e) {
+    console.error('Document meta illisible', e);
+    return null;
+  }
+
+  const byCat = {};
+  RECORD_KEYS.forEach((cat) => { byCat[cat] = []; });
+
+  docsById.forEach((docData, id) => {
+    if (id === META_ID || id.indexOf(REC_PREFIX) !== 0) return; // ignore les résidus d'anciens schémas
+    if (!docData || !byCat[docData.c]) return;
+    try {
+      byCat[docData.c].push({ i: Number(docData.i) || 0, rec: JSON.parse(docData.j) });
+    } catch (e) {
+      console.error('Fiche illisible ignorée', id, e);
+    }
+  });
+
+  RECORD_KEYS.forEach((cat) => {
+    byCat[cat].sort((a, b) => a.i - b.i);
+    out[cat] = byCat[cat].map((x) => x.rec);
+  });
+
+  return out;
+}
+
+// ---------- État de synchronisation ----------
+
 let unsubscribe = null;
-// Identifiants de lots "documents" connus (vus côté serveur, ou écrits par
-// ce client) : permet de vider proprement un lot devenu vide/obsolète au
-// lieu de laisser une donnée périmée trainer dans un document plus réécrit.
-let knownDocumentBucketIds = [];
+// Dernier état serveur connu : docId -> signature. Sert de base au diff.
+let shadow = new Map();
+// Vrai une fois qu'un instantané confirmé par le serveur a été reçu. Tant que
+// c'est faux, on n'émet AUCUNE suppression (on ne sait pas ce que contient
+// réellement le cloud, supprimer serait le seul geste irréversible).
+let shadowFromServer = false;
+// Sauvegarde demandée avant d'avoir vu le serveur : rejouée dès que possible.
+let pendingSave = null;
+// Vrai dès qu'un état a été transmis à l'app au moins une fois.
+let hasEmitted = false;
+
+// Deux états serveur sont-ils identiques ? (comparaison de signatures, sans
+// re-sérialiser toutes les données — l'app peut peser plusieurs Mo.)
+function sameShadow(a, b) {
+  if (a.size !== b.size) return false;
+  for (const [id, sig] of a) {
+    if (b.get(id) !== sig) return false;
+  }
+  return true;
+}
 
 function dataCollectionFor(uid) {
   return collection(db, 'users', uid, 'data');
 }
 
-async function save(uid, data) {
-  const meta = {};
-  META_KEYS.forEach((k) => { meta[k] = data[k]; });
-
-  const batch = writeBatch(db);
-  batch.set(doc(dataCollectionFor(uid), 'meta'), meta);
-  ARRAY_KEYS.forEach((k) => {
-    batch.set(doc(dataCollectionFor(uid), k), { [k]: data[k] || [] });
-  });
-
-  const chunks = chunksOf(data.documents);
-  const currentIds = chunks.map((_, i) => DOC_BUCKET_PREFIX + i);
-  const allIds = Array.from(new Set([...knownDocumentBucketIds, ...currentIds]));
-  allIds.forEach((id) => {
-    const idx = currentIds.indexOf(id);
-    batch.set(doc(dataCollectionFor(uid), id), { documents: idx >= 0 ? chunks[idx] : [] });
-  });
-
-  await batch.commit();
-  knownDocumentBucketIds = currentIds;
+async function commitOps(uid, ops) {
+  const col = dataCollectionFor(uid);
+  for (let i = 0; i < ops.length; i += MAX_BATCH_OPS) {
+    const batch = writeBatch(db);
+    ops.slice(i, i + MAX_BATCH_OPS).forEach((op) => {
+      if (op.type === 'set') batch.set(doc(col, op.id), op.value);
+      else batch.delete(doc(col, op.id));
+    });
+    await batch.commit();
+  }
 }
 
-// Reconstruit l'objet `data` à plat à partir des documents individuels
-// { meta: {...}, biens: {biens:[...]}, ..., documents_0: {documents:[...]}, ... }
-function reconstruct(docsById) {
-  const out = {};
-  if (docsById.meta) Object.assign(out, docsById.meta);
-  ARRAY_KEYS.forEach((k) => {
-    if (docsById[k] && k in docsById[k]) out[k] = docsById[k][k];
+async function save(uid, data) {
+  const desired = buildDesired(data);
+
+  // Garde-fou explicite : mieux vaut une erreur nommée qu'un échec opaque.
+  desired.forEach((value, id) => {
+    if (value.j && value.j.length > MAX_RECORD_BYTES) {
+      throw new Error(
+        `Fiche trop volumineuse pour être synchronisée (${value.c}, ${Math.round(value.j.length / 1024)} Ko, limite 1 Mo) — document ${id}`
+      );
+    }
   });
-  out.documents = [];
-  Object.keys(docsById)
-    .filter((id) => id.indexOf(DOC_BUCKET_PREFIX) === 0)
-    .forEach((id) => {
-      out.documents = out.documents.concat(docsById[id].documents || []);
+
+  // Écritures : uniquement ce qui a changé par rapport au dernier état connu.
+  const writes = [];
+  desired.forEach((value, id) => {
+    if (shadow.get(id) !== sigOf(value)) writes.push({ type: 'set', id, value });
+  });
+
+  // Suppressions : uniquement si l'on connaît vraiment l'état du serveur.
+  // Ce sont les fiches réellement supprimées sur cet appareil, et les résidus
+  // des anciens schémas (documents "main", "biens", "documents_0"...).
+  const deletes = [];
+  if (shadowFromServer) {
+    shadow.forEach((_sig, id) => {
+      if (!desired.has(id)) deletes.push({ type: 'delete', id });
     });
-  return out;
+  }
+
+  if (writes.length === 0 && deletes.length === 0) return;
+
+  // Écritures d'abord, suppressions ensuite : à aucun instant une fiche n'est
+  // absente du cloud alors qu'elle devrait y être.
+  await commitOps(uid, writes.concat(deletes));
+
+  shadow = new Map();
+  desired.forEach((value, id) => shadow.set(id, sigOf(value)));
+}
+
+// Rejoue une sauvegarde qui avait été demandée avant de connaître l'état serveur.
+function flushPending(uid) {
+  if (!pendingSave) return;
+  const data = pendingSave;
+  pendingSave = null;
+  save(uid, data).catch((e) => console.error('Échec de la synchronisation différée', e));
 }
 
 // onRemoteChange(remoteData) est appelé avec les données distantes à chaque
-// changement confirmé par le serveur, ou avec null si aucun document
-// n'existe encore pour ce compte (premier démarrage).
+// changement confirmé par le serveur, ou avec null si le compte n'a encore
+// aucune donnée synchronisée.
 function start(uid, onRemoteChange) {
   stop();
   unsubscribe = onSnapshot(
     dataCollectionFor(uid),
     (snap) => {
-      // On n'agit JAMAIS sur un instantané optimiste/local : ni sur le cache
-      // local (potentiellement périmé, ex: juste après une suppression
-      // manuelle côté serveur pas encore reflétée partout), ni sur nos
-      // propres écritures encore en attente de confirmation (hasPendingWrites
-      // — un batch de plusieurs documents peut n'être que partiellement
-      // reflété dans un instantané intermédiaire, ce qui donnerait une
-      // reconstruction incohérente si on l'appliquait). On attend une
-      // confirmation serveur complète avant de toucher aux données locales.
-      if (snap.metadata.fromCache || snap.metadata.hasPendingWrites) return;
-      const docsById = {};
-      snap.forEach((d) => { docsById[d.id] = d.data(); });
-      knownDocumentBucketIds = Object.keys(docsById)
-        .filter((id) => id.indexOf(DOC_BUCKET_PREFIX) === 0);
-      // On se base sur la présence du document "meta" (toujours écrit en
-      // premier par save()), pas sur "la collection a au moins un document" :
-      // un résidu d'un ancien schéma (ex: un vieux document "main") ne doit
-      // pas faire croire que le compte a déjà de vraies données synchronisées.
-      if (!docsById.meta) {
-        onRemoteChange(null);
-        return;
-      }
-      onRemoteChange(reconstruct(docsById));
+      // On n'établit l'état de référence que sur une confirmation du serveur :
+      // un instantané servi depuis le cache local peut être périmé, et s'en
+      // servir comme base de diff ferait supprimer des fiches à tort.
+      if (snap.metadata.fromCache) return;
+
+      const docsById = new Map();
+      snap.forEach((d) => { docsById.set(d.id, d.data()); });
+
+      const newShadow = new Map();
+      docsById.forEach((docData, id) => newShadow.set(id, sigOf(docData)));
+
+      // Le serveur ne fait que confirmer ce que cet appareil connaît déjà :
+      // inutile de reconstruire et de réappliquer les données (c'est ce qui
+      // faisait brièvement clignoter l'écran après un enregistrement).
+      const unchanged = hasEmitted && shadowFromServer && sameShadow(newShadow, shadow);
+
+      shadow = newShadow;
+      shadowFromServer = true;
+      flushPending(uid);
+      if (unchanged) return;
+
+      hasEmitted = true;
+      onRemoteChange(rebuild(docsById));
     },
     (err) => {
       console.error('Erreur de synchronisation Firestore', err);
@@ -157,7 +282,25 @@ function start(uid, onRemoteChange) {
 
 function stop() {
   if (unsubscribe) { unsubscribe(); unsubscribe = null; }
-  knownDocumentBucketIds = [];
+  shadow = new Map();
+  shadowFromServer = false;
+  pendingSave = null;
+  hasEmitted = false;
 }
 
-window.QfSync = { save, start, stop };
+window.QfSync = {
+  save(uid, data) {
+    if (!shadowFromServer) {
+      // On ne connaît pas encore l'état du cloud : on écrit quand même (ajouts
+      // et mises à jour ne peuvent rien détruire), et on rejouera la
+      // sauvegarde complète — suppressions comprises — dès que le serveur aura
+      // répondu.
+      pendingSave = data;
+    }
+    return save(uid, data);
+  },
+  start,
+  stop,
+  // Exposé pour les tests automatisés (voir tests/syncLogic.test.js).
+  _internals: { buildDesired, rebuild, sigOf, recordKey, safeKey },
+};

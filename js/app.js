@@ -17,10 +17,7 @@
     if (window.QfSync && window.QfAuth && window.QfAuth.currentUser) {
       window.QfSync.save(window.QfAuth.currentUser.uid, data).catch((e) => {
         console.error('Échec de la synchronisation cloud (les données restent enregistrées localement)', e);
-        alert('DIAGNOSTIC — échec envoi cloud :\n\n' + (e && e.message ? e.message : e));
       });
-    } else {
-      alert('DIAGNOSTIC — sauvegarde locale seulement (QfSync:' + !!window.QfSync + ' QfAuth:' + !!(window.QfAuth) + ' user:' + !!(window.QfAuth && window.QfAuth.currentUser) + ')');
     }
     return ok;
   }
@@ -613,6 +610,12 @@
       return;
     }
     Object.assign(data, Storage.mergeWithDefaults(remoteData));
+    // Un changement venu du cloud doit AUSSI être écrit dans le stockage local :
+    // sinon un simple rechargement de page relit l'ancienne copie locale et la
+    // modification faite depuis l'autre appareil disparaît de l'écran.
+    // (On écrit directement via Storage, pas via save(), qui renverrait ces
+    // mêmes données vers le cloud en boucle.)
+    Storage.save(data);
     refreshCurrentView();
   }
 
