@@ -36,10 +36,24 @@ function snapshotOf(server, fromCache) {
   };
 }
 
-// Délivre l'état courant du serveur à un appareil précis (ou à tous).
+// Délivre l'état courant du serveur (des DOCUMENTS ont changé) à un appareil
+// précis, ou à tous.
 function deliver(server, only) {
   server.listeners.forEach((l) => {
     if (only && l.owner !== only) return;
+    l.cb(snapshotOf(server, false));
+  });
+}
+
+// Confirmation du serveur SANS aucun changement de document : le cache local
+// contenait déjà exactement le même contenu, seule la métadonnée fromCache
+// passe de true à false. Firestore ne délivre CE cas qu'aux écoutes ayant
+// demandé { includeMetadataChanges: true }.
+// C'est précisément ce cas qui bloquait toute la synchronisation en production.
+function deliverServerConfirmation(server, only) {
+  server.listeners.forEach((l) => {
+    if (only && l.owner !== only) return;
+    if (!l.includeMetadata) return;
     l.cb(snapshotOf(server, false));
   });
 }
@@ -78,8 +92,11 @@ function loadSyncModule(server, owner) {
         },
       };
     },
-    onSnapshot: (col, cb) => {
-      const entry = { cb, owner };
+    onSnapshot: (col, a, b) => {
+      // Firestore accepte onSnapshot(ref, cb) ou onSnapshot(ref, options, cb).
+      const options = typeof a === 'function' ? {} : (a || {});
+      const cb = typeof a === 'function' ? a : b;
+      const entry = { cb, owner, includeMetadata: !!options.includeMetadataChanges };
       server.listeners.push(entry);
       // Firestore délivre d'abord un instantané depuis le cache local : le
       // module doit l'ignorer (c'est ce qui garantit qu'on ne prend jamais un
@@ -394,6 +411,33 @@ async function run() {
     const rebuilt = PC._internals.rebuild(new Map(server.store));
     eq('les vraies données locales ont bien remplacé l\'ancien contenu', rebuilt.biens, local.biens);
     eq('sci correct après bascule', rebuilt.sci, local.sci);
+    PC.stop();
+  }
+
+  console.log('\n== 12. NON-REGRESSION : cache deja identique au serveur ==');
+  {
+    // Bug reel du 06/08/2026 : en production, le cache local contenait deja
+    // exactement les memes documents que le serveur. La seule difference entre
+    // l'instantane du cache et celui du serveur etait donc la metadonnee
+    // fromCache. Sans { includeMetadataChanges: true }, Firestore ne delivre
+    // AUCUN instantane dans ce cas : l'ecoute restait active, aucune erreur
+    // n'etait levee, et la synchronisation attendait indefiniment une
+    // confirmation qui n'arrivait jamais.
+    const server = createFakeServer();
+    server.store.set('meta', {
+      c: '_meta', i: 0,
+      j: JSON.stringify({ schemaVersion: 1, sci: { nom: 'X' }, bailModele: '', syncMeta: {} }),
+    });
+
+    const PC = loadSyncModule(server, 'PC');
+    PC.start('uid1', () => {});
+    check('tant que le serveur n\'a pas confirme, rien n\'est tenu pour sur',
+      PC._state().serveurRepondu === false);
+
+    deliverServerConfirmation(server, 'PC');
+    check('la confirmation serveur (metadonnee seule) est bien recue',
+      PC._state().serveurRepondu === true,
+      'etat = ' + JSON.stringify(PC._state()) + ' — il manque { includeMetadataChanges: true } sur onSnapshot');
     PC.stop();
   }
 

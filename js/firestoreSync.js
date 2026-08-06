@@ -17,7 +17,7 @@
 // pas touché, et aucune fiche seule n'approche la limite de 1 Mo.
 //
 // Expose window.QfSync pour que js/app.js (script classique) puisse s'y brancher.
-import { firebaseApp } from './firebaseInit.js?v=2026080603';
+import { firebaseApp } from './firebaseInit.js?v=2026080604';
 import {
   initializeFirestore,
   persistentLocalCache,
@@ -249,6 +249,14 @@ function start(uid, onRemoteChange) {
   stop();
   unsubscribe = onSnapshot(
     dataCollectionFor(uid),
+    // includeMetadataChanges est INDISPENSABLE ici : par défaut, Firestore ne
+    // délivre un nouvel instantané que si des DOCUMENTS ont changé. Quand le
+    // cache local contient déjà exactement ce que le serveur renvoie, la seule
+    // différence est la métadonnée fromCache (true -> false) : sans cette
+    // option, la confirmation serveur n'est jamais délivrée, et comme on
+    // ignore les instantanés issus du cache, la synchronisation reste bloquée
+    // indéfiniment — écoute active, mais plus rien ne se passe.
+    { includeMetadataChanges: true },
     (snap) => {
       // On n'établit l'état de référence que sur une confirmation du serveur :
       // un instantané servi depuis le cache local peut être périmé, et s'en
