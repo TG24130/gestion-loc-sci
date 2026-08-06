@@ -540,27 +540,57 @@
   }
 
   // ---------- Historique ----------
+  // L'historique regroupe les documents générés (quittances, courriers...) ET
+  // les états des lieux finalisés — ces derniers sont archivés dans
+  // data.etatsDesLieux au moment de la génération du PDF (voir archiveEdlPdf),
+  // les brouillons en cours de rédaction n'y figurent donc pas.
+  function lignesHistorique() {
+    const docs = data.documents.map((d) => ({
+      tri: d.createdAt || 0,
+      dateLabel: d.dateLabel || '—',
+      type: DOC_LABELS[d.type] || d.type,
+      locataireNom: d.locataireNom || '—',
+      periodeLabel: d.periodeLabel || '—',
+      montant: d.montant != null ? euros(d.montant) : '—',
+      actions: `<button class="btn btn-sm" data-view-doc="${d.id}">Télécharger le PDF</button>
+          <button class="btn btn-sm btn-danger" data-del-doc="${d.id}">Supprimer</button>`,
+    }));
+    const edl = data.etatsDesLieux.map((e) => {
+      const loc = locataireById(e.locataireId);
+      return {
+        tri: e.createdAt || (e.date ? Date.parse(`${e.date}T00:00:00`) : 0),
+        dateLabel: e.date ? new Date(`${e.date}T00:00:00`).toLocaleDateString('fr-FR') : '—',
+        type: e.sens === 'sortant' ? 'État des lieux sortant' : 'État des lieux entrant',
+        locataireNom: loc ? loc.nom : '—',
+        periodeLabel: e.libelle || '—',
+        montant: '—',
+        actions: `${fileLinksHTML(e)}
+          <button class="btn btn-sm btn-danger" data-del-edl="${e.id}">Supprimer</button>`,
+      };
+    });
+    return docs.concat(edl).sort((a, b) => b.tri - a.tri);
+  }
+
   function renderHistorique() {
     const tbody = document.querySelector('#table-historique tbody');
     tbody.innerHTML = '';
-    if (data.documents.length === 0) {
+    if (data.documents.length === 0 && data.etatsDesLieux.length === 0) {
       tbody.innerHTML = '<tr class="empty-row"><td colspan="6">Aucun document dans l\'historique.</td></tr>';
       return;
     }
-    const sorted = [...data.documents].sort((a, b) => b.createdAt - a.createdAt);
-    sorted.forEach((d) => {
+    const sorted = lignesHistorique();
+    sorted.forEach((l) => {
       tbody.innerHTML += `<tr>
-        <td>${d.dateLabel}</td>
-        <td>${DOC_LABELS[d.type] || d.type}</td>
-        <td>${escapeHTML(d.locataireNom)}</td>
-        <td>${escapeHTML(d.periodeLabel || '—')}</td>
-        <td>${d.montant != null ? euros(d.montant) : '—'}</td>
-        <td class="actions-cell">
-          <button class="btn btn-sm" data-view-doc="${d.id}">Télécharger le PDF</button>
-          <button class="btn btn-sm btn-danger" data-del-doc="${d.id}">Supprimer</button>
-        </td>
+        <td>${l.dateLabel}</td>
+        <td>${escapeHTML(l.type)}</td>
+        <td>${escapeHTML(l.locataireNom)}</td>
+        <td>${escapeHTML(l.periodeLabel)}</td>
+        <td>${l.montant}</td>
+        <td class="actions-cell">${l.actions}</td>
       </tr>`;
     });
+    tbody.querySelectorAll('[data-view-file]').forEach((btn) => btn.addEventListener('click', () => openStoredFile(btn.dataset.viewFile, btn.title)));
+    tbody.querySelectorAll('[data-del-edl]').forEach((btn) => btn.addEventListener('click', () => deleteEdl(btn.dataset.delEdl)));
     tbody.querySelectorAll('[data-view-doc]').forEach((btn) => btn.addEventListener('click', () => {
       const doc = data.documents.find((d) => d.id === btn.dataset.viewDoc);
       if (doc && doc.ctx) downloadPdf(doc.type, doc.ctx);
@@ -577,9 +607,15 @@
     // La signature est toujours reprise depuis "Ma SCI" au moment du telechargement
     // (jamais stockee dans l'historique) pour ne pas dupliquer une image en base64
     // dans chaque document sauvegarde.
+    const { doc, nomFichier } = buildPdf(type, ctx);
+    doc.save(nomFichier);
+  }
+
+  // Prépare le PDF sans déclencher le téléchargement, pour pouvoir enregistrer
+  // le document AVANT de lancer doc.save() (qui, sur iOS, fait quitter la page).
+  function buildPdf(type, ctx) {
     const fullCtx = Object.assign({}, ctx, { signatureDataUrl: data.sci.signature || '' });
-    const doc = PdfBuilder.generate(type, fullCtx);
-    doc.save(PdfBuilder.filename(type, fullCtx));
+    return { doc: PdfBuilder.generate(type, fullCtx), nomFichier: PdfBuilder.filename(type, fullCtx) };
   }
 
   // ---------- Parametres (Mon SCI) ----------
@@ -910,7 +946,12 @@
 
   byId('btn-download-pdf').addEventListener('click', () => {
     if (!lastGenerated) return;
-    downloadPdf(lastGenerated.type, lastGenerated.ctx);
+    // Le PDF est préparé, puis le document est enregistré dans l'historique,
+    // et SEULEMENT ensuite le téléchargement est déclenché : sur iOS,
+    // doc.save() ouvre le PDF et fait quitter la page, ce qui interrompait le
+    // script — la quittance était téléchargée mais jamais inscrite à
+    // l'historique (même cause que pour les états des lieux).
+    const { doc, nomFichier } = buildPdf(lastGenerated.type, lastGenerated.ctx);
 
     const now = new Date();
     data.documents.push({
@@ -921,6 +962,7 @@
     });
     save();
     renderDashboard();
+    doc.save(nomFichier);
     // Un nouveau clic sans re-generer l'apercu creerait un doublon dans
     // l'historique et fausserait les totaux du tableau de bord.
     byId('btn-download-pdf').disabled = true;
@@ -1671,6 +1713,7 @@
     await deleteRecordFiles(entry);
     renderEdlStatusGrid();
     renderEdlHistoryTable();
+    renderHistorique(); // les états des lieux figurent aussi dans l'historique général
   }
 
   byId('edl-fichier').addEventListener('change', function () {
@@ -3202,9 +3245,13 @@
     try {
       const ctx = buildEdlPdfContext(r);
       const doc = await EdlPdf.generate(ctx);
-      doc.save(EdlPdf.filename(ctx));
       const blob = doc.output('blob');
+      // L'archivage doit précéder le téléchargement : sur iOS, doc.save()
+      // ouvre le PDF et fait quitter/suspendre la page, ce qui interrompait le
+      // script avant l'archivage. L'état des lieux était alors bien généré en
+      // PDF mais n'apparaissait nulle part dans l'application.
       await archiveEdlPdf(r, blob, ctx);
+      doc.save(EdlPdf.filename(ctx));
       renderEdlRedacHistory();
       openEdlEmailModal(r, ctx, blob);
     } catch (e) {
