@@ -359,6 +359,40 @@ async function run() {
     PC.stop();
   }
 
+  console.log('\n== 11. Bascule depuis l\'ANCIEN format déjà présent en production ==');
+  {
+    // Le cloud de production contient encore l'ancien schéma : "meta" et les
+    // catégories entières, avec de vrais champs Firestore (pas le nouveau
+    // format { c, i, j }). L'app doit le considérer comme "pas de données
+    // exploitables", republier depuis la copie locale, et nettoyer.
+    const server = createFakeServer();
+    server.store.set('main', { schemaVersion: 1, sci: { nom: 'ancien' }, biens: [{ id: 'vieux' }] });
+    server.store.set('meta', { schemaVersion: 1, sci: { nom: 'ancien' }, bailModele: '', syncMeta: {} });
+    server.store.set('biens', { biens: [{ id: 'vieux' }] });
+    server.store.set('documents_0', { documents: [{ id: 'vieuxdoc' }] });
+
+    const PC = loadSyncModule(server, 'PC');
+    const local = baseData();
+    let received = 'jamais appelé';
+    PC.start('uid1', (r) => { received = r; });
+    deliver(server);
+
+    check('l\'ancien format n\'est pas pris pour des données valides', received === null,
+      'reçu ' + JSON.stringify(received && Object.keys(received)));
+
+    // C'est ce que fait app.js quand il reçoit null : republier le local.
+    await PC.save('uid1', local);
+    deliver(server);
+
+    check('anciens documents nettoyés',
+      !server.store.has('main') && !server.store.has('biens') && !server.store.has('documents_0'));
+    check('meta est passé au nouveau format', !!(server.store.get('meta') || {}).j);
+    const rebuilt = PC._internals.rebuild(new Map(server.store));
+    eq('les vraies données locales ont bien remplacé l\'ancien contenu', rebuilt.biens, local.biens);
+    eq('sci correct après bascule', rebuilt.sci, local.sci);
+    PC.stop();
+  }
+
   console.log('\n---------------------------------------------');
   console.log(passed + ' test(s) OK, ' + failed + ' échec(s)');
   console.log('---------------------------------------------\n');
