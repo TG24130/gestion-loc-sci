@@ -32,6 +32,15 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # Répétées au niveau du job : si le dépôt est réglé sur "Read repository
+    # contents permission" (Settings > Actions > General > Workflow
+    # permissions), le jeton reste en lecture seule et actions/deploy-pages
+    # échoue sur "Ensure GITHUB_TOKEN has permission id-token: write".
+    # Ce réglage doit être sur "Read and write permissions".
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
