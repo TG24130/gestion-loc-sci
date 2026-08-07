@@ -709,3 +709,13 @@ img.edl-signature-canvas{object-fit:contain;cursor:default;border-style:solid;ba
   .quick-actions .btn{flex:1 1 100%;}
   .edl-signature-row{flex-direction:column;}
 }
+
+/* Etat "session en cours de verification" : tant que Firebase n'a pas dit si
+   l'utilisateur est deja connecte, on n'affiche pas le formulaire — sinon il
+   apparait puis disparait en moins d'une seconde, ce qui laisse croire qu'on
+   doit saisir quelque chose. */
+.lock-pending{margin:0;color:var(--text-muted);font-size:13px;}
+html:not(.qf-auth-pending) .lock-pending{display:none;}
+html.qf-auth-pending #login-form,
+html.qf-auth-pending .lock-error,
+html.qf-auth-pending .lock-box > p:not(.lock-pending){display:none;}

@@ -697,6 +697,10 @@
   }
 
   window.addEventListener('qf-auth-change', (e) => {
+    // Firebase a répondu : on sait maintenant si la session est déjà ouverte.
+    // Avant ça, le formulaire de connexion reste caché (voir .qf-auth-pending)
+    // pour ne pas l'afficher une fraction de seconde inutilement.
+    document.documentElement.classList.remove('qf-auth-pending');
     const user = e.detail.user;
     if (user) {
       document.documentElement.classList.remove('qf-locked');
