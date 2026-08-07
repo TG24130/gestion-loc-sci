@@ -17,11 +17,11 @@
 // pas touché, et aucune fiche seule n'approche la limite de 1 Mo.
 //
 // Expose window.QfSync pour que js/app.js (script classique) puisse s'y brancher.
-import { firebaseApp } from './firebaseInit.js?v=2026080613';
+import { firebaseApp } from './firebaseInit.js?v=2026080614';
 import {
   initializeFirestore,
   persistentLocalCache,
-  persistentSingleTabManager,
+  persistentMultipleTabManager,
   collection,
   doc,
   writeBatch,
@@ -31,8 +31,13 @@ import {
 // Cache local persistant (IndexedDB) : les écritures faites hors-ligne sont
 // mises en file d'attente automatiquement par le SDK et envoyées dès que la
 // connexion revient (usage terrain : état des lieux rédigé sans réseau).
+// Gestionnaire MULTI-ONGLETS : avec le gestionnaire mono-onglet, dès qu'un
+// deuxième onglet de l'app était ouvert, il perdait la persistance
+// ("Failed to obtain exclusive access to the persistence layer") et repassait
+// en cache mémoire — synchronisation dégradée sans que rien ne le signale à
+// l'écran.
 const db = initializeFirestore(firebaseApp, {
-  localCache: persistentLocalCache({ tabManager: persistentSingleTabManager({}) }),
+  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager({}) }),
 });
 
 // Champs simples, regroupés dans l'unique document "meta" (toujours petits).

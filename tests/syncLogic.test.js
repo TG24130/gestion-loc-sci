@@ -76,7 +76,7 @@ function loadSyncModule(server, owner) {
     firebaseApp: {},
     initializeFirestore: () => ({}),
     persistentLocalCache: () => ({}),
-    persistentSingleTabManager: () => ({}),
+    persistentMultipleTabManager: () => ({}),
     collection: () => ({ kind: 'col' }),
     doc: (col, id) => ({ id }),
     writeBatch: () => {
