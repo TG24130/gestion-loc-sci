@@ -25,8 +25,13 @@ permissions:
 
 # Un seul déploiement à la fois, mais SANS annuler celui en cours : c'est
 # l'annulation en chaîne qui avait produit les "Deployment cancelled".
+# Groupe unique par execution : un run reste parfois bloque cote GitHub
+# (constate : un run "in progress" depuis 15 h). Avec un groupe partage, tous
+# les deploiements suivants attendaient derriere lui indefiniment ("Waiting"),
+# et l'interface ne propose pas toujours de l'annuler. Chaque run est donc
+# independant ; GitHub Pages serialise de toute facon les publications.
 concurrency:
-  group: pages
+  group: pages-${{ github.run_id }}
   cancel-in-progress: false
 
 jobs:
