@@ -2768,10 +2768,23 @@
     return div;
   }
 
+  // Pendant une rédaction, la page ne montre que la saisie : toute la
+  // configuration du bien (modèles, pièces, compteurs, création) est masquée.
+  // Sur le terrain, avec un locataire en face, faire défiler ces listes avant
+  // d'atteindre les champs à remplir était la principale source d'erreurs.
+  function updateEdlSaisieMode() {
+    const vue = byId('view-edl-redaction');
+    const enCours = !!currentEdlRedaction;
+    vue.classList.toggle('edl-saisie-en-cours', enCours);
+    if (!enCours) vue.classList.remove('edl-config-visible');
+    byId('edl-config-hint').hidden = !enCours;
+  }
+
   function renderEdlRedacRooms() {
     const container = byId('edl-redac-rooms');
     container.innerHTML = '';
     byId('edl-redac-rooms-title').hidden = !currentEdlRedaction;
+    updateEdlSaisieMode();
     if (!currentEdlRedaction) return;
     currentEdlRedaction.pieces.forEach((room) => {
       const roomEl = document.createElement('div');
@@ -3284,6 +3297,11 @@
     renderEdlRedacHistory();
     renderEdlSignatureLocataire();
     generateEdlPdf(r, e.currentTarget);
+  });
+
+  byId('btn-edl-show-config').addEventListener('click', () => {
+    byId('view-edl-redaction').classList.add('edl-config-visible');
+    byId('edl-config-hint').hidden = true;
   });
 
   byId('btn-edl-redac-save').addEventListener('click', () => {

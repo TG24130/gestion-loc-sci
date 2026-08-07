@@ -719,3 +719,10 @@ html:not(.qf-auth-pending) .lock-pending{display:none;}
 html.qf-auth-pending #login-form,
 html.qf-auth-pending .lock-error,
 html.qf-auth-pending .lock-box > p:not(.lock-pending){display:none;}
+
+/* Etat des lieux : pendant la saisie sur le terrain, on masque toute la
+   configuration (modeles, pieces/compteurs/cles du bien, creation) pour ne
+   laisser a l'ecran que les 3 etapes a remplir. Sinon il faut faire defiler
+   de longues listes avant d'atteindre la saisie, avec un locataire en face. */
+#view-edl-redaction.edl-saisie-en-cours .edl-config{display:none;}
+#view-edl-redaction.edl-saisie-en-cours.edl-config-visible .edl-config{display:block;}

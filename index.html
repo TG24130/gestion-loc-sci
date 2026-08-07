@@ -6,7 +6,7 @@
 <title>Gestion Loc SCI</title>
 <meta name="description" content="Gestion locative de SCI : quittances, baux, charges, documents et crédits.">
 <meta name="theme-color" content="#2f6fed">
-<link rel="manifest" href="manifest.json?v=2026080608">
+<link rel="manifest" href="manifest.json?v=2026080609">
 <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -14,10 +14,10 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Gestion Loc SCI">
 <meta name="mobile-web-app-capable" content="yes">
-<link rel="stylesheet" href="css/style.css?v=2026080608">
-<script type="module" src="js/firebaseAuth.js?v=2026080608"></script>
-<script type="module" src="js/firestoreSync.js?v=2026080608"></script>
-<script type="module" src="js/firebaseStorageSync.js?v=2026080608"></script>
+<link rel="stylesheet" href="css/style.css?v=2026080609">
+<script type="module" src="js/firebaseAuth.js?v=2026080609"></script>
+<script type="module" src="js/firestoreSync.js?v=2026080609"></script>
+<script type="module" src="js/firebaseStorageSync.js?v=2026080609"></script>
 </head>
 <body>
 
@@ -339,7 +339,7 @@
         </div>
       </div>
 
-      <div class="panel">
+      <div class="panel edl-config">
         <h2>Modèles d'état des lieux réutilisables</h2>
         <p class="charges-note" style="margin:0 0 12px;">Préparez ici des pièces/compteurs/clés type par catégorie de logement (ex : "Maison standard 1 à 5", "Bureau", "Maison 229A"), <strong>sans les lier à un bien précis</strong> — cela ne crée ni bien ni locataire fictif. Vous pourrez ensuite appliquer un modèle à n'importe quel bien réel en un clic, une fois qu'il est déjà affecté à son locataire.</p>
         <div class="charges-form-grid">
@@ -371,7 +371,7 @@
         </div>
       </div>
 
-      <div class="panel">
+      <div class="panel edl-config">
         <h2>1. Bien concerné</h2>
         <div class="field">
           <label>Bien</label>
@@ -391,7 +391,7 @@
         <p class="charges-note" style="margin:8px 0 0;">« Appliquer un modèle » copie ses pièces/compteurs/clés sur ce bien (remplace la configuration actuelle). « Dupliquer ce bien » crée un nouveau bien identique — utile pour des biens réels identiques (ex : MAISON 1 à 5).</p>
       </div>
 
-      <div class="panel">
+      <div class="panel edl-config">
         <h2>2. Pièces du bien</h2>
         <p class="charges-note" style="margin:0 0 12px;">Cliquez sur un type de pièce pour l'ajouter, avec ses éléments habituels déjà pré-remplis. Renommez, ajoutez ou supprimez librement les pièces et leurs éléments (ex : 4 chambres pour ce bien, 2 salles de bain pour un autre).</p>
         <div class="field-chips" id="edl-room-type-chips"></div>
@@ -399,7 +399,7 @@
         <button class="btn btn-primary" id="btn-edl-gabarit-save" style="margin-top:8px;">Enregistrer les pièces et compteurs de ce bien</button>
       </div>
 
-      <div class="panel">
+      <div class="panel edl-config">
         <h2>3. Compteurs du bien</h2>
         <p class="charges-note" style="margin:0 0 12px;">Cliquez pour ajouter un compteur. Renommez ou supprimez librement selon ce qui est présent sur ce bien (ex : 2 compteurs d'eau, pas de gaz...). <strong>Ici, seuls le nom et le numéro du compteur</strong> (réglage permanent). L'index relevé et la consommation se saisissent plus bas, panneau 5, une fois l'état des lieux créé (panneau 4).</p>
         <div class="field-chips" id="edl-meter-chips"></div>
@@ -411,7 +411,7 @@
         <div id="edl-cles-gabarit-list"></div>
       </div>
 
-      <div class="panel">
+      <div class="panel edl-config">
         <h2>4. Nouvel état des lieux</h2>
         <div class="charges-form-grid">
           <div class="field">
@@ -440,6 +440,10 @@
 
       <div class="panel">
         <h2>5. Rédaction en cours — <span id="edl-redac-current-label">—</span></h2>
+        <p class="charges-note" id="edl-config-hint" hidden>
+          La configuration du bien est masquée pour ne garder que la saisie.
+          <button type="button" class="btn btn-sm" id="btn-edl-show-config">Afficher la configuration</button>
+        </p>
 
         <!-- Ordre de saisie voulu sur le terrain : 1) compteurs, 2) pièces, 3) clés. -->
         <h3 class="edl-redac-room-title" id="edl-redac-meters-title" hidden>1. Relevé des compteurs (index, consommation, photos)</h3>
@@ -993,13 +997,13 @@
 
 <script src="js/vendor/jspdf.umd.min.js"></script>
 <script src="js/vendor/jszip.min.js"></script>
-<script src="js/numberToWords.js?v=2026080608"></script>
-<script src="js/storage.js?v=2026080608"></script>
-<script src="js/filesDb.js?v=2026080608"></script>
-<script src="js/documents.js?v=2026080608"></script>
-<script src="js/pdfBuilder.js?v=2026080608"></script>
-<script src="js/richTextPdf.js?v=2026080608"></script>
-<script src="js/edlPdf.js?v=2026080608"></script>
-<script src="js/app.js?v=2026080608"></script>
+<script src="js/numberToWords.js?v=2026080609"></script>
+<script src="js/storage.js?v=2026080609"></script>
+<script src="js/filesDb.js?v=2026080609"></script>
+<script src="js/documents.js?v=2026080609"></script>
+<script src="js/pdfBuilder.js?v=2026080609"></script>
+<script src="js/richTextPdf.js?v=2026080609"></script>
+<script src="js/edlPdf.js?v=2026080609"></script>
+<script src="js/app.js?v=2026080609"></script>
 </body>
 </html>
