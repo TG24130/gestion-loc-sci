@@ -3037,6 +3037,10 @@
   function updateEdlRedacLabels() {
     if (!currentEdlRedaction) {
       byId('edl-redac-current-label').textContent = '—';
+    // Remet l'écran en mode "pas de rédaction" : sans cela, le bandeau de
+    // configuration masquée et le bloc Signatures restaient affichés alors
+    // qu'il n'y avait plus rien à saisir (écran figé sur les signatures).
+    updateEdlSaisieMode();
       return;
     }
     const loc = locataireById(currentEdlRedaction.locataireId);
