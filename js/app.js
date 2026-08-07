@@ -2785,6 +2785,12 @@
     vue.classList.toggle('edl-saisie-en-cours', enCours);
     if (!enCours) vue.classList.remove('edl-config-visible');
     byId('edl-config-hint').hidden = !enCours;
+    // Les signatures ne concernent qu'une rédaction en cours : affichées en
+    // permanence, elles restaient seules à l'écran une fois la rédaction
+    // terminée ou le gabarit enregistré, donnant l'impression d'avoir sauté
+    // toutes les étapes de saisie.
+    byId('edl-signatures-title').hidden = !enCours;
+    byId('edl-signatures-row').hidden = !enCours;
   }
 
   function renderEdlRedacRooms() {
@@ -3308,6 +3314,14 @@
     renderEdlRedacHistory();
     renderEdlSignatureLocataire();
     generateEdlPdf(r, e.currentTarget);
+  });
+
+  byId('btn-edl-modeles-toggle').addEventListener('click', () => {
+    const panneau = byId('edl-modeles-panel');
+    panneau.hidden = !panneau.hidden;
+    byId('btn-edl-modeles-toggle').textContent = panneau.hidden
+      ? "Gérer les modèles d'état des lieux"
+      : "Masquer les modèles d'état des lieux";
   });
 
   byId('btn-edl-show-config').addEventListener('click', () => {
