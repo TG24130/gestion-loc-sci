@@ -2473,9 +2473,11 @@
   }
   function collectEdlGabaritCles() { return collectClesFromList('edl-cles-gabarit-list'); }
 
-  byId('btn-edl-gabarit-save').addEventListener('click', () => {
+  // Enregistre la configuration affichée à l'écran (pièces, compteurs, clés)
+  // dans le gabarit du bien. Renvoie le gabarit, ou null si aucun bien choisi.
+  function persistEdlGabarit() {
     const bienId = byId('edl-gabarit-bien').value;
-    if (!bienId) { alert("Ajoutez d'abord un bien, puis sélectionnez-le."); return; }
+    if (!bienId) return null;
     const pieces = collectEdlGabaritRooms();
     const compteurs = collectEdlGabaritMeters();
     const cles = collectEdlGabaritCles();
@@ -2489,6 +2491,11 @@
       data.bienGabarits.push(gabarit);
     }
     save();
+    return gabarit;
+  }
+
+  byId('btn-edl-gabarit-save').addEventListener('click', () => {
+    if (!persistEdlGabarit()) { alert("Ajoutez d'abord un bien, puis sélectionnez-le."); return; }
     alert('Pièces, compteurs et clés enregistrés pour ce bien.');
   });
 
@@ -3072,6 +3079,10 @@
     if (!bienId) { alert("Ajoutez d'abord un bien, puis sélectionnez-le."); return; }
     if (!locataireId) { alert("Ce bien n'a pas de locataire enregistré."); return; }
     if (!date) { alert('Renseignez une date.'); return; }
+    // La configuration affichée est enregistrée avant de créer la rédaction :
+    // sans cela, des compteurs ou des clés saisis au panneau 3 mais pas encore
+    // enregistrés étaient ignorés en silence, et l'étape 1 restait vide.
+    persistEdlGabarit();
     const gabarit = data.bienGabarits.find((g) => g.bienId === bienId);
     const entrant = currentEdlRedacSens === 'sortant' ? findLatestEntrantRedaction(bienId, locataireId) : null;
     if (!entrant && (!gabarit || gabarit.pieces.length === 0)) {
