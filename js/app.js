@@ -3556,6 +3556,11 @@
   byId('btn-edl-test-clean').addEventListener('click', cleanupEdlTestData);
 
   function renderEdlRedactionView() {
+    // ATTENTION : cette fonction est rappelée à chaque affichage de la vue, y
+    // compris lors d'un rafraîchissement déclenché par la synchronisation
+    // cloud. Elle ne doit JAMAIS effacer une rédaction en cours : sur le
+    // terrain, cela faisait disparaître l'état des lieux une seconde après sa
+    // création, sans rien enregistrer.
     populateEdlGabaritBienSelect();
     renderEdlGabaritRooms();
     renderEdlGabaritMeters();
@@ -3564,11 +3569,21 @@
     populateEdlApplyModeleSelect();
     loadEdlModeleIntoEditor(byId('edl-modele-select').value);
     populateEdlRedacLocataireSelect();
-    byId('edl-redac-date').value = todayISO();
-    byId('edl-redac-libelle').value = '';
-    currentEdlRedacSens = 'entrant';
-    document.querySelectorAll('#edl-redac-type-toggle .toggle-btn').forEach((b) => b.classList.toggle('active', b.dataset.edlRedacType === 'entrant'));
-    clearCurrentEdlRedaction();
+
+    if (currentEdlRedaction) {
+      // Saisie en cours : on se contente de la réafficher telle quelle.
+      renderEdlRedacRooms();
+      renderEdlRedacMeters();
+      renderEdlRedacCles();
+      renderEdlSignatureBailleur();
+      renderEdlSignatureLocataire();
+    } else {
+      byId('edl-redac-date').value = todayISO();
+      byId('edl-redac-libelle').value = '';
+      currentEdlRedacSens = 'entrant';
+      document.querySelectorAll('#edl-redac-type-toggle .toggle-btn').forEach((b) => b.classList.toggle('active', b.dataset.edlRedacType === 'entrant'));
+      clearCurrentEdlRedaction();
+    }
     renderEdlRedacHistory();
     updateEdlTestButtonVisibility();
   }
