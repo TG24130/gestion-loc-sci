@@ -2785,6 +2785,7 @@
     vue.classList.toggle('edl-saisie-en-cours', enCours);
     if (!enCours) vue.classList.remove('edl-config-visible');
     byId('edl-config-hint').hidden = !enCours;
+    byId('edl-correction-hint').hidden = !enCours;
     // Les signatures ne concernent qu'une rédaction en cours : affichées en
     // permanence, elles restaient seules à l'écran une fois la rédaction
     // terminée ou le gabarit enregistré, donnant l'impression d'avoir sauté
@@ -3083,6 +3084,10 @@
   }
 
   byId('btn-edl-redac-new').addEventListener('click', () => {
+    // Garde-fou : recliquer sur ce bouton pendant une saisie écrasait tout le
+    // travail en cours, sans le moindre avertissement — le pire scénario le
+    // jour d'un état des lieux, avec le locataire en face.
+    if (currentEdlRedaction && !confirm("Un état des lieux est en cours de saisie. En créer un nouveau effacera tout ce que vous venez de saisir. Pour corriger une erreur, annulez : tous les champs restent modifiables directement.")) return;
     const bienId = byId('edl-gabarit-bien').value;
     const locataireId = byId('edl-redac-locataire').value;
     const date = byId('edl-redac-date').value;
