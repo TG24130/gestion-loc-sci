@@ -1,6 +1,11 @@
 // Service worker : réseau en priorité (toujours la version la plus récente en ligne),
 // avec repli sur le cache pour un accès hors-ligne (ex: pas de réseau sur le téléphone).
-const CACHE_NAME = 'gls-cache-v1';
+// IMPORTANT : incrementer ce nom a chaque deploiement notable. L'evenement
+// 'activate' supprime tous les caches dont le nom differe, ce qui force les
+// appareils a repartir du reseau. Sans cela, un telephone pouvait continuer a
+// servir une version ancienne indefiniment (constate sur iPhone : le tableau
+// de bord affichait encore 'Derniers documents' apres plusieurs deploiements).
+const CACHE_NAME = 'gls-cache-2026080911';
 const CORE_ASSETS = ['./', './index.html', './manifest.json'];
 
 self.addEventListener('install', (event) => {

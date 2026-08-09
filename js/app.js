@@ -4407,7 +4407,26 @@
 
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('sw.js').catch(() => { /* file:// ou hors ligne : sans effet */ });
+      navigator.serviceWorker.register('sw.js').then((reg) => {
+        // Verifie a chaque ouverture s'il existe une version plus recente, et
+        // recharge la page des qu'elle a pris la main. Sans cela, un appareil
+        // pouvait rester sur une version ancienne tres longtemps (constate sur
+        // iPhone, ou l'application est lancee depuis l'ecran d'accueil).
+        reg.update().catch(() => { /* hors ligne : sans effet */ });
+        reg.addEventListener('updatefound', () => {
+          const nouveau = reg.installing;
+          if (!nouveau) return;
+          nouveau.addEventListener('statechange', () => {
+            // Un seul rechargement automatique par session : si une nouvelle
+            // version s'installait en boucle, la page se rechargerait sans fin.
+            if (nouveau.state === 'installed' && navigator.serviceWorker.controller
+                && !sessionStorage.getItem('qf_maj_rechargee')) {
+              sessionStorage.setItem('qf_maj_rechargee', '1');
+              window.location.reload();
+            }
+          });
+        });
+      }).catch(() => { /* file:// ou hors ligne : sans effet */ });
     });
   }
 
