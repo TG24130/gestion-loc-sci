@@ -237,6 +237,11 @@ const EdlPdf = (function () {
       ['Locataire', ctx.locataireNom || '—'],
       ['Date', ctx.dateLabel || '—'],
     ];
+    // Sur une sortie, on rappelle la date de l'état des lieux d'entrée :
+    // c'est le document de référence auquel celui-ci se compare.
+    if (ctx.sens === 'sortant') {
+      rows.push(["État des lieux d'entrée du", ctx.dateEntrantLabel || '—']);
+    }
     doc.setFontSize(10);
     rows.forEach(([label, val]) => {
       doc.setFont('times', 'bold');
@@ -355,6 +360,96 @@ const EdlPdf = (function () {
     state.y += 10;
   }
 
+  // Case a cocher dessinee : carre, plus une croix si elle est cochee.
+  function drawCase(doc, x, y, cochee) {
+    doc.setDrawColor(60);
+    doc.setLineWidth(0.9);
+    doc.rect(x, y - 8, 10, 10);
+    if (cochee) {
+      doc.setLineWidth(1.2);
+      doc.line(x + 1.6, y - 6.4, x + 8.4, y - 0.4);
+      doc.line(x + 8.4, y - 6.4, x + 1.6, y - 0.4);
+    }
+  }
+
+  // Rubriques propres a l'etat des lieux de SORTIE : nouveau domicile, depot
+  // de garantie, conclusion (conforme / differences) et mention legale sur la
+  // restitution du depot. Rien de tout cela n'apparait sur un etat des lieux
+  // d'entree.
+  function drawSortie(doc, state, ctx) {
+    if (ctx.sens !== 'sortant') return;
+    ensureSpace(doc, state, 120, ctx);
+    doc.setFont('times', 'bold');
+    doc.setFontSize(13);
+    doc.setTextColor(20);
+    doc.text('Sortie du locataire', MARGIN, state.y);
+    state.y += 8;
+    doc.setDrawColor(180);
+    doc.setLineWidth(0.75);
+    doc.line(MARGIN, state.y, PAGE_W - MARGIN, state.y);
+    state.y += 18;
+
+    doc.setFontSize(10.5);
+    doc.setFont('times', 'bold');
+    doc.text('Nouveau domicile du locataire :', MARGIN, state.y);
+    state.y += 14;
+    doc.setFont('times', 'normal');
+    writeWrapped(doc, state, ctx.nouvelleAdresse || 'Non communiqué', MARGIN, CONTENT_W, 14, ctx);
+    state.y += 10;
+
+    ensureSpace(doc, state, 60, ctx);
+    doc.setFont('times', 'bold');
+    doc.text('Dépôt de garantie', MARGIN, state.y);
+    state.y += 15;
+    doc.setFont('times', 'normal');
+    const montant = (ctx.depotMontant !== '' && ctx.depotMontant != null)
+      ? Number(ctx.depotMontant).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €'
+      : '—';
+    doc.text('Montant versé à l’entrée : ' + montant, MARGIN, state.y);
+    state.y += 14;
+    doc.text('Date du versement : ' + (ctx.depotDateLabel || '—'), MARGIN, state.y);
+    state.y += 20;
+
+    ensureSpace(doc, state, 110, ctx);
+    doc.setFont('times', 'bold');
+    doc.text('Conclusion', MARGIN, state.y);
+    state.y += 16;
+    doc.setFont('times', 'normal');
+
+    drawCase(doc, MARGIN, state.y, ctx.conformite === 'conforme');
+    writeWrapped(doc, state, 'État des lieux CONFORME à l’état des lieux d’entrée',
+      MARGIN + 18, CONTENT_W - 18, 14, ctx);
+    state.y += 4;
+
+    drawCase(doc, MARGIN, state.y, ctx.conformite === 'differences');
+    writeWrapped(doc, state,
+      'DIFFÉRENCES / dégradations constatées : voir observations et photographies de cet état des lieux',
+      MARGIN + 18, CONTENT_W - 18, 14, ctx);
+    state.y += 4;
+
+    const causes = ctx.causes || {};
+    [['Dégradations', causes.degradations],
+     ['Vétusté / usure normale', causes.vetuste],
+     ['Défauts déjà présents à l’entrée', causes.defautsEntree],
+     ['Origine indéterminée', causes.indetermine]].forEach(function (paire) {
+      ensureSpace(doc, state, 20, ctx);
+      drawCase(doc, MARGIN + 24, state.y, !!paire[1]);
+      writeWrapped(doc, state, paire[0], MARGIN + 42, CONTENT_W - 42, 14, ctx);
+      state.y += 2;
+    });
+
+    state.y += 12;
+    ensureSpace(doc, state, 46, ctx);
+    doc.setFont('times', 'italic');
+    doc.setFontSize(10);
+    writeWrapped(doc, state,
+      'La restitution du dépôt de garantie intervient dans les délais légaux à compter de la restitution des clés, déduction faite, le cas échéant, des sommes restant dues au bailleur et des retenues dûment justifiées.',
+      MARGIN, CONTENT_W, 13, ctx);
+    doc.setFont('times', 'normal');
+    doc.setFontSize(10.5);
+    state.y += 16;
+  }
+
   async function drawSignatures(doc, state, ctx) {
     ensureSpace(doc, state, 150, ctx);
     doc.setFont('times', 'bold');
@@ -453,6 +548,7 @@ const EdlPdf = (function () {
         await drawCle(doc, state, c, ctx);
       }
     }
+    drawSortie(doc, state, ctx);
     await drawSignatures(doc, state, ctx);
     stampFooters(doc, ctx);
     return doc;

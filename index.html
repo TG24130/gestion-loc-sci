@@ -6,7 +6,7 @@
 <title>Gestion Loc SCI</title>
 <meta name="description" content="Gestion locative de SCI : quittances, baux, charges, documents et crédits.">
 <meta name="theme-color" content="#2f6fed">
-<link rel="manifest" href="manifest.json?v=2026080904">
+<link rel="manifest" href="manifest.json?v=2026080905">
 <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -14,10 +14,10 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Gestion Loc SCI">
 <meta name="mobile-web-app-capable" content="yes">
-<link rel="stylesheet" href="css/style.css?v=2026080904">
-<script type="module" src="js/firebaseAuth.js?v=2026080904"></script>
-<script type="module" src="js/firestoreSync.js?v=2026080904"></script>
-<script type="module" src="js/firebaseStorageSync.js?v=2026080904"></script>
+<link rel="stylesheet" href="css/style.css?v=2026080905">
+<script type="module" src="js/firebaseAuth.js?v=2026080905"></script>
+<script type="module" src="js/firestoreSync.js?v=2026080905"></script>
+<script type="module" src="js/firebaseStorageSync.js?v=2026080905"></script>
 </head>
 <body>
 
@@ -482,7 +482,38 @@
         <h3 class="edl-redac-room-title" id="edl-redac-cles-title" hidden>3. Clés et badges (nombre, photos)</h3>
         <div id="edl-redac-cles"></div>
 
-        <h3 class="edl-redac-room-title" id="edl-signatures-title" hidden>4. Signatures</h3>
+        <div id="edl-sortant-bloc" hidden>
+          <h3 class="edl-redac-room-title">4. Sortie du locataire (état des lieux sortant)</h3>
+          <div class="field">
+            <label for="edl-sortant-adresse">Nouveau domicile du locataire</label>
+            <textarea id="edl-sortant-adresse" rows="3" placeholder="Adresse complète du nouveau logement"></textarea>
+          </div>
+          <div class="grid-2">
+            <div class="field">
+              <label for="edl-sortant-depot-montant">Dépôt de garantie versé à l'entrée (€)</label>
+              <input type="number" step="0.01" id="edl-sortant-depot-montant" placeholder="Ex : 790">
+            </div>
+            <div class="field">
+              <label for="edl-sortant-depot-date">Date du versement</label>
+              <input type="date" id="edl-sortant-depot-date">
+            </div>
+          </div>
+
+          <p class="charges-note" style="margin:14px 0 6px;"><strong>Conclusion de l'état des lieux</strong></p>
+          <label class="edl-case"><input type="radio" name="edl-conformite" value="conforme" id="edl-conf-conforme">
+            État des lieux <strong>CONFORME</strong> à l'état des lieux d'entrée</label>
+          <label class="edl-case"><input type="radio" name="edl-conformite" value="differences" id="edl-conf-differences">
+            <strong>DIFFÉRENCES / dégradations constatées</strong> : voir observations et photographies de cet état des lieux</label>
+
+          <div id="edl-causes-bloc" class="edl-sous-cases" hidden>
+            <label class="edl-case"><input type="checkbox" id="edl-cause-degradations"> Dégradations</label>
+            <label class="edl-case"><input type="checkbox" id="edl-cause-vetuste"> Vétusté / usure normale</label>
+            <label class="edl-case"><input type="checkbox" id="edl-cause-entree"> Défauts déjà présents à l'entrée</label>
+            <label class="edl-case"><input type="checkbox" id="edl-cause-indetermine"> Origine indéterminée</label>
+          </div>
+        </div>
+
+        <h3 class="edl-redac-room-title" id="edl-signatures-title" hidden>5. Signatures</h3>
         <div class="edl-signature-row" id="edl-signatures-row" hidden>
           <div class="edl-signature-col">
             <label>Bailleur</label>
@@ -1068,13 +1099,13 @@
 
 <script src="js/vendor/jspdf.umd.min.js"></script>
 <script src="js/vendor/jszip.min.js"></script>
-<script src="js/numberToWords.js?v=2026080904"></script>
-<script src="js/storage.js?v=2026080904"></script>
-<script src="js/filesDb.js?v=2026080904"></script>
-<script src="js/documents.js?v=2026080904"></script>
-<script src="js/pdfBuilder.js?v=2026080904"></script>
-<script src="js/richTextPdf.js?v=2026080904"></script>
-<script src="js/edlPdf.js?v=2026080904"></script>
-<script src="js/app.js?v=2026080904"></script>
+<script src="js/numberToWords.js?v=2026080905"></script>
+<script src="js/storage.js?v=2026080905"></script>
+<script src="js/filesDb.js?v=2026080905"></script>
+<script src="js/documents.js?v=2026080905"></script>
+<script src="js/pdfBuilder.js?v=2026080905"></script>
+<script src="js/richTextPdf.js?v=2026080905"></script>
+<script src="js/edlPdf.js?v=2026080905"></script>
+<script src="js/app.js?v=2026080905"></script>
 </body>
 </html>

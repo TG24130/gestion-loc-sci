@@ -752,3 +752,8 @@ tr.ligne-impaye td{background:rgba(224,72,63,.05);}
   .paie-non{background:#3a1a1a;color:#f08a80;}
   tr.ligne-impaye td{background:rgba(239,91,82,.08);}
 }
+
+/* Cases a cocher de l'etat des lieux sortant. */
+.edl-case{display:flex;align-items:flex-start;gap:8px;margin:6px 0;font-size:13.5px;line-height:1.45;cursor:pointer;}
+.edl-case input{margin-top:3px;flex-shrink:0;}
+.edl-sous-cases{margin:8px 0 0 26px;padding-left:12px;border-left:2px solid var(--border);}

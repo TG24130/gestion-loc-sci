@@ -17,7 +17,7 @@
 // pas touché, et aucune fiche seule n'approche la limite de 1 Mo.
 //
 // Expose window.QfSync pour que js/app.js (script classique) puisse s'y brancher.
-import { firebaseApp } from './firebaseInit.js?v=2026080904';
+import { firebaseApp } from './firebaseInit.js?v=2026080905';
 import {
   initializeFirestore,
   persistentLocalCache,

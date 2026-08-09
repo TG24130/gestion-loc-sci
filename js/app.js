@@ -3041,6 +3041,7 @@
     // terminée ou le gabarit enregistré, donnant l'impression d'avoir sauté
     // toutes les étapes de saisie.
     byId('edl-signatures-title').hidden = !enCours;
+    if (!enCours) byId('edl-sortant-bloc').hidden = true;
     byId('edl-signatures-row').hidden = !enCours;
   }
 
@@ -3397,6 +3398,12 @@
         vetusteEntree: entrant ? (c.vetuste || '') : undefined,
       })),
       signatureLocataire: '',
+      // Champs propres à l'état des lieux de sortie (ignorés pour un entrant).
+      nouvelleAdresse: '',
+      depotMontant: '',
+      depotDate: '',
+      conformite: '',
+      causes: { degradations: false, vetuste: false, defautsEntree: false, indetermine: false },
     };
     renderEdlRedacRooms();
     renderEdlRedacMeters();
@@ -3405,8 +3412,57 @@
     updateEdlRedacCompareNote(entrant);
     renderEdlSignatureBailleur();
     renderEdlSignatureLocataire();
+    renderEdlSortantBloc();
     byId('edl-redac-actions').hidden = false;
     hasUnsavedWork = true;
+  });
+
+  // Bloc "sortie du locataire" : visible uniquement pour un état des lieux
+  // sortant, et rempli depuis la rédaction en cours.
+  function renderEdlSortantBloc() {
+    const bloc = byId('edl-sortant-bloc');
+    const estSortant = !!currentEdlRedaction && currentEdlRedaction.sens === 'sortant';
+    bloc.hidden = !estSortant;
+    if (!estSortant) return;
+    const r = currentEdlRedaction;
+    byId('edl-sortant-adresse').value = r.nouvelleAdresse || '';
+    byId('edl-sortant-depot-montant').value = r.depotMontant || '';
+    byId('edl-sortant-depot-date').value = r.depotDate || '';
+    byId('edl-conf-conforme').checked = r.conformite === 'conforme';
+    byId('edl-conf-differences').checked = r.conformite === 'differences';
+    const c = r.causes || {};
+    byId('edl-cause-degradations').checked = !!c.degradations;
+    byId('edl-cause-vetuste').checked = !!c.vetuste;
+    byId('edl-cause-entree').checked = !!c.defautsEntree;
+    byId('edl-cause-indetermine').checked = !!c.indetermine;
+    byId('edl-causes-bloc').hidden = r.conformite !== 'differences';
+  }
+
+  function captureEdlSortantBloc() {
+    if (!currentEdlRedaction || currentEdlRedaction.sens !== 'sortant') return;
+    const r = currentEdlRedaction;
+    r.nouvelleAdresse = byId('edl-sortant-adresse').value.trim();
+    r.depotMontant = byId('edl-sortant-depot-montant').value;
+    r.depotDate = byId('edl-sortant-depot-date').value;
+    r.conformite = byId('edl-conf-conforme').checked ? 'conforme'
+      : (byId('edl-conf-differences').checked ? 'differences' : '');
+    r.causes = {
+      degradations: byId('edl-cause-degradations').checked,
+      vetuste: byId('edl-cause-vetuste').checked,
+      defautsEntree: byId('edl-cause-entree').checked,
+      indetermine: byId('edl-cause-indetermine').checked,
+    };
+  }
+
+  // Les sous-causes ne concernent que le cas "différences constatées".
+  document.querySelectorAll('input[name="edl-conformite"]').forEach((radio) => {
+    radio.addEventListener('change', () => {
+      byId('edl-causes-bloc').hidden = !byId('edl-conf-differences').checked;
+      hasUnsavedWork = true;
+    });
+  });
+  ['edl-sortant-adresse', 'edl-sortant-depot-montant', 'edl-sortant-depot-date'].forEach((id) => {
+    byId(id).addEventListener('input', () => { hasUnsavedWork = true; });
   });
 
   function captureCurrentEdlSignatures() {
@@ -3435,6 +3491,21 @@
       pieces: r.pieces,
       compteurs: r.compteurs,
       cles: r.cles,
+      // Champs propres à l'état des lieux de sortie.
+      nouvelleAdresse: r.nouvelleAdresse || '',
+      depotMontant: r.depotMontant || '',
+      depotDate: r.depotDate || '',
+      depotDateLabel: r.depotDate ? new Date(r.depotDate + 'T00:00:00').toLocaleDateString('fr-FR') : '',
+      conformite: r.conformite || '',
+      causes: r.causes || {},
+      // Date de l'état des lieux d'entrée correspondant, rappelée en tête du
+      // document de sortie (repère de comparaison pour les deux parties).
+      dateEntrantLabel: (function () {
+        const e = r.entrantRedactionId
+          ? data.edlRedactions.find((x) => x.id === r.entrantRedactionId)
+          : findLatestEntrantRedaction(r.bienId, r.locataireId);
+        return e && e.date ? new Date(e.date + 'T00:00:00').toLocaleDateString('fr-FR') : '';
+      })(),
       // Toujours reprise depuis "Ma SCI", jamais stockée dans la fiche.
       signatureBailleur: data.sci.signature || '',
       signatureLocataire: r.signatureLocataire,
@@ -3477,6 +3548,7 @@
   function persistCurrentEdlRedaction() {
     if (!currentEdlRedaction) return null;
     currentEdlRedaction.libelle = byId('edl-redac-libelle').value.trim();
+    captureEdlSortantBloc();
     captureCurrentEdlSignatures();
     const now = Date.now();
     if (currentEdlRedaction.id) {
@@ -3647,6 +3719,7 @@
     updateEdlRedacCompareNote(r.entrantRedactionId ? data.edlRedactions.find((x) => x.id === r.entrantRedactionId) : null);
     renderEdlSignatureBailleur();
     renderEdlSignatureLocataire();
+    renderEdlSortantBloc();
     byId('edl-redac-actions').hidden = false;
   }
 
@@ -3832,6 +3905,7 @@
       renderEdlRedacCles();
       renderEdlSignatureBailleur();
       renderEdlSignatureLocataire();
+      renderEdlSortantBloc();
     } else {
       byId('edl-redac-date').value = todayISO();
       byId('edl-redac-libelle').value = '';
