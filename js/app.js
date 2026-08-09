@@ -1,5 +1,9 @@
-(function () {
-  const data = Storage.load();
+(async function () {
+  // Chargement asynchrone : les données vivent désormais dans IndexedDB
+  // (localStorage était plafonné à ~5 Mo). Tout le reste du fichier s'exécute
+  // après cette ligne, y compris l'abonnement aux évènements — d'où le rejeu
+  // de l'état d'authentification plus bas.
+  const data = await Storage.load();
 
   // D'anciennes versions recopiaient la signature de la SCI (image base64 de
   // plusieurs centaines de Ko) dans CHAQUE état des lieux et dans CHAQUE
@@ -773,12 +777,11 @@
     refreshCurrentView();
   }
 
-  window.addEventListener('qf-auth-change', (e) => {
+  function appliquerEtatAuth(user) {
     // Firebase a répondu : on sait maintenant si la session est déjà ouverte.
     // Avant ça, le formulaire de connexion reste caché (voir .qf-auth-pending)
     // pour ne pas l'afficher une fraction de seconde inutilement.
     document.documentElement.classList.remove('qf-auth-pending');
-    const user = e.detail.user;
     if (user) {
       document.documentElement.classList.remove('qf-locked');
       byId('login-error').hidden = true;
@@ -793,7 +796,15 @@
       if (window.QfSync) window.QfSync.stop();
       document.documentElement.classList.remove('qf-pin-locked');
     }
-  });
+  }
+
+  window.addEventListener('qf-auth-change', (e) => appliquerEtatAuth(e.detail.user));
+
+  // Le chargement des données étant asynchrone (IndexedDB), Firebase a pu
+  // répondre AVANT que l'abonnement ci-dessus n'existe : dans ce cas
+  // l'évènement est déjà passé et l'application resterait bloquée sur l'écran
+  // de connexion. On rejoue donc l'état déjà connu.
+  if (window.QfAuth && window.QfAuth.resolved) appliquerEtatAuth(window.QfAuth.currentUser);
 
   // Retente les fichiers dont l'envoi cloud avait échoué (hors-ligne ou
   // erreur réseau) dès que le navigateur retrouve une connexion.
@@ -2112,7 +2123,9 @@
   // n'a pas ete enregistre depuis sa creation/derniere modification.
   let hasUnsavedWork = false;
   window.addEventListener('beforeunload', (e) => {
-    if (!hasUnsavedWork) return;
+    // Les écritures locales étant asynchrones (IndexedDB), on prévient aussi
+    // tant qu'une sauvegarde n'est pas confirmée.
+    if (!hasUnsavedWork && !Storage.hasPendingWrites()) return;
     e.preventDefault();
     e.returnValue = '';
   });
