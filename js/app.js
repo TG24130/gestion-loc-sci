@@ -556,6 +556,7 @@
       locataireNom: d.locataireNom || '—',
       periodeLabel: d.periodeLabel || '—',
       montant: d.montant != null ? euros(d.montant) : '—',
+      montantValeur: d.montant != null ? Number(d.montant) : null,
       actions: `<button class="btn btn-sm" data-view-doc="${d.id}">Télécharger le PDF</button>
           <button class="btn btn-sm btn-danger" data-del-doc="${d.id}">Supprimer</button>`,
     }));
@@ -568,6 +569,7 @@
         locataireNom: loc ? loc.nom : '—',
         periodeLabel: e.libelle || '—',
         montant: '—',
+        montantValeur: null,
         actions: `${fileLinksHTML(e)}
           <button class="btn btn-sm btn-danger" data-del-edl="${e.id}">Supprimer</button>`,
       };
@@ -575,14 +577,85 @@
     return docs.concat(edl).sort((a, b) => b.tri - a.tri);
   }
 
+  // Tri et filtres de la vue Historique (demande utilisateur : trier par date,
+  // par type de document et par locataire).
+  let histTri = { colonne: 'date', sens: 'desc' };
+
+  function peuplerFiltresHistorique(lignes) {
+    const remplir = (selectId, valeurs) => {
+      const sel = byId(selectId);
+      const choix = sel.value;
+      const premier = sel.options[0].outerHTML;
+      sel.innerHTML = premier + [...new Set(valeurs)].sort((a, b) => a.localeCompare(b, 'fr'))
+        .map((v) => '<option value="' + escapeHTML(v) + '">' + escapeHTML(v) + '</option>').join('');
+      sel.value = choix;              // conserve la sélection si elle existe encore
+      if (sel.value !== choix) sel.value = '';
+    };
+    remplir('hist-filtre-type', lignes.map((l) => l.type));
+    remplir('hist-filtre-locataire', lignes.map((l) => l.locataireNom));
+  }
+
+  function trierHistorique(lignes) {
+    const sens = histTri.sens === 'asc' ? 1 : -1;
+    const cle = {
+      date: (l) => l.tri,
+      type: (l) => l.type,
+      locataire: (l) => l.locataireNom,
+      // Les lignes sans montant (états des lieux) restent groupées à une extrémité.
+      montant: (l) => (l.montantValeur == null ? -Infinity : l.montantValeur),
+    }[histTri.colonne];
+    return [...lignes].sort((a, b) => {
+      const va = cle(a); const vb = cle(b);
+      if (typeof va === 'string') return va.localeCompare(vb, 'fr') * sens;
+      return (va - vb) * sens;
+    });
+  }
+
+  function majEntetesHistorique() {
+    document.querySelectorAll('#table-historique .th-triable').forEach((th) => {
+      const actif = th.dataset.tri === histTri.colonne;
+      th.classList.toggle('tri-actif', actif);
+      const libelle = th.dataset.libelle || th.textContent.trim();
+      th.dataset.libelle = libelle;
+      const fleche = actif ? (histTri.sens === 'asc' ? '\u25B2' : '\u25BC') : '';
+      th.innerHTML = libelle + (fleche ? ' <span class="tri-fleche">' + fleche + '</span>' : '');
+    });
+  }
+
+  document.querySelectorAll('#table-historique .th-triable').forEach((th) => {
+    th.addEventListener('click', () => {
+      const col = th.dataset.tri;
+      if (histTri.colonne === col) histTri.sens = histTri.sens === 'asc' ? 'desc' : 'asc';
+      else histTri = { colonne: col, sens: (col === 'date' || col === 'montant') ? 'desc' : 'asc' };
+      renderHistorique();
+    });
+  });
+  byId('hist-filtre-type').addEventListener('change', renderHistorique);
+  byId('hist-filtre-locataire').addEventListener('change', renderHistorique);
+
   function renderHistorique() {
     const tbody = document.querySelector('#table-historique tbody');
     tbody.innerHTML = '';
-    if (data.documents.length === 0 && data.etatsDesLieux.length === 0) {
-      tbody.innerHTML = '<tr class="empty-row"><td colspan="6">Aucun document dans l\'historique.</td></tr>';
+    const toutes = lignesHistorique();
+    peuplerFiltresHistorique(toutes);
+    majEntetesHistorique();
+
+    const fType = byId('hist-filtre-type').value;
+    const fLoc = byId('hist-filtre-locataire').value;
+    const filtrees = toutes.filter((l) =>
+      (!fType || l.type === fType) && (!fLoc || l.locataireNom === fLoc));
+
+    byId('hist-compte').textContent = filtrees.length === toutes.length
+      ? toutes.length + ' document(s).'
+      : filtrees.length + ' document(s) affiché(s) sur ' + toutes.length + '.';
+
+    if (filtrees.length === 0) {
+      tbody.innerHTML = toutes.length === 0
+        ? '<tr class="empty-row"><td colspan="6">Aucun document dans l\'historique.</td></tr>'
+        : '<tr class="empty-row"><td colspan="6">Aucun document ne correspond à ces filtres.</td></tr>';
       return;
     }
-    const sorted = lignesHistorique();
+    const sorted = trierHistorique(filtrees);
     sorted.forEach((l) => {
       tbody.innerHTML += `<tr>
         <td>${l.dateLabel}</td>

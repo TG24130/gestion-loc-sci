@@ -733,3 +733,10 @@ html.qf-auth-pending .lock-box > p:not(.lock-pending){display:none;}
 #pin-overlay{display:none;}
 html.qf-pin-locked #pin-overlay{display:flex;}
 html.qf-pin-locked .app{display:none;}
+
+/* En-tetes de colonnes triables (vue Historique). */
+.th-triable{cursor:pointer;user-select:none;white-space:nowrap;}
+.th-triable:hover{color:var(--accent);}
+.th-triable .tri-fleche{opacity:.45;margin-left:4px;font-size:10px;}
+.th-triable.tri-actif{color:var(--accent);}
+.th-triable.tri-actif .tri-fleche{opacity:1;}
