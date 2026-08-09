@@ -11,11 +11,14 @@ const Documents = (function () {
     return d.getDate() + ' ' + MONTHS_FR[d.getMonth()] + ' ' + d.getFullYear();
   }
 
-  function periodLabel(monthValue) {
+  // nbMois = 1 (mensuel) ou 3 (trimestriel) : la periode couverte va du 1er du
+  // mois choisi au dernier jour du dernier mois du trimestre.
+  function periodLabel(monthValue, nbMois) {
     if (!monthValue) return '';
+    const duree = Number(nbMois) > 0 ? Number(nbMois) : 1;
     const [y, m] = monthValue.split('-').map(Number);
     const start = new Date(y, m - 1, 1);
-    const end = new Date(y, m, 0);
+    const end = new Date(y, m - 1 + duree, 0);
     const startStr = (start.getDate() === 1 ? '1er' : start.getDate()) + ' ' + MONTHS_FR[start.getMonth()] + ' ' + start.getFullYear();
     const endStr = end.getDate() + ' ' + MONTHS_FR[end.getMonth()] + ' ' + end.getFullYear();
     return startStr + ' au ' + endStr;

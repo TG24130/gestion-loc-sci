@@ -310,7 +310,19 @@
     // identifiant enregistre dans la quittance ne correspond plus a la fiche
     // actuelle. Sans cela, des loyers bien regles s'affichaient en impaye.
     const memeNom = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
-    const docs = data.documents.filter((d) => d.periode === ym
+    // Une quittance trimestrielle emise en juillet couvre juillet, aout et
+    // septembre : le mois consulte doit tomber dans cette plage.
+    const couvre = (d) => {
+      if (!d.periode) return false;
+      const duree = Number(d.nbMois) > 0 ? Number(d.nbMois)
+        : (d.periodicite === 'trimestrielle' ? 3 : 1);
+      if (duree === 1) return d.periode === ym;
+      const [dy, dm] = d.periode.split('-').map(Number);
+      const [cy, cm] = ym.split('-').map(Number);
+      const ecart = (cy - dy) * 12 + (cm - dm);
+      return ecart >= 0 && ecart < duree;
+    };
+    const docs = data.documents.filter((d) => couvre(d)
       && (d.locataireId === loc.id || memeNom(d.locataireNom, loc.nom)));
     if (docs.some((d) => d.type === 'quittance')) return 'paye';
     if (docs.some((d) => d.type === 'recu-partiel')) return 'partiel';
@@ -473,6 +485,13 @@
       <div class="field"><label>Adresse</label><textarea id="m-bien-adresse" rows="3" placeholder="12 rue de la Paix&#10;75002 Paris"></textarea></div>
       <div class="field"><label>Loyer mensuel (€)</label><input type="number" step="0.01" id="m-bien-loyer"></div>
       <div class="field"><label>Charges mensuelles (€)</label><input type="number" step="0.01" id="m-bien-charges"></div>
+      <div class="field"><label>Périodicité du loyer</label>
+        <select id="m-bien-periodicite">
+          <option value="mensuelle">Mensuelle</option>
+          <option value="trimestrielle">Trimestrielle</option>
+        </select></div>
+      <div class="field" id="m-bien-mois-bloc" hidden><label>Premier mois d'échéance (puis tous les 3 mois)</label>
+        <select id="m-bien-mois-depart"><option value="1">Janvier</option><option value="2">Février</option><option value="3">Mars</option><option value="4">Avril</option><option value="5">Mai</option><option value="6">Juin</option><option value="7">Juillet</option><option value="8">Août</option><option value="9">Septembre</option><option value="10">Octobre</option><option value="11">Novembre</option><option value="12">Décembre</option></select></div>
       <button class="btn btn-primary" id="m-bien-save">${isEdit ? 'Enregistrer' : 'Ajouter'}</button>
     `);
     if (isEdit) {
@@ -480,7 +499,14 @@
       byId('m-bien-adresse').value = existing.adresse || '';
       byId('m-bien-loyer').value = existing.loyer || 0;
       byId('m-bien-charges').value = existing.charges || 0;
+      byId('m-bien-periodicite').value = existing.periodicite || 'mensuelle';
+      byId('m-bien-mois-depart').value = existing.moisDepart || 1;
     }
+    const majPeriodiciteBien = () => {
+      byId('m-bien-mois-bloc').hidden = byId('m-bien-periodicite').value !== 'trimestrielle';
+    };
+    byId('m-bien-periodicite').addEventListener('change', majPeriodiciteBien);
+    majPeriodiciteBien();
     byId('m-bien-save').addEventListener('click', () => {
       const nom = byId('m-bien-nom').value.trim();
       const adresse = byId('m-bien-adresse').value.trim();
@@ -491,6 +517,10 @@
         adresse,
         loyer: parseFloat(byId('m-bien-loyer').value) || 0,
         charges: parseFloat(byId('m-bien-charges').value) || 0,
+        // Periodicite portee par le bien : elle sert de valeur par defaut aux
+        // locataires de ce bien (cas d'un local commercial paye au trimestre).
+        periodicite: byId('m-bien-periodicite').value,
+        moisDepart: parseInt(byId('m-bien-mois-depart').value, 10) || 1,
       };
       if (isEdit) {
         Object.assign(existing, record);
@@ -644,6 +674,8 @@
       const b = data.biens[0];
       byId('m-loc-loyer').value = b.loyer || 0;
       byId('m-loc-charges').value = b.charges || 0;
+      byId('m-loc-periodicite').value = b.periodicite || 'mensuelle';
+      byId('m-loc-mois-depart').value = b.moisDepart || 1;
     }
     const majPeriodicite = () => {
       byId('m-loc-mois-bloc').hidden = byId('m-loc-periodicite').value !== 'trimestrielle';
@@ -655,6 +687,9 @@
       if (b && !isEdit) {
         byId('m-loc-loyer').value = b.loyer || 0;
         byId('m-loc-charges').value = b.charges || 0;
+        byId('m-loc-periodicite').value = b.periodicite || 'mensuelle';
+        byId('m-loc-mois-depart').value = b.moisDepart || 1;
+        majPeriodicite();
       }
     });
     byId('m-loc-save').addEventListener('click', () => {
@@ -1089,6 +1124,33 @@
   typeSelect.addEventListener('change', updateDocFieldsVisibility);
   locSelect.addEventListener('change', prefillFromLocataire);
 
+  // Rappelle la periode reellement couverte et le montant total, pour eviter
+  // toute ambiguite au moment d'emettre une quittance trimestrielle.
+  function majNotePeriodicite() {
+    const note = byId('doc-periodicite-note');
+    if (!note) return;
+    const nbMois = byId('doc-periodicite').value === 'trimestrielle' ? 3 : 1;
+    const periode = byId('doc-periode').value;
+    if (!periode || typeSelect.value !== 'quittance') { note.textContent = ''; return; }
+    const loyer = parseFloat(byId('doc-loyer').value) || 0;
+    const charges = parseFloat(byId('doc-charges').value) || 0;
+    const total = (loyer + charges) * nbMois;
+    note.textContent = 'Période couverte : ' + Documents.periodLabel(periode, nbMois)
+      + (total ? ' — total quittancé : ' + euros(total) : '');
+  }
+
+  // La periodicite proposee suit celle du locataire (heritee du bien).
+  function appliquerPeriodiciteLocataire() {
+    const l = locataireById(locSelect.value);
+    if (!l) return;
+    byId('doc-periodicite').value = l.periodicite === 'trimestrielle' ? 'trimestrielle' : 'mensuelle';
+    majNotePeriodicite();
+  }
+
+  byId('doc-periodicite').addEventListener('change', majNotePeriodicite);
+  byId('doc-periode').addEventListener('change', majNotePeriodicite);
+  ['doc-loyer', 'doc-charges'].forEach((id) => byId(id).addEventListener('input', majNotePeriodicite));
+
   function updateDocFieldsVisibility() {
     const type = typeSelect.value;
     byId('fields-quittance').hidden = type !== 'quittance';
@@ -1097,6 +1159,9 @@
     byId('fields-avenant').hidden = type !== 'avenant';
     byId('fields-libre').hidden = type !== 'libre';
     byId('field-periode').hidden = type === 'libre' || type === 'avenant';
+    // La periodicite ne concerne que la quittance de loyer.
+    byId('field-periodicite').hidden = type !== 'quittance';
+    majNotePeriodicite();
     if (type === 'avenant') {
       byId('avenant-date-effet').value = byId('avenant-date-effet').value || todayISO();
       renderAvenantChargesEditor(AVENANT_DEFAULT_LINES);
@@ -1128,6 +1193,7 @@
     byId('doc-montant-paye').value = '';
     byId('doc-montant-impaye').value = '';
     if (!byId('doc-ville').value) byId('doc-ville').value = data.sci.ville || '';
+    appliquerPeriodiciteLocataire();
   }
 
   function createChargeRowElement(line) {
@@ -1196,7 +1262,10 @@
 
     const type = typeSelect.value;
     const periode = byId('doc-periode').value;
-    const periodeLabel = type === 'libre' ? '' : Documents.periodLabel(periode);
+    // Une quittance trimestrielle couvre trois mois a partir du mois choisi.
+    const periodicite = byId('doc-periodicite').value;
+    const nbMois = periodicite === 'trimestrielle' ? 3 : 1;
+    const periodeLabel = type === 'libre' ? '' : Documents.periodLabel(periode, nbMois);
 
     const bailleurBlock = [data.sci.nom, data.sci.adresse, data.sci.siret ? `SIRET : ${data.sci.siret}` : '']
       .filter(Boolean).join('\n');
@@ -1217,8 +1286,10 @@
     let montant = null;
 
     if (type === 'quittance') {
-      ctx.loyer = parseFloat(byId('doc-loyer').value) || 0;
-      ctx.charges = parseFloat(byId('doc-charges').value) || 0;
+      // Les champs saisis sont mensuels : sur un trimestre, on quittance trois
+      // fois le loyer et les charges.
+      ctx.loyer = (parseFloat(byId('doc-loyer').value) || 0) * nbMois;
+      ctx.charges = (parseFloat(byId('doc-charges').value) || 0) * nbMois;
       montant = ctx.loyer + ctx.charges;
     } else if (type === 'recu-partiel') {
       ctx.totalDu = parseFloat(byId('doc-total-du').value) || 0;
@@ -1257,7 +1328,10 @@
     preview.innerHTML = html;
     byId('btn-download-pdf').disabled = false;
 
-    lastGenerated = { type, locataireId: l.id, locataireNom: l.nom, periode, periodeLabel, montant, ctx };
+    lastGenerated = { type, locataireId: l.id, locataireNom: l.nom, periode, periodeLabel, montant, ctx,
+      // Conservee pour le suivi des paiements : une quittance trimestrielle
+      // couvre aussi les deux mois suivants.
+      periodicite, nbMois };
   });
 
   byId('btn-download-pdf').addEventListener('click', () => {
