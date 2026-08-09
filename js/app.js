@@ -250,23 +250,108 @@
     byId('stat-mois').textContent = euros(moisTotal);
     byId('stat-docs').textContent = data.documents.length;
 
-    const tbody = document.querySelector('#dashboard-recent tbody');
-    tbody.innerHTML = '';
-    const recent = [...data.documents].sort((a, b) => b.createdAt - a.createdAt).slice(0, 6);
-    if (recent.length === 0) {
-      tbody.innerHTML = '<tr class="empty-row"><td colspan="5">Aucun document généré pour le moment.</td></tr>';
-    } else {
-      recent.forEach((d) => {
-        tbody.innerHTML += `<tr>
-          <td>${d.dateLabel}</td>
-          <td>${DOC_LABELS[d.type] || d.type}</td>
-          <td>${escapeHTML(d.locataireNom)}</td>
-          <td>${escapeHTML(d.periodeLabel || '—')}</td>
-          <td>${d.montant != null ? euros(d.montant) : '—'}</td>
-        </tr>`;
-      });
-    }
+    renderSuiviPaiements();
   }
+
+  // ---------- Suivi mensuel des paiements ----------
+  // Remplace l'ancienne liste "Derniers documents" : ce qui compte au
+  // quotidien, c'est de voir d'un coup d'oeil qui a paye et qui n'a pas paye
+  // pour le mois en cours. Un locataire est considere comme ayant paye si une
+  // quittance a ete emise pour ce mois ; un recu partiel est signale a part.
+  function moisSuivi() {
+    const champ = byId('suivi-mois');
+    if (!champ.value) {
+      const now = new Date();
+      champ.value = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+    }
+    return champ.value;
+  }
+
+  // "2026-08" -> "aout 2026" (le libelle complet de Documents.periodLabel,
+  // pense pour les quittances, est trop long pour un titre).
+  function moisLisible(ym) {
+    const d = new Date(ym + '-01T00:00:00');
+    if (isNaN(d)) return ym;
+    return d.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+  }
+
+  function etatPaiement(locataireId, ym) {
+    const docs = data.documents.filter((d) => d.locataireId === locataireId && d.periode === ym);
+    if (docs.some((d) => d.type === 'quittance')) return 'paye';
+    if (docs.some((d) => d.type === 'recu-partiel')) return 'partiel';
+    return 'impaye';
+  }
+
+  function renderSuiviPaiements() {
+    const ym = moisSuivi();
+    byId('suivi-mois-label').textContent = moisLisible(ym);
+    const tbody = document.querySelector('#table-suivi-paiements tbody');
+    tbody.innerHTML = '';
+
+    const actifs = data.locataires.filter((l) => l.actif !== false);
+    if (actifs.length === 0) {
+      byId('suivi-resume').textContent = '';
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="5">Aucun locataire actif.</td></tr>';
+      return;
+    }
+
+    const libelles = { paye: 'Payé', partiel: 'Partiel', impaye: 'Non payé' };
+    const classes = { paye: 'paie-ok', partiel: 'paie-partiel', impaye: 'paie-non' };
+    const puces = { paye: '\u2713', partiel: '\u2013', impaye: '\u2717' };
+    let nbPayes = 0;
+    const impayes = [];
+
+    actifs.forEach((l) => {
+      const etat = etatPaiement(l.id, ym);
+      if (etat === 'paye') nbPayes++;
+      else if (etat === 'impaye') impayes.push(l.nom);
+      const bien = bienById(l.bienId);
+      const attendu = (Number(l.loyer) || 0) + (Number(l.charges) || 0);
+      tbody.innerHTML += '<tr class="' + (etat === 'impaye' ? 'ligne-impaye' : '') + '">'
+        + '<td>' + escapeHTML(l.nom) + '</td>'
+        + '<td>' + escapeHTML(bien ? bien.nom : '\u2014') + '</td>'
+        + '<td>' + (attendu ? euros(attendu) : '\u2014') + '</td>'
+        + '<td><span class="badge ' + classes[etat] + '">' + puces[etat] + ' ' + libelles[etat] + '</span></td>'
+        + '<td class="actions-cell">'
+        + (etat === 'paye' ? '' : '<button class="btn btn-sm" data-quittance-loc="' + l.id + '">Établir la quittance</button>')
+        + '</td></tr>';
+    });
+
+    byId('suivi-resume').textContent = nbPayes + ' payé(s) sur ' + actifs.length
+      + (impayes.length ? ' \u2014 en attente : ' + impayes.join(', ') : ' \u2014 tout est à jour.');
+
+    tbody.querySelectorAll('[data-quittance-loc]').forEach((btn) => btn.addEventListener('click', () => {
+      showView('generer');
+      byId('doc-type').value = 'quittance';
+      byId('doc-type').dispatchEvent(new Event('change'));
+      byId('doc-locataire').value = btn.dataset.quittanceLoc;
+      byId('doc-locataire').dispatchEvent(new Event('change'));
+      byId('doc-periode').value = ym;
+    }));
+
+    alerterImpayes(ym, impayes);
+  }
+
+  // Alerte à partir du 10 du mois si des loyers du mois en cours restent sans
+  // quittance. Affichée une seule fois par jour et par appareil, pour prévenir
+  // sans harceler à chaque ouverture.
+  const ALERTE_KEY = 'qf_alerte_impayes';
+  function alerterImpayes(ym, impayes) {
+    const now = new Date();
+    const moisCourant = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+    if (ym !== moisCourant || now.getDate() < 10 || impayes.length === 0) return;
+    const aujourdHui = todayISO();
+    if (localStorage.getItem(ALERTE_KEY) === aujourdHui) return;
+    localStorage.setItem(ALERTE_KEY, aujourdHui);
+    setTimeout(() => {
+      alert('Loyers sans quittance pour ' + (Documents.periodLabel(ym) || ym) + ' :\n\n'
+        + impayes.map((n) => '\u2022 ' + n).join('\n')
+        + '\n\nRetrouvez le détail dans le tableau de bord.');
+    }, 600);
+  }
+
+  byId('suivi-mois').addEventListener('change', renderSuiviPaiements);
+
 
   function escapeHTML(str) {
     return String(str == null ? '' : str)

@@ -740,3 +740,15 @@ html.qf-pin-locked .app{display:none;}
 .th-triable .tri-fleche{opacity:.45;margin-left:4px;font-size:10px;}
 .th-triable.tri-actif{color:var(--accent);}
 .th-triable.tri-actif .tri-fleche{opacity:1;}
+
+/* Suivi mensuel des paiements (tableau de bord) : lecture visuelle immediate. */
+.paie-ok{background:#e4f6ea;color:#1c8a4b;}
+.paie-partiel{background:#fdf0dc;color:#b45309;}
+.paie-non{background:#fdeaea;color:#c0392b;}
+tr.ligne-impaye td{background:rgba(224,72,63,.05);}
+@media (prefers-color-scheme: dark){
+  .paie-ok{background:#123422;color:#4fd487;}
+  .paie-partiel{background:#3a2a12;color:#f0b45e;}
+  .paie-non{background:#3a1a1a;color:#f08a80;}
+  tr.ligne-impaye td{background:rgba(239,91,82,.08);}
+}
