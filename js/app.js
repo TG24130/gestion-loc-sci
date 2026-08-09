@@ -2323,30 +2323,117 @@
     byId('facturestravaux-date').value = todayISO();
     byId('facturestravaux-libelle').value = '';
     byId('facturestravaux-fichier').value = '';
+    byId('facturestravaux-type').value = '';
+    // Un document peut concerner la SCI en general (honoraires, assurance...)
+    // et non un bien precis : le rattachement reste donc facultatif.
+    byId('facturestravaux-bien').innerHTML = '<option value="">— SCI (aucun bien) —</option>'
+      + data.biens.map((b) => '<option value="' + b.id + '">' + escapeHTML(b.nom) + '</option>').join('');
+    byId('facturestravaux-locataire').innerHTML = '<option value="">— Aucun —</option>'
+      + data.locataires.map((l) => '<option value="' + l.id + '">' + escapeHTML(l.nom) + '</option>').join('');
     renderFacturesTravauxTable();
+  }
+
+  // Tri et filtres de la vue Factures / Travaux.
+  let ftTri = { colonne: 'date', sens: 'desc' };
+
+  function ftNomBien(d) { const b = bienById(d.bienId); return b ? b.nom : ''; }
+  function ftNomLocataire(d) { const l = locataireById(d.locataireId); return l ? l.nom : ''; }
+
+  function peuplerFiltresFT() {
+    const tous = data.facturesTravaux;
+    const remplir = (id, valeurs, tri) => {
+      const sel = byId(id);
+      const choix = sel.value;
+      const premier = sel.options[0].outerHTML;
+      const uniques = [...new Set(valeurs.filter(Boolean))].sort(tri);
+      sel.innerHTML = premier + uniques
+        .map((v) => '<option value="' + escapeHTML(v) + '">' + escapeHTML(v) + '</option>').join('');
+      sel.value = choix;
+      if (sel.value !== choix) sel.value = '';
+    };
+    remplir('ft-filtre-annee', tous.map((d) => (d.date || '').slice(0, 4)), (a, b) => b.localeCompare(a));
+    remplir('ft-filtre-type', tous.map((d) => d.typeTravaux), (a, b) => a.localeCompare(b, 'fr'));
+    remplir('ft-filtre-locataire', tous.map((d) => ftNomLocataire(d)), (a, b) => a.localeCompare(b, 'fr'));
+    // La liste de suggestions de natures se nourrit de ce qui a deja ete saisi.
+    const dl = byId('liste-types-travaux');
+    dl.innerHTML = [...new Set(tous.map((d) => d.typeTravaux).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, 'fr'))
+      .map((v) => '<option value="' + escapeHTML(v) + '"></option>').join('');
+  }
+
+  function majEntetesFT() {
+    document.querySelectorAll('#facturestravaux-table .th-triable').forEach((th) => {
+      const actif = th.dataset.triFt === ftTri.colonne;
+      th.classList.toggle('tri-actif', actif);
+      const libelle = th.dataset.libelle || th.textContent.trim();
+      th.dataset.libelle = libelle;
+      const fleche = actif ? (ftTri.sens === 'asc' ? '\u25B2' : '\u25BC') : '';
+      th.innerHTML = libelle + (fleche ? ' <span class="tri-fleche">' + fleche + '</span>' : '');
+    });
   }
 
   function renderFacturesTravauxTable() {
     const tbody = document.querySelector('#facturestravaux-table tbody');
-    const docs = data.facturesTravaux
-      .filter((d) => d.categorie === currentFacturesTravauxCategory)
-      .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    peuplerFiltresFT();
+    majEntetesFT();
+
+    const fCat = byId('ft-filtre-categorie').value;
+    const fAnnee = byId('ft-filtre-annee').value;
+    const fType = byId('ft-filtre-type').value;
+    const fLoc = byId('ft-filtre-locataire').value;
+
+    let docs = data.facturesTravaux.filter((d) => {
+      // 'courante' = la rubrique ouverte ; '' = les deux reunies.
+      if (fCat === 'courante' && d.categorie !== currentFacturesTravauxCategory) return false;
+      if (fCat && fCat !== 'courante' && d.categorie !== fCat) return false;
+      if (fAnnee && (d.date || '').slice(0, 4) !== fAnnee) return false;
+      if (fType && d.typeTravaux !== fType) return false;
+      if (fLoc && ftNomLocataire(d) !== fLoc) return false;
+      return true;
+    });
+
+    const sens = ftTri.sens === 'asc' ? 1 : -1;
+    const cle = {
+      date: (d) => d.date || '',
+      type: (d) => d.typeTravaux || '',
+      bien: (d) => ftNomBien(d),
+      locataire: (d) => ftNomLocataire(d),
+    }[ftTri.colonne];
+    docs = [...docs].sort((a, b) => String(cle(a)).localeCompare(String(cle(b)), 'fr') * sens);
+
+    byId('ft-compte').textContent = docs.length + ' document(s).';
+
     if (docs.length === 0) {
-      tbody.innerHTML = '<tr class="empty-row"><td colspan="4">Aucun document dans cette catégorie.</td></tr>';
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="7">Aucun document ne correspond \u00e0 ces crit\u00e8res.</td></tr>';
       return;
     }
     tbody.innerHTML = docs.map((d) => {
-      const dateLabel = d.date ? new Date(`${d.date}T00:00:00`).toLocaleDateString('fr-FR') : '—';
-      return `<tr>
-        <td>${dateLabel}</td>
-        <td>${escapeHTML(d.libelle || '—')}</td>
-        <td>${fileLinksHTML(d)}</td>
-        <td class="actions-cell"><button type="button" class="btn btn-sm btn-danger" data-del-facturestravaux="${d.id}">Supprimer</button></td>
-      </tr>`;
+      const dateLabel = d.date ? new Date(d.date + 'T00:00:00').toLocaleDateString('fr-FR') : '\u2014';
+      const cat = FACTURES_TRAVAUX_CATEGORIES[d.categorie] || '';
+      return '<tr>'
+        + '<td>' + dateLabel + (fCat !== 'courante' && cat ? '<br><span class="badge badge-inactive">' + escapeHTML(cat) + '</span>' : '') + '</td>'
+        + '<td>' + escapeHTML(d.typeTravaux || '\u2014') + '</td>'
+        + '<td>' + escapeHTML(ftNomBien(d) || '\u2014') + '</td>'
+        + '<td>' + escapeHTML(ftNomLocataire(d) || '\u2014') + '</td>'
+        + '<td>' + escapeHTML(d.libelle || '\u2014') + '</td>'
+        + '<td>' + fileLinksHTML(d) + '</td>'
+        + '<td class="actions-cell"><button type="button" class="btn btn-sm btn-danger" data-del-facturestravaux="' + d.id + '">Supprimer</button></td>'
+        + '</tr>';
     }).join('');
     tbody.querySelectorAll('[data-view-file]').forEach((btn) => btn.addEventListener('click', () => openStoredFile(btn.dataset.viewFile, btn.title)));
     tbody.querySelectorAll('[data-del-facturestravaux]').forEach((btn) => btn.addEventListener('click', () => deleteFacturesTravaux(btn.dataset.delFacturestravaux)));
   }
+
+  document.querySelectorAll('#facturestravaux-table .th-triable').forEach((th) => {
+    th.addEventListener('click', () => {
+      const col = th.dataset.triFt;
+      if (ftTri.colonne === col) ftTri.sens = ftTri.sens === 'asc' ? 'desc' : 'asc';
+      else ftTri = { colonne: col, sens: col === 'date' ? 'desc' : 'asc' };
+      renderFacturesTravauxTable();
+    });
+  });
+  ['ft-filtre-annee', 'ft-filtre-categorie', 'ft-filtre-type', 'ft-filtre-locataire']
+    .forEach((id) => byId(id).addEventListener('change', renderFacturesTravauxTable));
 
   async function deleteFacturesTravaux(id) {
     const entry = data.facturesTravaux.find((d) => d.id === id);
@@ -2376,6 +2463,9 @@
       id: Storage.uid(),
       categorie: currentFacturesTravauxCategory,
       date,
+      typeTravaux: byId('facturestravaux-type').value.trim(),
+      bienId: byId('facturestravaux-bien').value,
+      locataireId: byId('facturestravaux-locataire').value,
       libelle: byId('facturestravaux-libelle').value.trim(),
       files: [],
     };

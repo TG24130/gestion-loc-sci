@@ -6,7 +6,7 @@
 <title>Gestion Loc SCI</title>
 <meta name="description" content="Gestion locative de SCI : quittances, baux, charges, documents et crédits.">
 <meta name="theme-color" content="#2f6fed">
-<link rel="manifest" href="manifest.json?v=2026080909">
+<link rel="manifest" href="manifest.json?v=2026080910">
 <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -14,10 +14,10 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Gestion Loc SCI">
 <meta name="mobile-web-app-capable" content="yes">
-<link rel="stylesheet" href="css/style.css?v=2026080909">
-<script type="module" src="js/firebaseAuth.js?v=2026080909"></script>
-<script type="module" src="js/firestoreSync.js?v=2026080909"></script>
-<script type="module" src="js/firebaseStorageSync.js?v=2026080909"></script>
+<link rel="stylesheet" href="css/style.css?v=2026080910">
+<script type="module" src="js/firebaseAuth.js?v=2026080910"></script>
+<script type="module" src="js/firestoreSync.js?v=2026080910"></script>
+<script type="module" src="js/firebaseStorageSync.js?v=2026080910"></script>
 </head>
 <body>
 
@@ -1055,6 +1055,19 @@
             <label>Date</label>
             <input type="date" id="facturestravaux-date">
           </div>
+          <div class="field">
+            <label>Nature (type)</label>
+            <input type="text" id="facturestravaux-type" list="liste-types-travaux" placeholder="Ex : Plomberie, Peinture, Toiture">
+            <datalist id="liste-types-travaux"></datalist>
+          </div>
+          <div class="field">
+            <label>Bien concerné</label>
+            <select id="facturestravaux-bien"></select>
+          </div>
+          <div class="field">
+            <label>Locataire (optionnel)</label>
+            <select id="facturestravaux-locataire"></select>
+          </div>
           <div class="field charges-form-libelle">
             <label>Libellé (optionnel)</label>
             <input type="text" id="facturestravaux-libelle" placeholder="Ex : Facture entreprise Dupont">
@@ -1069,8 +1082,42 @@
 
       <div class="panel">
         <h2>Historique</h2>
+        <div class="charges-form-grid">
+          <div class="field">
+            <label for="ft-filtre-annee">Année</label>
+            <select id="ft-filtre-annee"><option value="">Toutes</option></select>
+          </div>
+          <div class="field">
+            <label for="ft-filtre-categorie">Catégorie</label>
+            <select id="ft-filtre-categorie">
+              <option value="courante">Cette rubrique seulement</option>
+              <option value="">Factures et travaux réunis</option>
+              <option value="factures">Factures SCI</option>
+              <option value="travaux">Travaux SCI</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="ft-filtre-type">Nature</label>
+            <select id="ft-filtre-type"><option value="">Toutes</option></select>
+          </div>
+          <div class="field">
+            <label for="ft-filtre-locataire">Locataire</label>
+            <select id="ft-filtre-locataire"><option value="">Tous</option></select>
+          </div>
+        </div>
+        <p class="charges-note" style="margin:0 0 10px;">
+          Cliquez sur un en-tête (Date, Nature, Bien, Locataire) pour trier. <span id="ft-compte"></span>
+        </p>
         <table class="table" id="facturestravaux-table">
-          <thead><tr><th>Date</th><th>Libellé</th><th>Fichier(s)</th><th></th></tr></thead>
+          <thead><tr>
+            <th class="th-triable" data-tri-ft="date">Date</th>
+            <th class="th-triable" data-tri-ft="type">Nature</th>
+            <th class="th-triable" data-tri-ft="bien">Bien</th>
+            <th class="th-triable" data-tri-ft="locataire">Locataire</th>
+            <th>Libellé</th>
+            <th>Fichier(s)</th>
+            <th></th>
+          </tr></thead>
           <tbody></tbody>
         </table>
       </div>
@@ -1107,13 +1154,13 @@
 
 <script src="js/vendor/jspdf.umd.min.js"></script>
 <script src="js/vendor/jszip.min.js"></script>
-<script src="js/numberToWords.js?v=2026080909"></script>
-<script src="js/storage.js?v=2026080909"></script>
-<script src="js/filesDb.js?v=2026080909"></script>
-<script src="js/documents.js?v=2026080909"></script>
-<script src="js/pdfBuilder.js?v=2026080909"></script>
-<script src="js/richTextPdf.js?v=2026080909"></script>
-<script src="js/edlPdf.js?v=2026080909"></script>
-<script src="js/app.js?v=2026080909"></script>
+<script src="js/numberToWords.js?v=2026080910"></script>
+<script src="js/storage.js?v=2026080910"></script>
+<script src="js/filesDb.js?v=2026080910"></script>
+<script src="js/documents.js?v=2026080910"></script>
+<script src="js/pdfBuilder.js?v=2026080910"></script>
+<script src="js/richTextPdf.js?v=2026080910"></script>
+<script src="js/edlPdf.js?v=2026080910"></script>
+<script src="js/app.js?v=2026080910"></script>
 </body>
 </html>
