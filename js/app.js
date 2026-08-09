@@ -630,6 +630,7 @@
     byId('sci-tel').value = data.sci.tel || '';
     renderSignaturePreview();
     updateSyncMetaStatus();
+    renderPinStatus();
   }
 
   function updateSyncMetaStatus() {
@@ -652,6 +653,82 @@
     data.sci.tel = byId('sci-tel').value.trim();
     save();
     alert('Informations enregistrées.');
+  });
+
+  // ---------- Code d'accès local (en plus de la connexion Firebase) ----------
+  // Demandé à chaque ouverture. Le code n'est jamais stocké en clair : on
+  // conserve une empreinte PBKDF2 (200 000 itérations, sel aléatoire).
+  // Portée honnête de cette protection : elle empêche un accès de passage sur
+  // un appareil déverrouillé. Elle ne chiffre PAS les données — quelqu'un de
+  // technique pourrait la contourner localement. La protection des données
+  // reste l'authentification Firebase et les règles de sécurité.
+  const PIN_KEY = 'qf_pin_v1';
+
+  function pinConfig() {
+    try { return JSON.parse(localStorage.getItem(PIN_KEY) || 'null'); } catch (e) { return null; }
+  }
+
+  function hexOf(buffer) {
+    return [...new Uint8Array(buffer)].map((b) => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  async function derivePin(code, saltHex, iterations) {
+    const enc = new TextEncoder();
+    const salt = new Uint8Array(saltHex.match(/../g).map((h) => parseInt(h, 16)));
+    const key = await crypto.subtle.importKey('raw', enc.encode(code), 'PBKDF2', false, ['deriveBits']);
+    const bits = await crypto.subtle.deriveBits(
+      { name: 'PBKDF2', salt, iterations, hash: 'SHA-256' }, key, 256);
+    return hexOf(bits);
+  }
+
+  function renderPinStatus() {
+    const el = byId('pin-status');
+    if (el) el.textContent = pinConfig() ? 'Code activé' : 'Aucun code défini';
+  }
+
+  // Verrouille si un code est configuré. Appelé après résolution de la session.
+  function applyPinLock() {
+    document.documentElement.classList.toggle('qf-pin-locked', !!pinConfig());
+    if (pinConfig()) setTimeout(() => byId('pin-input').focus(), 50);
+  }
+
+  byId('pin-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const cfg = pinConfig();
+    if (!cfg) { document.documentElement.classList.remove('qf-pin-locked'); return; }
+    const saisi = await derivePin(byId('pin-input').value, cfg.salt, cfg.iterations);
+    if (saisi === cfg.hash) {
+      document.documentElement.classList.remove('qf-pin-locked');
+      byId('pin-error').hidden = true;
+      byId('pin-input').value = '';
+    } else {
+      byId('pin-error').hidden = false;
+      byId('pin-input').value = '';
+      byId('pin-input').focus();
+    }
+  });
+
+  byId('btn-pin-save').addEventListener('click', async () => {
+    const code = byId('pin-new').value;
+    const confirmation = byId('pin-confirm').value;
+    if (code.length < 4) { alert('Le code doit contenir au moins 4 caractères.'); return; }
+    if (code !== confirmation) { alert('Les deux codes saisis ne correspondent pas.'); return; }
+    const salt = hexOf(crypto.getRandomValues(new Uint8Array(16)));
+    const iterations = 200000;
+    const hash = await derivePin(code, salt, iterations);
+    localStorage.setItem(PIN_KEY, JSON.stringify({ salt, iterations, hash }));
+    byId('pin-new').value = '';
+    byId('pin-confirm').value = '';
+    renderPinStatus();
+    alert("Code enregistré. Il sera demandé à la prochaine ouverture de l'application.");
+  });
+
+  byId('btn-pin-remove').addEventListener('click', () => {
+    if (!pinConfig()) { alert("Aucun code n'est défini."); return; }
+    if (!confirm("Supprimer le code d'accès ? L'application s'ouvrira alors directement après connexion.")) return;
+    localStorage.removeItem(PIN_KEY);
+    renderPinStatus();
+    alert('Code supprimé.');
   });
 
   // ---------- Authentification (Firebase, voir js/firebaseAuth.js) ----------
@@ -709,10 +786,12 @@
       byId('account-email').textContent = user.email || '—';
       if (window.QfSync) window.QfSync.start(user.uid, onRemoteData);
       FilesDb.retryPendingUploads().catch((e) => console.error(e));
+      applyPinLock();
     } else {
       document.documentElement.classList.add('qf-locked');
       byId('account-email').textContent = '—';
       if (window.QfSync) window.QfSync.stop();
+      document.documentElement.classList.remove('qf-pin-locked');
     }
   });
 

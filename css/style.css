@@ -726,3 +726,10 @@ html.qf-auth-pending .lock-box > p:not(.lock-pending){display:none;}
    de longues listes avant d'atteindre la saisie, avec un locataire en face. */
 #view-edl-redaction.edl-saisie-en-cours .edl-config{display:none;}
 #view-edl-redaction.edl-saisie-en-cours.edl-config-visible .edl-config{display:block;}
+
+/* Code d'acces local, demande a chaque ouverture EN PLUS de la connexion
+   Firebase. Protege contre un acces de passage sur un appareil deverrouille ;
+   ce n'est pas un chiffrement des donnees (voir commentaire dans app.js). */
+#pin-overlay{display:none;}
+html.qf-pin-locked #pin-overlay{display:flex;}
+html.qf-pin-locked .app{display:none;}
