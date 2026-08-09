@@ -275,11 +275,25 @@
     return d.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
   }
 
-  function etatPaiement(locataireId, ym) {
-    const docs = data.documents.filter((d) => d.locataireId === locataireId && d.periode === ym);
+  // Le loyer est-il du ce mois-ci pour ce locataire ? Un loyer trimestriel
+  // n'est attendu qu'un mois sur trois, a partir de son mois d'echeance
+  // (ex : janvier, avril, juillet, octobre).
+  function loyerDu(loc, ym) {
+    if ((loc.periodicite || 'mensuelle') !== 'trimestrielle') return true;
+    const mois = parseInt(ym.slice(5, 7), 10);
+    const depart = parseInt(loc.moisDepart, 10) || 1;
+    return ((mois - depart) % 3 + 3) % 3 === 0;
+  }
+
+  function etatPaiement(loc, ym) {
+    // Les quittances emises par d'anciennes versions n'ont pas toujours de
+    // locataireId : on retombe alors sur le nom, sinon des paiements bien
+    // reels apparaissaient comme impayes sur les mois passes.
+    const docs = data.documents.filter((d) => d.periode === ym
+      && (d.locataireId ? d.locataireId === loc.id : d.locataireNom === loc.nom));
     if (docs.some((d) => d.type === 'quittance')) return 'paye';
     if (docs.some((d) => d.type === 'recu-partiel')) return 'partiel';
-    return 'impaye';
+    return loyerDu(loc, ym) ? 'impaye' : 'nondu';
   }
 
   function renderSuiviPaiements() {
@@ -295,29 +309,35 @@
       return;
     }
 
-    const libelles = { paye: 'Payé', partiel: 'Partiel', impaye: 'Non payé' };
-    const classes = { paye: 'paie-ok', partiel: 'paie-partiel', impaye: 'paie-non' };
-    const puces = { paye: '\u2713', partiel: '\u2013', impaye: '\u2717' };
+    const libelles = { paye: 'Payé', partiel: 'Partiel', impaye: 'Non payé', nondu: 'Non dû ce mois' };
+    const classes = { paye: 'paie-ok', partiel: 'paie-partiel', impaye: 'paie-non', nondu: 'badge-inactive' };
+    const puces = { paye: '✓', partiel: '–', impaye: '✗', nondu: '—' };
     let nbPayes = 0;
+    let nbAttendus = 0;
     const impayes = [];
 
     actifs.forEach((l) => {
-      const etat = etatPaiement(l.id, ym);
+      const etat = etatPaiement(l, ym);
+      if (etat !== 'nondu') nbAttendus++;
       if (etat === 'paye') nbPayes++;
       else if (etat === 'impaye') impayes.push(l.nom);
       const bien = bienById(l.bienId);
-      const attendu = (Number(l.loyer) || 0) + (Number(l.charges) || 0);
+      const mensuel = (Number(l.loyer) || 0) + (Number(l.charges) || 0);
+      // Un loyer trimestriel appelle trois mois de loyer a l'echeance.
+      const attendu = etat === 'nondu' ? 0
+        : mensuel * ((l.periodicite || 'mensuelle') === 'trimestrielle' ? 3 : 1);
       tbody.innerHTML += '<tr class="' + (etat === 'impaye' ? 'ligne-impaye' : '') + '">'
         + '<td>' + escapeHTML(l.nom) + '</td>'
         + '<td>' + escapeHTML(bien ? bien.nom : '\u2014') + '</td>'
         + '<td>' + (attendu ? euros(attendu) : '\u2014') + '</td>'
         + '<td><span class="badge ' + classes[etat] + '">' + puces[etat] + ' ' + libelles[etat] + '</span></td>'
         + '<td class="actions-cell">'
-        + (etat === 'paye' ? '' : '<button class="btn btn-sm" data-quittance-loc="' + l.id + '">Établir la quittance</button>')
+        + ((etat === 'paye' || etat === 'nondu') ? ''
+            : '<button class="btn btn-sm" data-quittance-loc="' + l.id + '">Établir la quittance</button>')
         + '</td></tr>';
     });
 
-    byId('suivi-resume').textContent = nbPayes + ' payé(s) sur ' + actifs.length
+    byId('suivi-resume').textContent = nbPayes + ' payé(s) sur ' + nbAttendus + ' attendu(s)'
       + (impayes.length ? ' \u2014 en attente : ' + impayes.join(', ') : ' \u2014 tout est à jour.');
 
     tbody.querySelectorAll('[data-quittance-loc]').forEach((btn) => btn.addEventListener('click', () => {
@@ -563,6 +583,13 @@
       <div class="field"><label>Loyer mensuel (€)</label><input type="number" step="0.01" id="m-loc-loyer"></div>
       <div class="field"><label>Charges mensuelles (€)</label><input type="number" step="0.01" id="m-loc-charges"></div>
       <div class="field"><label>Date d'entrée</label><input type="date" id="m-loc-date"></div>
+      <div class="field"><label>Périodicité du loyer</label>
+        <select id="m-loc-periodicite">
+          <option value="mensuelle">Mensuelle</option>
+          <option value="trimestrielle">Trimestrielle</option>
+        </select></div>
+      <div class="field" id="m-loc-mois-bloc" hidden><label>Premier mois d'échéance (puis tous les 3 mois)</label>
+        <select id="m-loc-mois-depart"><option value="1">Janvier</option><option value="2">Février</option><option value="3">Mars</option><option value="4">Avril</option><option value="5">Mai</option><option value="6">Juin</option><option value="7">Juillet</option><option value="8">Août</option><option value="9">Septembre</option><option value="10">Octobre</option><option value="11">Novembre</option><option value="12">Décembre</option></select></div>
       <div class="field"><label>Lieu de naissance (pour avenants/baux)</label><input type="text" id="m-loc-lieu-naissance" placeholder="Bordeaux"></div>
       <div class="field"><label>Date de naissance (pour avenants/baux)</label><input type="date" id="m-loc-date-naissance"></div>
       <div class="field"><label>E-mail 1</label><input type="email" id="m-loc-email1" placeholder="locataire@exemple.fr"></div>
@@ -587,11 +614,18 @@
       byId('m-loc-email2').value = existing.email2 || '';
       byId('m-loc-tel1').value = existing.tel1 || existing.tel || '';
       byId('m-loc-tel2').value = existing.tel2 || '';
+      byId('m-loc-periodicite').value = existing.periodicite || 'mensuelle';
+      byId('m-loc-mois-depart').value = existing.moisDepart || 1;
     } else {
       const b = data.biens[0];
       byId('m-loc-loyer').value = b.loyer || 0;
       byId('m-loc-charges').value = b.charges || 0;
     }
+    const majPeriodicite = () => {
+      byId('m-loc-mois-bloc').hidden = byId('m-loc-periodicite').value !== 'trimestrielle';
+    };
+    byId('m-loc-periodicite').addEventListener('change', majPeriodicite);
+    majPeriodicite();
     byId('m-loc-bien').addEventListener('change', () => {
       const b = bienById(byId('m-loc-bien').value);
       if (b && !isEdit) {
@@ -611,6 +645,12 @@
         loyer: parseFloat(byId('m-loc-loyer').value) || 0,
         charges: parseFloat(byId('m-loc-charges').value) || 0,
         dateEntree: byId('m-loc-date').value,
+        // Périodicité du loyer : un loyer trimestriel n'est dû que tous les
+        // trois mois, à partir du mois d'échéance choisi (ex : janvier, avril,
+        // juillet, octobre). Sans cela, le suivi des paiements signalait à tort
+        // un impayé les deux mois sur trois où rien n'est attendu.
+        periodicite: byId('m-loc-periodicite').value,
+        moisDepart: parseInt(byId('m-loc-mois-depart').value, 10) || 1,
         lieuNaissance: byId('m-loc-lieu-naissance').value.trim(),
         dateNaissance: byId('m-loc-date-naissance').value,
         email1: byId('m-loc-email1').value.trim(),
