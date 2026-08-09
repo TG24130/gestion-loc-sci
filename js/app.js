@@ -289,8 +289,14 @@
     // Les quittances emises par d'anciennes versions n'ont pas toujours de
     // locataireId : on retombe alors sur le nom, sinon des paiements bien
     // reels apparaissaient comme impayes sur les mois passes.
+    // Rapprochement volontairement tolerant : par identifiant OU par nom.
+    // Les quittances anciennes n'ont pas toujours de locataireId, et lorsque
+    // les locataires ont ete recrees (import d'archive, migration), l'ancien
+    // identifiant enregistre dans la quittance ne correspond plus a la fiche
+    // actuelle. Sans cela, des loyers bien regles s'affichaient en impaye.
+    const memeNom = (a, b) => String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
     const docs = data.documents.filter((d) => d.periode === ym
-      && (d.locataireId ? d.locataireId === loc.id : d.locataireNom === loc.nom));
+      && (d.locataireId === loc.id || memeNom(d.locataireNom, loc.nom)));
     if (docs.some((d) => d.type === 'quittance')) return 'paye';
     if (docs.some((d) => d.type === 'recu-partiel')) return 'partiel';
     return loyerDu(loc, ym) ? 'impaye' : 'nondu';

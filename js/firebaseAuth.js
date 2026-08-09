@@ -9,7 +9,7 @@ import {
   signInWithEmailAndPassword,
   signOut,
 } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js';
-import { firebaseApp } from './firebaseInit.js?v=2026080906';
+import { firebaseApp } from './firebaseInit.js?v=2026080907';
 
 const auth = getAuth(firebaseApp);
 
