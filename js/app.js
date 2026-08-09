@@ -285,6 +285,21 @@
     return ((mois - depart) % 3 + 3) % 3 === 0;
   }
 
+  // Premier mois reellement couvert par l'application : avant lui, aucune
+  // quittance n'a ete emise ici, donc afficher un impaye n'aurait aucun sens.
+  function premierMoisSuivi() {
+    const periodes = data.documents.map((d) => d.periode).filter(Boolean).sort();
+    return periodes.length ? periodes[0] : null;
+  }
+
+  // Mois anterieur a l'entree du locataire, ou anterieur au premier document
+  // enregistre dans l'application : rien a signaler.
+  function horsSuivi(loc, ym) {
+    if (loc.dateEntree && ym < loc.dateEntree.slice(0, 7)) return true;
+    const debut = premierMoisSuivi();
+    return !!debut && ym < debut;
+  }
+
   function etatPaiement(loc, ym) {
     // Les quittances emises par d'anciennes versions n'ont pas toujours de
     // locataireId : on retombe alors sur le nom, sinon des paiements bien
@@ -299,6 +314,7 @@
       && (d.locataireId === loc.id || memeNom(d.locataireNom, loc.nom)));
     if (docs.some((d) => d.type === 'quittance')) return 'paye';
     if (docs.some((d) => d.type === 'recu-partiel')) return 'partiel';
+    if (horsSuivi(loc, ym)) return 'horssuivi';
     return loyerDu(loc, ym) ? 'impaye' : 'nondu';
   }
 
@@ -315,22 +331,22 @@
       return;
     }
 
-    const libelles = { paye: 'Payé', partiel: 'Partiel', impaye: 'Non payé', nondu: 'Non dû ce mois' };
-    const classes = { paye: 'paie-ok', partiel: 'paie-partiel', impaye: 'paie-non', nondu: 'badge-inactive' };
-    const puces = { paye: '✓', partiel: '–', impaye: '✗', nondu: '—' };
+    const libelles = { paye: 'Payé', partiel: 'Partiel', impaye: 'Non payé', nondu: 'Non dû ce mois', horssuivi: 'Hors suivi' };
+    const classes = { paye: 'paie-ok', partiel: 'paie-partiel', impaye: 'paie-non', nondu: 'badge-inactive', horssuivi: 'badge-inactive' };
+    const puces = { paye: '✓', partiel: '–', impaye: '✗', nondu: '—', horssuivi: '—' };
     let nbPayes = 0;
     let nbAttendus = 0;
     const impayes = [];
 
     actifs.forEach((l) => {
       const etat = etatPaiement(l, ym);
-      if (etat !== 'nondu') nbAttendus++;
+      if (etat !== 'nondu' && etat !== 'horssuivi') nbAttendus++;
       if (etat === 'paye') nbPayes++;
       else if (etat === 'impaye') impayes.push(l.nom);
       const bien = bienById(l.bienId);
       const mensuel = (Number(l.loyer) || 0) + (Number(l.charges) || 0);
       // Un loyer trimestriel appelle trois mois de loyer a l'echeance.
-      const attendu = etat === 'nondu' ? 0
+      const attendu = (etat === 'nondu' || etat === 'horssuivi') ? 0
         : mensuel * ((l.periodicite || 'mensuelle') === 'trimestrielle' ? 3 : 1);
       tbody.innerHTML += '<tr class="' + (etat === 'impaye' ? 'ligne-impaye' : '') + '">'
         + '<td>' + escapeHTML(l.nom) + '</td>'
@@ -338,12 +354,14 @@
         + '<td>' + (attendu ? euros(attendu) : '\u2014') + '</td>'
         + '<td><span class="badge ' + classes[etat] + '">' + puces[etat] + ' ' + libelles[etat] + '</span></td>'
         + '<td class="actions-cell">'
-        + ((etat === 'paye' || etat === 'nondu') ? ''
+        + ((etat === 'paye' || etat === 'nondu' || etat === 'horssuivi') ? ''
             : '<button class="btn btn-sm" data-quittance-loc="' + l.id + '">Établir la quittance</button>')
         + '</td></tr>';
     });
 
-    byId('suivi-resume').textContent = nbPayes + ' payé(s) sur ' + nbAttendus + ' attendu(s)'
+    byId('suivi-resume').textContent = nbAttendus === 0
+      ? 'Aucun loyer attendu ce mois-ci (mois antérieur au suivi, ou aucune échéance).'
+      : nbPayes + ' payé(s) sur ' + nbAttendus + ' attendu(s)'
       + (impayes.length ? ' \u2014 en attente : ' + impayes.join(', ') : ' \u2014 tout est à jour.');
 
     tbody.querySelectorAll('[data-quittance-loc]').forEach((btn) => btn.addEventListener('click', () => {
