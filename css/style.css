@@ -757,3 +757,45 @@ tr.ligne-impaye td{background:rgba(224,72,63,.05);}
 .edl-case{display:flex;align-items:flex-start;gap:8px;margin:6px 0;font-size:13.5px;line-height:1.45;cursor:pointer;}
 .edl-case input{margin-top:3px;flex-shrink:0;}
 .edl-sous-cases{margin:8px 0 0 26px;padding-left:12px;border-left:2px solid var(--border);}
+
+/* Grandes tables sur petit ecran (iPhone) : chaque ligne devient une carte
+   empilee, avec le nom de la colonne en libelle. Sinon il fallait faire
+   defiler horizontalement pour lire le statut d'un paiement. */
+@media (max-width: 760px){
+  .table-cartes thead{display:none;}
+  /* Annule le min-width impose plus haut a toutes les tables : sans cela la
+     ligne restait large de 540 px et les valeurs sortaient de l'ecran. */
+  .table-cartes{min-width:0;}
+  .table-cartes, .table-cartes tbody, .table-cartes tr, .table-cartes td{display:block;width:100%;}
+  .table-cartes tr{
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    padding:10px 12px;
+    margin-bottom:10px;
+    background:var(--card-bg);
+  }
+  .table-cartes td{
+    border:none;
+    padding:4px 0;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:14px;
+    text-align:right;
+  }
+  .table-cartes td::before{
+    content:attr(data-label);
+    font-size:11.5px;
+    text-transform:uppercase;
+    letter-spacing:.4px;
+    color:var(--text-muted);
+    font-weight:600;
+    text-align:left;
+    flex-shrink:0;
+  }
+  .table-cartes td:empty{display:none;}
+  .table-cartes td.actions-cell{justify-content:flex-end;padding-top:8px;}
+  .table-cartes td.actions-cell::before{content:none;}
+  .table-cartes .empty-row td{display:block;text-align:center;}
+  .table-cartes .empty-row td::before{content:none;}
+}

@@ -361,10 +361,10 @@
       const attendu = (etat === 'nondu' || etat === 'horssuivi') ? 0
         : mensuel * ((l.periodicite || 'mensuelle') === 'trimestrielle' ? 3 : 1);
       tbody.innerHTML += '<tr class="' + (etat === 'impaye' ? 'ligne-impaye' : '') + '">'
-        + '<td>' + escapeHTML(l.nom) + '</td>'
-        + '<td>' + escapeHTML(bien ? bien.nom : '\u2014') + '</td>'
-        + '<td>' + (attendu ? euros(attendu) : '\u2014') + '</td>'
-        + '<td><span class="badge ' + classes[etat] + '">' + puces[etat] + ' ' + libelles[etat] + '</span></td>'
+        + '<td data-label="Locataire">' + escapeHTML(l.nom) + '</td>'
+        + '<td data-label="Bien">' + escapeHTML(bien ? bien.nom : '—') + '</td>'
+        + '<td data-label="Montant attendu">' + (attendu ? euros(attendu) : '—') + '</td>'
+        + '<td data-label="Statut"><span class="badge ' + classes[etat] + '">' + puces[etat] + ' ' + libelles[etat] + '</span></td>'
         + '<td class="actions-cell">'
         + ((etat === 'paye' || etat === 'nondu' || etat === 'horssuivi') ? ''
             : '<button class="btn btn-sm" data-quittance-loc="' + l.id + '">Établir la quittance</button>')
@@ -842,11 +842,11 @@
     const sorted = trierHistorique(filtrees);
     sorted.forEach((l) => {
       tbody.innerHTML += `<tr>
-        <td>${l.dateLabel}</td>
-        <td>${escapeHTML(l.type)}</td>
-        <td>${escapeHTML(l.locataireNom)}</td>
-        <td>${escapeHTML(l.periodeLabel)}</td>
-        <td>${l.montant}</td>
+        <td data-label="Date">${l.dateLabel}</td>
+        <td data-label="Type">${escapeHTML(l.type)}</td>
+        <td data-label="Locataire">${escapeHTML(l.locataireNom)}</td>
+        <td data-label="Période">${escapeHTML(l.periodeLabel)}</td>
+        <td data-label="Montant">${l.montant}</td>
         <td class="actions-cell">${l.actions}</td>
       </tr>`;
     });
@@ -2411,12 +2411,12 @@
       const dateLabel = d.date ? new Date(d.date + 'T00:00:00').toLocaleDateString('fr-FR') : '\u2014';
       const cat = FACTURES_TRAVAUX_CATEGORIES[d.categorie] || '';
       return '<tr>'
-        + '<td>' + dateLabel + (fCat !== 'courante' && cat ? '<br><span class="badge badge-inactive">' + escapeHTML(cat) + '</span>' : '') + '</td>'
-        + '<td>' + escapeHTML(d.typeTravaux || '\u2014') + '</td>'
-        + '<td>' + escapeHTML(ftNomBien(d) || '\u2014') + '</td>'
-        + '<td>' + escapeHTML(ftNomLocataire(d) || '\u2014') + '</td>'
-        + '<td>' + escapeHTML(d.libelle || '\u2014') + '</td>'
-        + '<td>' + fileLinksHTML(d) + '</td>'
+        + '<td data-label="Date">' + dateLabel + (fCat !== 'courante' && cat ? '<br><span class="badge badge-inactive">' + escapeHTML(cat) + '</span>' : '') + '</td>'
+        + '<td data-label="Nature">' + escapeHTML(d.typeTravaux || '\u2014') + '</td>'
+        + '<td data-label="Bien">' + escapeHTML(ftNomBien(d) || '\u2014') + '</td>'
+        + '<td data-label="Locataire">' + escapeHTML(ftNomLocataire(d) || '\u2014') + '</td>'
+        + '<td data-label="Libellé">' + escapeHTML(d.libelle || '\u2014') + '</td>'
+        + '<td data-label="Fichier(s)">' + fileLinksHTML(d) + '</td>'
         + '<td class="actions-cell"><button type="button" class="btn btn-sm btn-danger" data-del-facturestravaux="' + d.id + '">Supprimer</button></td>'
         + '</tr>';
     }).join('');
