@@ -18,6 +18,47 @@ const EdlPdf = (function () {
     ns: 'NS (non significatif)',
   };
 
+  // Les polices standard d'un PDF (Times, Helvetica) ne connaissent que le jeu
+  // WinAnsi. Tout caractere en dehors (fleches, symboles typographiques rares)
+  // ressortait sous forme de signes parasites du type "Ø=Ü" dans le document
+  // final. On les remplace systematiquement, a un seul endroit : doc.text est
+  // enveloppe dans generate(), donc AUCUN texte ne peut echapper a ce filtre.
+  const REMPLACEMENTS = {
+    '→': '>', '←': '<', '↔': '<>', '⇒': '=>',
+    '✓': 'X', '✗': 'X', '•': '·', '…': '...',
+    ' ': ' ', ' ': ' ', ' ': ' ',
+  };
+
+  // Jeu WinAnsi = tout Latin-1 (<= 0xFF) PLUS ces caracteres typographiques,
+  // dont les codes Unicode depassent 0xFF mais que la police connait.
+  const WINANSI_EN_PLUS = new Set([
+    0x20AC, 0x201A, 0x0192, 0x201E, 0x2026, 0x2020, 0x2021, 0x02C6, 0x2030,
+    0x0160, 0x2039, 0x0152, 0x017D, 0x2018, 0x2019, 0x201C, 0x201D, 0x2022,
+    0x2013, 0x2014, 0x02DC, 0x2122, 0x0161, 0x203A, 0x0153, 0x017E, 0x0178,
+  ]);
+
+  function supporte(codePoint) {
+    return codePoint <= 0xFF || WINANSI_EN_PLUS.has(codePoint);
+  }
+
+  function nettoyerTexte(valeur) {
+    if (Array.isArray(valeur)) return valeur.map(nettoyerTexte);
+    if (typeof valeur !== 'string') return valeur;
+    let sortie = '';
+    for (const ch of valeur) {
+      if (REMPLACEMENTS[ch] !== undefined) { sortie += REMPLACEMENTS[ch]; continue; }
+      const cp = ch.codePointAt(0);
+      if (supporte(cp)) { sortie += ch; continue; }
+      // Non supporte : on tente l'equivalent sans accent, et on ne garde que ce
+      // qui passe. Un emoji (nom de bien "TEST" du mode d'essai, par exemple)
+      // disparait donc au lieu de produire des signes parasites.
+      const replie = ch.normalize('NFD').replace(/[̀-ͯ]/g, '');
+      sortie += [...replie].filter((c) => supporte(c.codePointAt(0))).join('');
+    }
+    // Evite les espaces doubles laisses par un caractere supprime.
+    return sortie.replace(/[ 	]{2,}/g, ' ').replace(/^\s+/, '');
+  }
+
   function blobToDataURL(blob) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -295,69 +336,104 @@ const EdlPdf = (function () {
     return { vetusteDiffs, meterDiffs, cleDiffs, hasComparisonData };
   }
 
-  function drawEcartsSummary(doc, state, ctx) {
+  // ANNEXE placee en FIN de document (demande utilisateur) : le corps de
+  // l'etat des lieux se lit d'abord, la comparaison vient en piece jointe.
+  // Chaque ecart est detaille sur plusieurs lignes explicites — "a l'entree"
+  // et "a la sortie" nommes en toutes lettres — plutot qu'en une ligne
+  // condensee avec une fleche, source d'ambiguite.
+  function drawAnnexeEcarts(doc, state, ctx) {
     if (ctx.sens !== 'sortant') return;
     const { vetusteDiffs, meterDiffs, cleDiffs, hasComparisonData } = collectEcarts(ctx);
     if (!hasComparisonData) return;
 
-    ensureSpace(doc, state, 30, ctx);
+    doc.addPage();
+    state.y = drawLetterhead(doc, ctx);
+    state.y += 10;
     doc.setFont('times', 'bold');
-    doc.setFontSize(13);
+    doc.setFontSize(14);
     doc.setTextColor(20);
-    doc.text("Résumé des écarts avec l'état des lieux d'entrée", MARGIN, state.y);
+    doc.text("ANNEXE — Comparaison avec l'état des lieux d'entrée", MARGIN, state.y);
     state.y += 8;
     doc.setDrawColor(180);
     doc.setLineWidth(0.75);
     doc.line(MARGIN, state.y, PAGE_W - MARGIN, state.y);
     state.y += 16;
 
-    doc.setFontSize(9.5);
+    doc.setFontSize(10);
+    doc.setFont('times', 'italic');
+    doc.setTextColor(90);
+    writeWrapped(doc, state, "État des lieux d'entrée du " + (ctx.dateEntrantLabel || '\u2014')
+      + ". Seuls les points ayant évolué sont repris ci-dessous.", MARGIN, CONTENT_W, 13, ctx);
     doc.setTextColor(20);
+    state.y += 8;
+
     if (vetusteDiffs.length === 0 && meterDiffs.length === 0 && cleDiffs.length === 0) {
       doc.setFont('times', 'normal');
-      writeWrapped(doc, state, "Aucun écart de vétusté, de consommation ou de clés/badges constaté par rapport à l'état des lieux d'entrée.", MARGIN, CONTENT_W, 13, ctx);
-      state.y += 10;
+      doc.setFontSize(10.5);
+      writeWrapped(doc, state,
+        "Aucun écart constaté par rapport à l'état des lieux d'entrée : ni sur l'état des pièces, ni sur les compteurs, ni sur les clés et badges.",
+        MARGIN, CONTENT_W, 14, ctx);
       return;
     }
+
+    // Un ecart = un intitule en gras, puis les valeurs entree / sortie en
+    // dessous, chacune sur sa propre ligne.
+    const bloc = (titre, lignes) => {
+      ensureSpace(doc, state, 18 + lignes.length * 14, ctx);
+      doc.setFont('times', 'bold');
+      doc.setFontSize(10.5);
+      writeWrapped(doc, state, titre, MARGIN, CONTENT_W, 14, ctx);
+      doc.setFont('times', 'normal');
+      doc.setFontSize(10);
+      lignes.forEach((l) => writeWrapped(doc, state, l, MARGIN + 16, CONTENT_W - 16, 13, ctx));
+      state.y += 8;
+    };
+
+    const titreSection = (t) => {
+      ensureSpace(doc, state, 26, ctx);
+      state.y += 4;
+      doc.setFont('times', 'bold');
+      doc.setFontSize(12);
+      doc.text(t, MARGIN, state.y);
+      state.y += 6;
+      doc.setDrawColor(210);
+      doc.setLineWidth(0.5);
+      doc.line(MARGIN, state.y, PAGE_W - MARGIN, state.y);
+      state.y += 14;
+    };
+
     if (vetusteDiffs.length) {
-      ensureSpace(doc, state, 14, ctx);
-      doc.setFont('times', 'bold');
-      doc.text('Vétusté', MARGIN, state.y);
-      state.y += 14;
-      doc.setFont('times', 'normal');
+      titreSection('État des pièces');
       vetusteDiffs.forEach((d) => {
-        const line = `${d.room} — ${d.element} : ${VETUSTE_LABELS[d.before] || 'Non renseigné'} → ${VETUSTE_LABELS[d.after] || 'Non renseigné'}`;
-        writeWrapped(doc, state, line, MARGIN, CONTENT_W, 13, ctx);
+        bloc(d.room + ' \u2014 ' + d.element, [
+          "À l'entrée  : " + (VETUSTE_LABELS[d.before] || 'Non renseigné'),
+          'À la sortie : ' + (VETUSTE_LABELS[d.after] || 'Non renseigné'),
+        ]);
       });
-      state.y += 6;
     }
+
     if (meterDiffs.length) {
-      ensureSpace(doc, state, 14, ctx);
-      doc.setFont('times', 'bold');
-      doc.text('Compteurs', MARGIN, state.y);
-      state.y += 14;
-      doc.setFont('times', 'normal');
+      titreSection('Compteurs');
       meterDiffs.forEach((d) => {
-        const line = `${d.nom} : ${d.entree} → ${d.sortie} (consommation : ${d.conso})`;
-        writeWrapped(doc, state, line, MARGIN, CONTENT_W, 13, ctx);
+        bloc(d.nom, [
+          "Index à l'entrée  : " + d.entree,
+          'Index à la sortie : ' + d.sortie,
+          'Consommation sur la période : ' + d.conso,
+        ]);
       });
-      state.y += 6;
     }
+
     if (cleDiffs.length) {
-      ensureSpace(doc, state, 14, ctx);
-      doc.setFont('times', 'bold');
-      doc.text('Clés et badges', MARGIN, state.y);
-      state.y += 14;
-      doc.setFont('times', 'normal');
+      titreSection('Clés et badges');
       cleDiffs.forEach((d) => {
-        const nombreLabel = `${d.nombreBefore == null ? '—' : d.nombreBefore} → ${d.nombreAfter == null ? '—' : d.nombreAfter}`;
-        const vetusteLabel = `${VETUSTE_LABELS[d.vetusteBefore] || 'Non renseigné'} → ${VETUSTE_LABELS[d.vetusteAfter] || 'Non renseigné'}`;
-        const line = `${d.nom} : ${nombreLabel} — ${vetusteLabel}`;
-        writeWrapped(doc, state, line, MARGIN, CONTENT_W, 13, ctx);
+        bloc(d.nom, [
+          "Nombre remis à l'entrée  : " + (d.nombreBefore == null ? 'Non renseigné' : d.nombreBefore),
+          'Nombre restitué à la sortie : ' + (d.nombreAfter == null ? 'Non renseigné' : d.nombreAfter),
+          "État à l'entrée  : " + (VETUSTE_LABELS[d.vetusteBefore] || 'Non renseigné'),
+          'État à la sortie : ' + (VETUSTE_LABELS[d.vetusteAfter] || 'Non renseigné'),
+        ]);
       });
-      state.y += 6;
     }
-    state.y += 10;
   }
 
   // Case a cocher dessinee : carre, plus une croix si elle est cochee.
@@ -512,9 +588,10 @@ const EdlPdf = (function () {
   async function generate(ctx) {
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF({ unit: 'pt', format: 'a4', compress: true });
+    const ecrireOrigine = doc.text.bind(doc);
+    doc.text = function (texte, ...reste) { return ecrireOrigine(nettoyerTexte(texte), ...reste); };
     const state = { y: drawLetterhead(doc, ctx) };
     state.y = drawCover(doc, ctx, state.y);
-    drawEcartsSummary(doc, state, ctx);
     for (const room of (ctx.pieces || [])) {
       await drawRoom(doc, state, room, ctx);
     }
@@ -550,6 +627,7 @@ const EdlPdf = (function () {
     }
     drawSortie(doc, state, ctx);
     await drawSignatures(doc, state, ctx);
+    drawAnnexeEcarts(doc, state, ctx);
     stampFooters(doc, ctx);
     return doc;
   }
