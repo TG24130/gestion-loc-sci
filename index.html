@@ -6,7 +6,7 @@
 <title>Gestion Loc SCI</title>
 <meta name="description" content="Gestion locative de SCI : quittances, baux, charges, documents et crédits.">
 <meta name="theme-color" content="#2f6fed">
-<link rel="manifest" href="manifest.json?v=2026081002">
+<link rel="manifest" href="manifest.json?v=2026081003">
 <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -14,10 +14,10 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Gestion Loc SCI">
 <meta name="mobile-web-app-capable" content="yes">
-<link rel="stylesheet" href="css/style.css?v=2026081002">
-<script type="module" src="js/firebaseAuth.js?v=2026081002"></script>
-<script type="module" src="js/firestoreSync.js?v=2026081002"></script>
-<script type="module" src="js/firebaseStorageSync.js?v=2026081002"></script>
+<link rel="stylesheet" href="css/style.css?v=2026081003">
+<script type="module" src="js/firebaseAuth.js?v=2026081003"></script>
+<script type="module" src="js/firestoreSync.js?v=2026081003"></script>
+<script type="module" src="js/firebaseStorageSync.js?v=2026081003"></script>
 </head>
 <body>
 
@@ -74,25 +74,30 @@
       <button class="nav-btn" data-view="biens">Biens</button>
       <button class="nav-btn" data-view="historique">Historique</button>
       <button class="nav-btn" data-view="parametres">Ma SCI</button>
-      <button type="button" class="nav-group-label nav-group-toggle" data-toggle-group="charges">
+      <button type="button" class="nav-group-label nav-group-toggle collapsed" data-toggle-group="charges">
         <span>Charges locatives</span>
         <span class="nav-group-arrow"></span>
       </button>
-      <div class="nav-subgroup" id="nav-subgroup-charges">
+      <div class="nav-subgroup collapsed" id="nav-subgroup-charges">
         <button class="nav-btn nav-btn-sub" data-view="charges-tontes">Tontes jardinet</button>
         <button class="nav-btn nav-btn-sub" data-view="charges-chaudiere">Entretien chaudière</button>
         <button class="nav-btn nav-btn-sub" data-view="charges-clim">Entretien clim</button>
         <button class="nav-btn nav-btn-sub" data-view="charges-ordures">Ordures ménagères</button>
         <button class="nav-btn nav-btn-sub" data-view="charges-edf">EDF communs</button>
       </div>
-      <div class="nav-group-label">Documents locataires</div>
-      <button class="nav-btn nav-btn-sub" data-view="bail">Bail</button>
-      <button class="nav-btn nav-btn-sub" data-view="etatslieux">États des lieux</button>
-      <button type="button" class="nav-group-label nav-group-toggle" data-toggle-group="docsadmin">
+      <button type="button" class="nav-group-label nav-group-toggle collapsed" data-toggle-group="doclocataires">
+        <span>Documents locataires</span>
+        <span class="nav-group-arrow"></span>
+      </button>
+      <div class="nav-subgroup collapsed" id="nav-subgroup-doclocataires">
+        <button class="nav-btn nav-btn-sub" data-view="bail">Bail</button>
+        <button class="nav-btn nav-btn-sub" data-view="etatslieux">États des lieux</button>
+      </div>
+      <button type="button" class="nav-group-label nav-group-toggle collapsed" data-toggle-group="docsadmin">
         <span>Documents administratifs</span>
         <span class="nav-group-arrow"></span>
       </button>
-      <div class="nav-subgroup" id="nav-subgroup-docsadmin">
+      <div class="nav-subgroup collapsed" id="nav-subgroup-docsadmin">
         <button class="nav-btn nav-btn-sub" data-view="docsadmin-ag">AG</button>
         <button class="nav-btn nav-btn-sub" data-view="docsadmin-dpe">DPE</button>
         <button class="nav-btn nav-btn-sub" data-view="docsadmin-conformites">Conformités électrique, gaz et eau</button>
@@ -106,20 +111,20 @@
         <button class="nav-btn nav-btn-sub" data-view="docsadmin-assurances">Assurances</button>
         <button class="nav-btn nav-btn-sub" data-view="docsadmin-cartepro">Num carte Impar</button>
       </div>
-      <button type="button" class="nav-group-label nav-group-toggle" data-toggle-group="credits">
+      <button type="button" class="nav-group-label nav-group-toggle collapsed" data-toggle-group="credits">
         <span>Crédits</span>
         <span class="nav-group-arrow"></span>
       </button>
-      <div class="nav-subgroup" id="nav-subgroup-credits">
+      <div class="nav-subgroup collapsed" id="nav-subgroup-credits">
         <button class="nav-btn nav-btn-sub" data-view="credits-bpaca">BPACA</button>
         <button class="nav-btn nav-btn-sub" data-view="credits-caissedepargne">Caisse d'Épargne</button>
         <button class="nav-btn nav-btn-sub" data-view="credits-autre">Autre</button>
       </div>
-      <button type="button" class="nav-group-label nav-group-toggle" data-toggle-group="facturestravaux">
+      <button type="button" class="nav-group-label nav-group-toggle collapsed" data-toggle-group="facturestravaux">
         <span>Factures et travaux</span>
         <span class="nav-group-arrow"></span>
       </button>
-      <div class="nav-subgroup" id="nav-subgroup-facturestravaux">
+      <div class="nav-subgroup collapsed" id="nav-subgroup-facturestravaux">
         <button class="nav-btn nav-btn-sub" data-view="facturestravaux-factures">Factures SCI</button>
         <button class="nav-btn nav-btn-sub" data-view="facturestravaux-travaux">Travaux SCI</button>
       </div>
@@ -155,6 +160,10 @@
         <div class="card">
           <span class="card-value" id="stat-docs">0</span>
           <span class="card-label">Documents émis</span>
+        </div>
+        <div class="card card-date">
+          <span class="card-value" id="stat-date">—</span>
+          <span class="card-label">Aujourd'hui</span>
         </div>
       </div>
       <div class="panel">
@@ -1155,13 +1164,13 @@
 
 <script src="js/vendor/jspdf.umd.min.js"></script>
 <script src="js/vendor/jszip.min.js"></script>
-<script src="js/numberToWords.js?v=2026081002"></script>
-<script src="js/storage.js?v=2026081002"></script>
-<script src="js/filesDb.js?v=2026081002"></script>
-<script src="js/documents.js?v=2026081002"></script>
-<script src="js/pdfBuilder.js?v=2026081002"></script>
-<script src="js/richTextPdf.js?v=2026081002"></script>
-<script src="js/edlPdf.js?v=2026081002"></script>
-<script src="js/app.js?v=2026081002"></script>
+<script src="js/numberToWords.js?v=2026081003"></script>
+<script src="js/storage.js?v=2026081003"></script>
+<script src="js/filesDb.js?v=2026081003"></script>
+<script src="js/documents.js?v=2026081003"></script>
+<script src="js/pdfBuilder.js?v=2026081003"></script>
+<script src="js/richTextPdf.js?v=2026081003"></script>
+<script src="js/edlPdf.js?v=2026081003"></script>
+<script src="js/app.js?v=2026081003"></script>
 </body>
 </html>

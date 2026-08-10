@@ -205,8 +205,30 @@
   let currentView = 'dashboard';
   function refreshCurrentView() { showView(currentView); }
 
+  // A quel groupe du menu appartient une vue ? (les groupes sont replies par
+  // defaut : on ouvre celui de la vue affichee pour que l'entree active reste
+  // visible.)
+  function groupeDeLaVue(view) {
+    if (view.indexOf('charges-') === 0) return 'charges';
+    if (view.indexOf('docsadmin-') === 0) return 'docsadmin';
+    if (view.indexOf('credits-') === 0) return 'credits';
+    if (view.indexOf('facturestravaux-') === 0) return 'facturestravaux';
+    if (view === 'bail' || view === 'etatslieux') return 'doclocataires';
+    return null;
+  }
+
+  function ouvrirGroupeDeLaVue(view) {
+    const groupe = groupeDeLaVue(view);
+    if (!groupe) return;
+    const sousMenu = byId('nav-subgroup-' + groupe);
+    const bouton = document.querySelector('[data-toggle-group="' + groupe + '"]');
+    if (sousMenu) sousMenu.classList.remove('collapsed');
+    if (bouton) bouton.classList.remove('collapsed');
+  }
+
   function showView(view) {
     currentView = view;
+    ouvrirGroupeDeLaVue(view);
     const isCharges = view.indexOf('charges-') === 0;
     const isDocsAdmin = view.indexOf('docsadmin-') === 0;
     const isCredits = view.indexOf('credits-') === 0;
@@ -252,6 +274,10 @@
       .reduce((sum, d) => sum + (Number(d.montant) || 0), 0);
     byId('stat-mois').textContent = euros(moisTotal);
     byId('stat-docs').textContent = data.documents.length;
+    // 5e carte : la date du jour, au format « Lundi 10 août ».
+    const aujourdHui = new Date().toLocaleDateString('fr-FR',
+      { weekday: 'long', day: 'numeric', month: 'long' });
+    byId('stat-date').textContent = aujourdHui.charAt(0).toUpperCase() + aujourdHui.slice(1);
 
     renderSuiviPaiements();
   }
