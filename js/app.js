@@ -239,8 +239,11 @@
 
   // ---------- Dashboard ----------
   function renderDashboard() {
-    byId('stat-biens').textContent = data.biens.length;
-    byId('stat-locataires').textContent = data.locataires.filter((l) => l.actif !== false).length;
+    // Les elements du mode d'essai ("Tester avec un exemple") ne doivent jamais
+    // fausser les chiffres reels ni le suivi des paiements.
+    byId('stat-biens').textContent = data.biens.filter((b) => !b.isTest).length;
+    byId('stat-locataires').textContent =
+      data.locataires.filter((l) => l.actif !== false && !l.isTest).length;
 
     const now = new Date();
     const ym = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
@@ -336,7 +339,7 @@
     const tbody = document.querySelector('#table-suivi-paiements tbody');
     tbody.innerHTML = '';
 
-    const actifs = data.locataires.filter((l) => l.actif !== false);
+    const actifs = data.locataires.filter((l) => l.actif !== false && !l.isTest);
     if (actifs.length === 0) {
       byId('suivi-resume').textContent = '';
       tbody.innerHTML = '<tr class="empty-row"><td colspan="5">Aucun locataire actif.</td></tr>';
