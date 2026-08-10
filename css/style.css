@@ -710,7 +710,7 @@ img.edl-signature-canvas{object-fit:contain;cursor:default;border-style:solid;ba
 @media (max-width:480px){
   /* Deux colonnes conservees meme sur un telephone : avec cinq cartes, une
      seule colonne obligeait a faire defiler tout l'ecran avant d'atteindre le
-     contenu. La carte de date occupe la derniere ligne entiere. */
+     contenu. La carte de date, placee en premier, occupe toute la largeur. */
   .cards{grid-template-columns:repeat(2, 1fr);}
   .card-date{grid-column:1 / -1;}
   .doc-status-grid{grid-template-columns:1fr;}
