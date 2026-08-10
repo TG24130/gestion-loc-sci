@@ -3891,6 +3891,32 @@
     byId('edl-config-hint').hidden = true;
   });
 
+  // Clôt la rédaction : enregistre une dernière fois, libère l'écran et
+  // ramène au tableau de bord. C'est le geste de fin sur le terrain, une fois
+  // le PDF généré, téléchargé et éventuellement envoyé au locataire.
+  byId('btn-edl-redac-fin').addEventListener('click', () => {
+    const r = persistCurrentEdlRedaction();
+    if (!r) { showView('dashboard'); return; }
+    // L'archivage dans "Documents locataires" n'a lieu qu'à la génération du
+    // PDF : on prévient si l'utilisateur termine sans l'avoir fait.
+    const messageSansPdf = [
+      "Le PDF de cet état des lieux n'a pas encore été généré : il ne sera donc pas",
+      "archivé dans Documents locataires.",
+      "",
+      "Votre saisie reste enregistrée en brouillon et vous pourrez la reprendre",
+      "depuis l'historique (bouton Modifier).",
+      "",
+      "Terminer quand même ?",
+    ].join(String.fromCharCode(10));
+    if (!r.etatsDesLieuxId && !confirm(messageSansPdf)) return;
+    renderEdlRedacHistory();
+    clearCurrentEdlRedaction();
+    alert(r.etatsDesLieuxId
+      ? "État des lieux terminé et archivé dans Documents locataires."
+      : "Brouillon enregistré. Vous pourrez le reprendre depuis l'historique.");
+    showView('dashboard');
+  });
+
   byId('btn-edl-redac-save').addEventListener('click', () => {
     if (!persistCurrentEdlRedaction()) return;
     renderEdlRedacHistory();
