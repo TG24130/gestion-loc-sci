@@ -213,6 +213,7 @@
     if (view.indexOf('docsadmin-') === 0) return 'docsadmin';
     if (view.indexOf('credits-') === 0) return 'credits';
     if (view.indexOf('facturestravaux-') === 0) return 'facturestravaux';
+    if (view.indexOf('annonces-') === 0) return 'annonces';
     if (view === 'bail' || view === 'etatslieux') return 'doclocataires';
     return null;
   }
@@ -233,7 +234,8 @@
     const isDocsAdmin = view.indexOf('docsadmin-') === 0;
     const isCredits = view.indexOf('credits-') === 0;
     const isFacturesTravaux = view.indexOf('facturestravaux-') === 0;
-    const sectionId = isCharges ? 'view-charges' : isDocsAdmin ? 'view-docsadmin' : isCredits ? 'view-credits' : isFacturesTravaux ? 'view-facturestravaux' : 'view-' + view;
+    const isAnnonces = view.indexOf('annonces-') === 0;
+    const sectionId = isCharges ? 'view-charges' : isDocsAdmin ? 'view-docsadmin' : isCredits ? 'view-credits' : isFacturesTravaux ? 'view-facturestravaux' : isAnnonces ? 'view-annonces' : 'view-' + view;
     document.querySelectorAll('.nav-btn').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
     document.querySelectorAll('.view').forEach((v) => v.classList.toggle('active', v.id === sectionId));
     if (view === 'dashboard') renderDashboard();
