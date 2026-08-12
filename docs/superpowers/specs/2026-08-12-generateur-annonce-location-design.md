@@ -1,0 +1,273 @@
+# Générateur d'annonce de location — design
+
+Date : 2026-08-12
+Statut : validé, prêt pour le plan d'implémentation
+
+## Objectif
+
+Permettre de rédiger dans Gestion Loc SCI une annonce de location nue
+d'habitation, conforme aux mentions légales obligatoires, prête à coller dans
+le formulaire de dépôt de Leboncoin, avec ses photos ordonnées et exportables.
+
+## Périmètre
+
+Ce document couvre **uniquement la rédaction**. Il ne couvre ni la publication
+automatisée sur Leboncoin, ni la récupération des messages, ni les réponses
+automatiques. Ces deux sujets feront chacun l'objet d'un spec distinct et
+dépendent de celui-ci.
+
+Type de bien couvert : **location nue à usage d'habitation**. Les baux
+commerciaux, les locations meublées et les parkings relèvent d'autres régimes
+et ne sont pas traités ici.
+
+Les biens concernés se situent à Bergerac (24), commune non soumise à
+l'encadrement des loyers. Le spec ne prévoit donc aucune mention de loyer de
+référence majoré ni de complément de loyer.
+
+## Contraintes du contexte
+
+L'application est un client statique sans backend, servi par GitHub Pages
+(voir `README.md`). Les données vivent dans IndexedDB, synchronisées par
+Firestore ; les fichiers binaires transitent par Firebase Storage.
+
+Il n'existe ni intégration continue, ni environnement de test : un push sur
+`main` atteint la production en une à deux minutes. Une erreur dans une mention
+légale se découvrirait donc sur une annonce déjà en ligne. C'est la raison pour
+laquelle la génération est isolée dans une fonction pure couverte par des tests.
+
+## Décisions d'architecture
+
+### Un module autonome plutôt qu'un ajout à `app.js`
+
+`app.js` pèse 206 Ko en un seul IIFE. La logique de génération va dans
+`js/annonce.js`, sur le modèle de `documents.js`, `pdfBuilder.js` et
+`edlPdf.js`. `app.js` ne reçoit que le câblage d'interface.
+
+Le module est un IIFE global (comme `storage.js`), et non un module ES : c'est
+ce qui permet de le charger par `vm` dans les tests Node, comme le fait déjà
+`tests/syncLogic.test.js`.
+
+### Génération hybride
+
+Les blocs chiffrés et légaux sont générés à partir des données. Le descriptif
+littéraire — environnement, distribution, matériaux — reste un texte libre
+rédigé par l'utilisateur, restitué mot pour mot.
+
+Ce choix est délibéré : le texte existant est précis et vivant ; un texte
+assemblé par gabarit serait moins bon. L'outil supprime le risque d'oubli
+légal, il ne réécrit pas.
+
+### Répartition des données
+
+Les caractéristiques permanentes du bien (surface, DPE, chauffage) vivent sur
+l'objet `bien` : elles ne changent pas d'une annonce à l'autre. Les éléments
+datés (texte, loyer du moment, disponibilité, photos) vivent dans une entité
+`annonceRedactions`, liée par `bienId` — la convention déjà en place pour
+`bailRedactions` et `edlRedactions`.
+
+## Modèle de données
+
+### Champs ajoutés à `bien`
+
+| Groupe | Champs |
+|---|---|
+| Nature | `typeBien`, `nbPieces`, `nbChambres`, `anneeConstruction`, `normeConstruction` |
+| Surface | `surfaceHabitable` (m², valeur exacte du mesurage) |
+| Énergie | `dpeClasse`, `gesClasse`, `dpeConsommation` (kWh/m²/an), `dpeDateRealisation`, `energieCoutMin`, `energieCoutMax`, `energieAnneeReference` |
+| Équipement | `chauffageType`, `eauChaudeType`, `stationnement`, `exterieurs`, `annexes` |
+
+Tous ces champs sont optionnels au niveau du stockage. Leur absence est
+signalée par un avertissement au moment de la génération, pas par un refus
+d'enregistrement.
+
+### Nouvelle collection `annonceRedactions[]`
+
+```js
+{
+  id, bienId,
+  titre,
+  texteLibre,                // descriptif rédigé par l'utilisateur
+  loyer, charges,            // pré-remplis depuis le bien, modifiables
+  chargesDetail: [],         // ce que couvre la provision
+  chargesResteACharge,       // ex. ordures ménagères
+  depotGarantie,
+  disponibleLe,
+  honoraires,                // 0 en location directe
+  photos: [{ fileId, ordre }],
+  statut,                    // brouillon | publiee | archivee
+  createdAt, updatedAt
+}
+```
+
+`statut` est positionné à la main par l'utilisateur : rien dans ce périmètre ne
+publie, donc rien ne le met à jour automatiquement.
+
+Ajoutée à `defaultData()` dans `storage.js`. `mergeWithDefaults` fait déjà
+remonter la clé sur les appareils qui l'ignorent : `firestoreSync.js` n'est pas
+modifié.
+
+Volume : deux à trois kilo-octets par rédaction. Sans rapport avec la limite
+d'un mégaoctet par document Firestore.
+
+### Réglages au niveau SCI
+
+Ajoutés à `data.sci`, saisis une fois, surchargeables par annonce :
+`critereContrat`, `ratioRevenus`, `modalitesVisite`, `canalContact`.
+
+## Le module `js/annonce.js`
+
+### Contrat
+
+```js
+construireAnnonce(bien, redaction, reglagesSci)
+// → { texte: string, avertissements: [{ champ, gravite, message }] }
+```
+
+Fonction pure : ni DOM, ni IndexedDB, ni réseau.
+
+### Ordre du texte produit
+
+1. Titre
+2. Texte libre, restitué sans modification
+3. Bloc performance énergétique — généré
+4. Bloc conditions financières — généré
+5. Bloc candidature et visite — généré
+
+Cet ordre reproduit celui des annonces déjà rédigées à la main.
+
+### Contenu des blocs générés
+
+**Performance énergétique** — classes DPE et GES, consommation en kWh/m²/an,
+date de réalisation du diagnostic, fourchette des dépenses annuelles d'énergie
+et année de référence des prix.
+
+La date de réalisation du DPE et l'année de référence des prix de l'énergie
+sont deux données distinctes : un diagnostic réalisé en octobre 2025 peut
+porter des prix indexés au 1er janvier 2023.
+
+**Conditions financières** — loyer hors charges, montant et modalité des
+charges (provision avec régularisation annuelle) et leur objet, charges restant
+au locataire, dépôt de garantie, surface habitable, commune, date de
+disponibilité, honoraires le cas échéant.
+
+**Candidature et visite** — critère de contrat, revenu minimum calculé depuis
+`ratioRevenus` et le loyer hors charges, modalités de visite, canal de contact.
+
+### Avertissements
+
+Deux niveaux.
+
+**Bloquant** — mention légale absente : surface habitable, classe DPE, classe
+GES, fourchette de dépenses énergétiques, année de référence des prix, loyer,
+montant et modalité des charges, dépôt de garantie, commune, date de
+disponibilité.
+
+**Attention** — qualité, sans blocage : mention « environ » à proximité d'une
+surface dans le texte libre, diagnostic de plus de dix ans, descriptif de moins
+de 300 caractères, et **répétition** — un motif de loyer, de DPE, de caution,
+de critère de candidature ou de visite détecté dans le texte libre alors qu'il
+figure déjà dans un bloc généré.
+
+Le bouton de copie reste actif malgré les bloquants : la décision de publier
+appartient à l'utilisateur. Les avertissements s'affichent au-dessus du
+résultat et leur nombre apparaît sur le bouton.
+
+## Interface
+
+### Navigation
+
+Un groupe déroulant ajouté en fin de `<nav>`, construit comme les cinq groupes
+existants :
+
+```html
+<button type="button" class="nav-group-label nav-group-toggle collapsed"
+        data-toggle-group="annonces">
+  <span>Publication et gestion annonce</span>
+  <span class="nav-group-arrow"></span>
+</button>
+<div class="nav-subgroup collapsed" id="nav-subgroup-annonces">
+  <button class="nav-btn nav-btn-sub" data-view="annonces-publication">Publication</button>
+</div>
+```
+
+Une seule entrée pour l'instant. Le groupe accueillera les vues des sous-projets
+suivants.
+
+### Écran Publication
+
+Quatre blocs sur une page.
+
+1. **Choix du bien** — sélection du bien, liste de ses rédactions, actions
+   « Nouvelle » et « Dupliquer ».
+2. **Caractéristiques du bien** — repliable, replié par défaut une fois rempli.
+   La saisie a lieu ici mais **écrit dans `data.biens`**. La modale de la fiche
+   Bien n'est pas modifiée.
+3. **Rédaction** — titre, texte libre, loyer et charges, détail des charges,
+   dépôt, disponibilité, photos.
+4. **Résultat** — texte assemblé, avertissements au-dessus, boutons « Copier
+   l'annonce » et « Exporter les photos ».
+
+### Distribution des pièces
+
+Le bloc de rédaction propose de pré-remplir le texte libre avec la liste des
+pièces issues de `bienGabarits`.
+
+**Décision : `bienGabarits` n'est pas modifié.** Ses pièces portent un nom et un
+type, pas de surface ; le pré-remplissage fournit donc les noms sans les mètres
+carrés, que l'utilisateur complète dans le texte libre. Ajouter une surface aux
+pièces du gabarit toucherait aux états des lieux, qui fonctionnent et ne sont
+pas couverts par des tests. Ce sera reconsidéré si le besoin se confirme à
+l'usage.
+
+## Photos
+
+Aucune brique de stockage nouvelle. `FilesDb.saveFile` écrit dans IndexedDB
+puis envoie vers Firebase Storage, avec reprise via `qf_pending_uploads` en cas
+d'échec réseau. Seul le `fileId` figure dans les données synchronisées : les
+photos ne transitent jamais par Firestore.
+
+**Redimensionnement avant stockage** : 1920 px sur le grand côté, JPEG qualité
+0,85, via `canvas`. Une photo de téléphone passe d'environ 6 Mo à 400 Ko, sans
+différence visible en ligne.
+
+**Ordre** : la première photo sert de vignette. Réordonnancement par boutons
+monter/descendre, plus fiable au doigt que le glisser-déposer. Pas de légende :
+le formulaire de dépôt n'en accepte pas.
+
+**Export** : archive ZIP via `js/vendor/jszip.min.js`, déjà embarqué. Les
+fichiers sont préfixés par leur rang (`01-facade.jpg`, `02-sejour.jpg`) pour que
+l'envoi manuel conserve l'ordre.
+
+## Gestion des erreurs
+
+| Situation | Comportement |
+|---|---|
+| Fichier non-image ou supérieur à 15 Mo | Refus avant stockage, message explicite |
+| `FilesDb.getFile` renvoie `null` | Photo signalée manquante, annonce utilisable |
+| Échec d'envoi vers Storage | Couvert par la file `qf_pending_uploads` existante |
+| Bien supprimé, rédactions orphelines | Affichage « Bien supprimé », comme pour les locataires |
+| Bien sans caractéristiques renseignées | Génération possible, avertissements bloquants affichés |
+
+## Tests
+
+Fichier `tests/annonce.test.js`, lancé par `node tests/annonce.test.js`, sur le
+modèle de `tests/syncLogic.test.js` : chargement du module par `vm`, sans
+navigateur, sans réseau, sans Firebase.
+
+- **Cas de référence** : un bien complet produit un texte attendu, comparé
+  intégralement. Toute altération d'un bloc légal fait échouer le test.
+- **Un test par mention obligatoire** : retirer la donnée déclenche
+  l'avertissement bloquant correspondant.
+- **Détection de répétition** : un texte libre contenant un montant de loyer
+  déclenche l'avertissement de doublon.
+- **Restitution du texte libre** : le descriptif fourni ressort identique,
+  caractère pour caractère.
+
+## Hors périmètre
+
+- Publication automatisée sur Leboncoin.
+- Récupération des messages et réponses automatiques.
+- Locations meublées, baux commerciaux, parkings.
+- Communes soumises à l'encadrement des loyers.
+- Aperçu mis en page et export PDF de l'annonce.
+- Modification de `bienGabarits` et des états des lieux.
