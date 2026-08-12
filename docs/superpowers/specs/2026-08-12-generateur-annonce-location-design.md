@@ -9,6 +9,31 @@ Permettre de rédiger dans Gestion Loc SCI une annonce de location nue
 d'habitation, conforme aux mentions légales obligatoires, prête à coller dans
 le formulaire de dépôt de Leboncoin, avec ses photos ordonnées et exportables.
 
+## Usage attendu
+
+Le dépôt se fait depuis un **PC Windows**. C'est ce qui rend l'archive ZIP
+pertinente comme format d'export, et ce qui laisse ouverte la possibilité du
+remplissage automatique du formulaire dans un sous-projet ultérieur — celui-ci
+exige un Chrome de bureau et ne pourrait pas fonctionner depuis un téléphone.
+
+Déroulé complet d'une publication :
+
+1. Menu → *Publication et gestion annonce* → *Publication*
+2. Sélection du bien ; la rédaction existante s'affiche
+3. Mise à jour de ce qui a changé (disponibilité, loyer)
+4. « Copier l'annonce » — le texte assemblé part dans le presse-papier
+5. « Exporter les photos » — une archive ZIP est téléchargée, puis extraite
+6. Sur le formulaire de dépôt : collage du texte, puis sélection de toutes les
+   photos du dossier extrait
+
+Les préfixes numériques des fichiers (`01-`, `02-`…) font que le formulaire les
+reçoit dans l'ordre voulu, sans manipulation photo par photo. La première
+devient la vignette.
+
+L'utilisateur effectue donc deux gestes manuels : coller le texte, sélectionner
+les photos. Tout le reste — assemblage, conformité, ordre, redimensionnement —
+est préparé par l'application.
+
 ## Périmètre
 
 Ce document couvre **uniquement la rédaction**. Il ne couvre ni la publication
