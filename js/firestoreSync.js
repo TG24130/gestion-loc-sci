@@ -41,12 +41,13 @@ const db = initializeFirestore(firebaseApp, {
 });
 
 // Champs simples, regroupés dans l'unique document "meta" (toujours petits).
-const META_KEYS = ['schemaVersion', 'sci', 'bailModele', 'syncMeta'];
+const META_KEYS = ['schemaVersion', 'sci', 'bailModele', 'syncMeta', 'reglagesAnnonce'];
 // Tableaux de fiches, éclatés en un document Firestore par fiche.
 const RECORD_KEYS = [
   'biens', 'locataires', 'documents', 'charges', 'baux', 'etatsDesLieux',
   'documentsAdmin', 'documentsLocataires', 'credits', 'bailRedactions',
   'facturesTravaux', 'bienGabarits', 'edlRedactions', 'edlModeles',
+  'annonceRedactions',
 ];
 
 const META_ID = 'meta';

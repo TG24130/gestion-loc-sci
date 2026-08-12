@@ -55,8 +55,11 @@ en JavaScript, pas par des sections distinctes.
 - **Ne pas écrire les photos dans Firestore.** Passer exclusivement par
   `FilesDb`, qui route vers Firebase Storage. Seul le `fileId` figure dans
   l'état synchronisé.
-- **Ne pas modifier `js/firestoreSync.js`.** `mergeWithDefaults` suffit à faire
-  remonter la nouvelle clé.
+- **Ne pas croire qu'une nouvelle clé se synchronise toute seule.**
+  `firestoreSync.js` transporte deux listes explicites, `META_KEYS` et
+  `RECORD_KEYS` (lignes 44-50) ; il n'itère pas sur les clés de `data`. Toute
+  clé absente des deux est perdue en silence au passage d'un appareil à
+  l'autre.
 - **Ne pas toucher à `bienGabarits` ni aux états des lieux** (décision du spec).
 
 ### Le piège du cache
@@ -144,9 +147,13 @@ Cas à couvrir :
 Dans `js/storage.js`, fonction `defaultData()` (ligne 20) : ajouter
 `annonceRedactions: []` à côté de `bailRedactions` et `edlRedactions`.
 
-Ajouter à l'objet `sci` de la même fonction : `critereContrat`,
-`ratioRevenus`, `modalitesVisite`, `canalContact`, tous en chaîne vide sauf
-`ratioRevenus` à `3`.
+Ajouter une clé de premier niveau `reglagesAnnonce` — et **non** des champs
+dans `sci` : la fusion de `load()` étant superficielle, un `sci` déjà
+enregistré remplace l'objet par défaut en bloc, et les champs ajoutés
+resteraient indéfinis sur les données existantes.
+
+Dans `js/firestoreSync.js` : ajouter `'annonceRedactions'` à `RECORD_KEYS` et
+`'reglagesAnnonce'` à `META_KEYS`. **Sans cela, rien ne se synchronise.**
 
 Les champs ajoutés au `bien` (spec, « Champs ajoutés à `bien` ») ne demandent
 aucune déclaration : `data.biens` contient des objets libres, et

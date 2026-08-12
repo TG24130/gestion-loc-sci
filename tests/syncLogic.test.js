@@ -150,6 +150,16 @@ function baseData() {
     charges: [], baux: [], etatsDesLieux: [], documentsAdmin: [],
     documentsLocataires: [], credits: [], bailRedactions: [],
     facturesTravaux: [], bienGabarits: [],
+    // Les réglages d'annonce et les rédactions doivent traverser la
+    // synchronisation comme le reste : firestoreSync liste explicitement les
+    // clés qu'il transporte, une clé oubliée disparaîtrait silencieusement
+    // d'un appareil à l'autre.
+    reglagesAnnonce: { critereContrat: 'CDI', ratioRevenus: 3, modalitesVisite: '', canalContact: '' },
+    annonceRedactions: [{
+      id: 'an1', bienId: 'b1', titre: 'Maison F4', texteLibre: 'Descriptif',
+      loyer: 755, charges: 35, chargesDetail: ['tonte'], depotGarantie: 755,
+      disponibleLe: '2026-10-01', photos: [{ fileId: 'f9', ordre: 0 }], statut: 'brouillon',
+    }],
     // Cas volontairement tordu : tableaux imbriqués dans des objets imbriqués,
     // exactement la forme des états des lieux rédigés.
     edlRedactions: [{
@@ -182,9 +192,11 @@ async function run() {
     eq('biens préservés', rebuilt.biens, data.biens);
     eq('documents préservés', rebuilt.documents, data.documents);
     eq('états des lieux (tableaux imbriqués) préservés', rebuilt.edlRedactions, data.edlRedactions);
+    eq('réglages d\'annonce préservés', rebuilt.reglagesAnnonce, data.reglagesAnnonce);
+    eq('rédactions d\'annonce préservées', rebuilt.annonceRedactions, data.annonceRedactions);
     check('une fiche = un document Firestore',
-      server.store.size === 1 + 2 + 1 + 2 + 1,
-      'docs = ' + server.store.size + ' (attendu 7 : meta + 2 biens + 1 locataire + 2 documents + 1 EDL)');
+      server.store.size === 1 + 2 + 1 + 2 + 1 + 1,
+      'docs = ' + server.store.size + ' (attendu 8 : meta + 2 biens + 1 locataire + 2 documents + 1 EDL + 1 annonce)');
     A.stop();
   }
 

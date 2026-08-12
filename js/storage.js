@@ -36,6 +36,12 @@ const Storage = (function () {
       bienGabarits: [],
       edlRedactions: [],
       edlModeles: [],
+      annonceRedactions: [],
+      // Réglages du générateur d'annonce. Clé de premier niveau plutôt que
+      // champs ajoutés à `sci` : la fusion de load() est superficielle, donc
+      // un `sci` déjà enregistré remplacerait l'objet par défaut en bloc et
+      // les nouveaux champs resteraient indéfinis sur les données existantes.
+      reglagesAnnonce: { critereContrat: '', ratioRevenus: 3, modalitesVisite: '', canalContact: '' },
       // Horodatage de la dernière sauvegarde, pour repérer une modification
       // faite depuis un autre appareil (stratégie "dernière écriture gagne").
       syncMeta: { updatedAt: '', updatedBy: '' },

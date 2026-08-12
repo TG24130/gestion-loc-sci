@@ -127,17 +127,30 @@ d'enregistrement.
 `statut` est positionné à la main par l'utilisateur : rien dans ce périmètre ne
 publie, donc rien ne le met à jour automatiquement.
 
-Ajoutée à `defaultData()` dans `storage.js`. `mergeWithDefaults` fait déjà
-remonter la clé sur les appareils qui l'ignorent : `firestoreSync.js` n'est pas
-modifié.
+Ajoutée à `defaultData()` dans `storage.js`, **et à `RECORD_KEYS` dans
+`firestoreSync.js`**.
+
+Ce second point est obligatoire, contrairement à ce que ce document affirmait
+initialement : `firestoreSync.js` n'itère pas sur les clés de `data`, il
+transporte deux listes explicites — `META_KEYS` et `RECORD_KEYS`. Une clé
+absente des deux est silencieusement perdue au passage d'un appareil à l'autre.
+Vérifié par un test qui échouait avec `obtenu undefined` avant la correction.
 
 Volume : deux à trois kilo-octets par rédaction. Sans rapport avec la limite
 d'un mégaoctet par document Firestore.
 
-### Réglages au niveau SCI
+### Réglages du générateur
 
-Ajoutés à `data.sci`, saisis une fois, surchargeables par annonce :
-`critereContrat`, `ratioRevenus`, `modalitesVisite`, `canalContact`.
+Une clé de premier niveau `reglagesAnnonce`, saisie une fois et surchargeable
+par annonce : `critereContrat`, `ratioRevenus` (défaut `3`), `modalitesVisite`,
+`canalContact`. Ajoutée à `defaultData()` et à `META_KEYS`.
+
+**Clé séparée plutôt que champs ajoutés à `sci`** : la fusion de
+`Storage.load()` est superficielle (`Object.assign(defaultData(), parsed)`), si
+bien qu'un `sci` déjà enregistré remplace l'objet par défaut **en bloc**. Des
+champs ajoutés à `sci` resteraient donc indéfinis sur toute donnée existante,
+et `ratioRevenus` n'aurait jamais sa valeur par défaut. Une clé de premier
+niveau bénéficie au contraire de la fusion.
 
 ## Le module `js/annonce.js`
 
