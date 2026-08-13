@@ -253,6 +253,7 @@
     if (isDocsAdmin) renderDocsAdminView(view.slice('docsadmin-'.length));
     if (isCredits) renderCreditsView(view.slice('credits-'.length));
     if (isFacturesTravaux) renderFacturesTravauxView(view.slice('facturestravaux-'.length));
+    if (isAnnonces) renderAnnonces();
   }
 
   document.querySelectorAll('[data-action="quick-quittance"]').forEach((b) => b.addEventListener('click', () => showView('generer')));
@@ -4212,6 +4213,402 @@
   function closeModal() { modalOverlay.hidden = true; }
   byId('modal-close').addEventListener('click', closeModal);
   modalOverlay.addEventListener('click', (e) => { if (e.target === modalOverlay) closeModal(); });
+
+  // ---------- Publication et gestion annonce ----------
+
+  // Bien et rédaction affichés. Conservés hors de `data` : c'est un état
+  // d'écran, il n'a pas à être synchronisé ni sauvegardé.
+  let annonceBienId = '';
+  let annonceRedactionId = '';
+  let annonceSaveTimer = null;
+
+  const CLASSES_DPE = ['A', 'B', 'C', 'D', 'E', 'F', 'G'];
+
+  // Caractéristiques permanentes : elles vivent sur le BIEN, pas sur la
+  // rédaction, parce qu'elles ne changent pas d'une annonce à l'autre. La
+  // saisie a lieu ici pour éviter un aller-retour vers la fiche du bien.
+  const CHAMPS_BIEN = [
+    { cle: 'typeBien', label: 'Type de bien', type: 'select', options: ['Maison', 'Appartement'] },
+    { cle: 'surfaceHabitable', label: 'Surface habitable (m²)', type: 'number', step: '0.01', aide: 'Valeur exacte du mesurage, sans « environ »' },
+    { cle: 'nbPieces', label: 'Nombre de pièces', type: 'number' },
+    { cle: 'nbChambres', label: 'Dont chambres', type: 'number' },
+    { cle: 'anneeConstruction', label: 'Année de construction', type: 'number' },
+    { cle: 'normeConstruction', label: 'Norme de construction', type: 'text', aide: 'Ex : RT 2012' },
+    { cle: 'dpeClasse', label: 'Classe DPE', type: 'select', options: CLASSES_DPE },
+    { cle: 'gesClasse', label: 'Classe GES', type: 'select', options: CLASSES_DPE },
+    { cle: 'dpeConsommation', label: 'Consommation (kWh/m²/an)', type: 'number' },
+    { cle: 'dpeDateRealisation', label: 'Date du diagnostic', type: 'month' },
+    { cle: 'energieCoutMin', label: 'Dépenses énergie, mini (€/an)', type: 'number' },
+    { cle: 'energieCoutMax', label: 'Dépenses énergie, maxi (€/an)', type: 'number' },
+    { cle: 'energieAnneeReference', label: 'Année de référence des prix', type: 'number', aide: 'Figure sur le DPE. Ce n\'est pas la date du diagnostic.' },
+    { cle: 'chauffageType', label: 'Chauffage', type: 'text' },
+    { cle: 'eauChaudeType', label: 'Eau chaude sanitaire', type: 'text' },
+    { cle: 'stationnement', label: 'Stationnement', type: 'text' },
+    { cle: 'exterieurs', label: 'Extérieurs', type: 'text' },
+    { cle: 'annexes', label: 'Annexes', type: 'text' },
+  ];
+
+  const CHAMPS_REDACTION = [
+    { cle: 'loyer', label: 'Loyer mensuel hors charges (€)', type: 'number', step: '0.01' },
+    { cle: 'charges', label: 'Provision sur charges (€)', type: 'number', step: '0.01' },
+    { cle: 'depotGarantie', label: 'Dépôt de garantie (€)', type: 'number', step: '0.01' },
+    { cle: 'honoraires', label: 'Honoraires locataire TTC (€)', type: 'number', step: '0.01', aide: 'Laisser à 0 en location directe' },
+    { cle: 'disponibleLe', label: 'Disponible à compter du', type: 'date' },
+    { cle: 'chargesResteACharge', label: 'Reste à la charge du locataire', type: 'text', aide: 'Ex : La taxe d\'enlèvement des ordures ménagères' },
+  ];
+
+  const CHAMPS_REGLAGES = [
+    { cle: 'critereContrat', label: 'Contrat exigé', type: 'text', aide: 'Ex : CDI' },
+    { cle: 'ratioRevenus', label: 'Revenus exigés (× le loyer)', type: 'number' },
+    { cle: 'modalitesVisite', label: 'Modalités de visite', type: 'text' },
+    { cle: 'canalContact', label: 'Prise de contact', type: 'text' },
+  ];
+
+  function reglagesAnnonce() {
+    if (!data.reglagesAnnonce) data.reglagesAnnonce = Storage.mergeWithDefaults({}).reglagesAnnonce;
+    return data.reglagesAnnonce;
+  }
+
+  function redactionsDuBien(bienId) {
+    return data.annonceRedactions.filter((r) => r.bienId === bienId);
+  }
+
+  function redactionCourante() {
+    return data.annonceRedactions.find((r) => r.id === annonceRedactionId) || null;
+  }
+
+  // Les écritures IndexedDB sont différées : sauvegarder à chaque frappe
+  // saturerait la file d'écriture de storage.js pour rien.
+  function planifierSauvegardeAnnonce() {
+    if (annonceSaveTimer) clearTimeout(annonceSaveTimer);
+    annonceSaveTimer = setTimeout(() => { annonceSaveTimer = null; save(); }, 800);
+  }
+
+  function champHTML(attribut, champ, valeur) {
+    const val = valeur == null ? '' : String(valeur);
+    const aide = champ.aide ? `<small class="annonce-aide">${escapeHTML(champ.aide)}</small>` : '';
+    let controle;
+    if (champ.type === 'select') {
+      const options = ['<option value=""></option>'].concat(
+        champ.options.map((o) => `<option value="${escapeHTML(o)}"${o === val ? ' selected' : ''}>${escapeHTML(o)}</option>`)
+      ).join('');
+      controle = `<select ${attribut}="${champ.cle}">${options}</select>`;
+    } else {
+      const step = champ.step ? ` step="${champ.step}"` : '';
+      controle = `<input type="${champ.type}"${step} ${attribut}="${champ.cle}" value="${escapeHTML(val)}">`;
+    }
+    return `<div class="field"><label>${escapeHTML(champ.label)}</label>${controle}${aide}</div>`;
+  }
+
+  function champsHTML(attribut, champs, source) {
+    return champs.map((c) => champHTML(attribut, c, source ? source[c.cle] : '')).join('');
+  }
+
+  function renderAnnonces() {
+    const conteneur = byId('annonces-contenu');
+    if (!conteneur) return;
+
+    if (data.biens.length === 0) {
+      conteneur.innerHTML = '<div class="panel"><p>Aucun bien enregistré. Créez d\'abord un bien dans « Biens ».</p></div>';
+      return;
+    }
+
+    // Le bien mémorisé peut avoir été supprimé depuis le dernier affichage.
+    if (!bienById(annonceBienId)) annonceBienId = data.biens[0].id;
+    const bien = bienById(annonceBienId);
+
+    const redactions = redactionsDuBien(annonceBienId);
+    if (!redactions.some((r) => r.id === annonceRedactionId)) {
+      annonceRedactionId = redactions.length ? redactions[0].id : '';
+    }
+    const redaction = redactionCourante();
+
+    const optionsBiens = data.biens
+      .map((b) => `<option value="${escapeHTML(b.id)}"${b.id === annonceBienId ? ' selected' : ''}>${escapeHTML(b.nom)}</option>`)
+      .join('');
+
+    const optionsRedactions = redactions.length
+      ? redactions.map((r) => {
+        const libelle = (r.titre && r.titre.trim()) || 'Sans titre';
+        const date = r.updatedAt ? ' — ' + r.updatedAt.slice(0, 10) : '';
+        return `<option value="${escapeHTML(r.id)}"${r.id === annonceRedactionId ? ' selected' : ''}>${escapeHTML(libelle + date)}</option>`;
+      }).join('')
+      : '<option value="">Aucune rédaction</option>';
+
+    conteneur.innerHTML = `
+      <div class="panel">
+        <h2>Bien et rédaction</h2>
+        <div class="grid-2">
+          <div class="field"><label>Bien</label><select id="annonce-bien">${optionsBiens}</select></div>
+          <div class="field"><label>Rédaction</label><select id="annonce-redaction"${redactions.length ? '' : ' disabled'}>${optionsRedactions}</select></div>
+        </div>
+        <div class="annonce-actions">
+          <button class="btn btn-primary btn-sm" id="annonce-nouvelle">Nouvelle rédaction</button>
+          <button class="btn btn-sm" id="annonce-dupliquer"${redaction ? '' : ' disabled'}>Dupliquer</button>
+          <button class="btn btn-sm btn-danger" id="annonce-supprimer"${redaction ? '' : ' disabled'}>Supprimer</button>
+        </div>
+      </div>
+
+      ${redaction ? `
+      <details class="panel annonce-repliable"${bien.surfaceHabitable ? '' : ' open'}>
+        <summary><h2>Caractéristiques du bien</h2><span class="annonce-summary-note">Saisies une fois, réutilisées à chaque annonce</span></summary>
+        <div class="charges-form-grid">${champsHTML('data-bien-champ', CHAMPS_BIEN, bien)}</div>
+      </details>
+
+      <div class="panel">
+        <h2>Rédaction</h2>
+        <div class="field"><label>Titre de l'annonce</label><input type="text" data-red-champ="titre" value="${escapeHTML(redaction.titre || '')}"></div>
+        <div class="field">
+          <label>Descriptif</label>
+          <textarea id="annonce-texte" rows="16" data-red-champ="texteLibre">${escapeHTML(redaction.texteLibre || '')}</textarea>
+          <small class="annonce-aide">Ce texte est repris tel quel dans l'annonce. Les blocs légaux sont ajoutés automatiquement en dessous : inutile d'y répéter loyer, charges, DPE, caution, critères ou visites.</small>
+          <button class="btn btn-sm" id="annonce-inserer-pieces">Insérer la liste des pièces</button>
+        </div>
+        <div class="charges-form-grid">${champsHTML('data-red-champ', CHAMPS_REDACTION, redaction)}</div>
+        <div class="field">
+          <label>Ce que couvrent les charges</label>
+          <textarea rows="4" data-red-champ="chargesDetail">${escapeHTML((redaction.chargesDetail || []).join('\n'))}</textarea>
+          <small class="annonce-aide">Une ligne par élément. Ex : l'entretien annuel de la chaudière</small>
+        </div>
+      </div>
+
+      <details class="panel annonce-repliable">
+        <summary><h2>Critères de candidature</h2><span class="annonce-summary-note">Communs à toutes vos annonces</span></summary>
+        <div class="charges-form-grid">${champsHTML('data-reg-champ', CHAMPS_REGLAGES, reglagesAnnonce())}</div>
+      </details>
+
+      <div class="panel">
+        <h2>Annonce à publier</h2>
+        <div id="annonce-avertissements"></div>
+        <textarea id="annonce-resultat" rows="22" readonly></textarea>
+        <div class="annonce-actions">
+          <button class="btn btn-primary" id="annonce-copier">Copier l'annonce</button>
+          <span id="annonce-copie-retour" class="annonce-copie-retour"></span>
+        </div>
+      </div>
+      ` : '<div class="panel"><p>Aucune rédaction pour ce bien. Cliquez sur « Nouvelle rédaction » pour commencer.</p></div>'}
+    `;
+
+    brancherEcouteursAnnonce();
+    if (redaction) majResultatAnnonce();
+  }
+
+  function brancherEcouteursAnnonce() {
+    const conteneur = byId('annonces-contenu');
+
+    byId('annonce-bien').addEventListener('change', (e) => {
+      annonceBienId = e.target.value;
+      annonceRedactionId = '';
+      renderAnnonces();
+    });
+
+    const selRedaction = byId('annonce-redaction');
+    if (selRedaction) selRedaction.addEventListener('change', (e) => {
+      annonceRedactionId = e.target.value;
+      renderAnnonces();
+    });
+
+    byId('annonce-nouvelle').addEventListener('click', creerRedactionAnnonce);
+    const btnDup = byId('annonce-dupliquer');
+    if (btnDup) btnDup.addEventListener('click', dupliquerRedactionAnnonce);
+    const btnSup = byId('annonce-supprimer');
+    if (btnSup) btnSup.addEventListener('click', supprimerRedactionAnnonce);
+
+    const btnPieces = byId('annonce-inserer-pieces');
+    if (btnPieces) btnPieces.addEventListener('click', insererPiecesDansAnnonce);
+
+    const btnCopier = byId('annonce-copier');
+    if (btnCopier) btnCopier.addEventListener('click', copierAnnonce);
+
+    // Délégation : un seul écouteur, et surtout AUCUN nouveau rendu à la
+    // frappe — seul le bloc résultat est recalculé, sinon le champ en cours
+    // de saisie perdrait le focus à chaque caractère.
+    conteneur.addEventListener('input', (e) => {
+      if (appliquerSaisieAnnonce(e.target)) {
+        planifierSauvegardeAnnonce();
+        majResultatAnnonce();
+      }
+    });
+    conteneur.addEventListener('change', (e) => {
+      if (e.target.tagName === 'SELECT' && appliquerSaisieAnnonce(e.target)) {
+        planifierSauvegardeAnnonce();
+        majResultatAnnonce();
+      }
+    });
+  }
+
+  // Écrit la valeur saisie dans le bon objet. Renvoie true si quelque chose a
+  // changé (donc s'il faut sauvegarder et recalculer).
+  function appliquerSaisieAnnonce(cible) {
+    const valeur = cible.value;
+
+    const champBien = cible.dataset.bienChamp;
+    if (champBien) {
+      const bien = bienById(annonceBienId);
+      if (!bien) return false;
+      bien[champBien] = cible.type === 'number' ? (valeur === '' ? null : Number(valeur)) : valeur;
+      return true;
+    }
+
+    const champRed = cible.dataset.redChamp;
+    if (champRed) {
+      const redaction = redactionCourante();
+      if (!redaction) return false;
+      if (champRed === 'chargesDetail') {
+        redaction.chargesDetail = valeur.split('\n').map((s) => s.trim()).filter(Boolean);
+      } else if (cible.type === 'number') {
+        redaction[champRed] = valeur === '' ? null : Number(valeur);
+      } else {
+        redaction[champRed] = valeur;
+      }
+      redaction.updatedAt = new Date().toISOString();
+      return true;
+    }
+
+    const champReg = cible.dataset.regChamp;
+    if (champReg) {
+      const reglages = reglagesAnnonce();
+      reglages[champReg] = cible.type === 'number' ? (valeur === '' ? null : Number(valeur)) : valeur;
+      return true;
+    }
+
+    return false;
+  }
+
+  function majResultatAnnonce() {
+    const redaction = redactionCourante();
+    const bien = bienById(annonceBienId);
+    if (!redaction || !bien) return;
+
+    const res = QfAnnonce.construireAnnonce(bien, redaction, reglagesAnnonce());
+    byId('annonce-resultat').value = res.texte;
+
+    const bloquants = res.avertissements.filter((a) => a.gravite === 'bloquant');
+    const attentions = res.avertissements.filter((a) => a.gravite === 'attention');
+
+    const ligne = (a) => `<li>${escapeHTML(a.message)}</li>`;
+    let html = '';
+    if (bloquants.length) {
+      html += `<div class="annonce-alerte annonce-alerte-bloquant"><strong>${bloquants.length} mention${bloquants.length > 1 ? 's' : ''} obligatoire${bloquants.length > 1 ? 's' : ''} manquante${bloquants.length > 1 ? 's' : ''}</strong><ul>${bloquants.map(ligne).join('')}</ul></div>`;
+    }
+    if (attentions.length) {
+      html += `<div class="annonce-alerte annonce-alerte-attention"><strong>À vérifier</strong><ul>${attentions.map(ligne).join('')}</ul></div>`;
+    }
+    if (!html) html = '<div class="annonce-alerte annonce-alerte-ok">Annonce complète : toutes les mentions obligatoires sont présentes.</div>';
+    byId('annonce-avertissements').innerHTML = html;
+
+    // Le bouton reste actif malgré les bloquants : la décision de publier
+    // appartient à l'utilisateur, l'outil signale mais n'interdit pas.
+    byId('annonce-copier').textContent = bloquants.length
+      ? `Copier l'annonce (${bloquants.length} manque${bloquants.length > 1 ? 's' : ''})`
+      : 'Copier l\'annonce';
+  }
+
+  function creerRedactionAnnonce() {
+    const bien = bienById(annonceBienId);
+    if (!bien) return;
+    const maintenant = new Date().toISOString();
+    const redaction = {
+      id: Storage.uid(),
+      bienId: annonceBienId,
+      titre: 'À louer ' + (bien.nom || ''),
+      texteLibre: '',
+      loyer: bien.loyer || null,
+      charges: bien.charges != null ? bien.charges : null,
+      chargesDetail: [],
+      chargesResteACharge: '',
+      depotGarantie: bien.loyer || null,
+      disponibleLe: '',
+      honoraires: 0,
+      photos: [],
+      statut: 'brouillon',
+      createdAt: maintenant,
+      updatedAt: maintenant,
+    };
+    data.annonceRedactions.push(redaction);
+    annonceRedactionId = redaction.id;
+    save();
+    renderAnnonces();
+  }
+
+  function dupliquerRedactionAnnonce() {
+    const source = redactionCourante();
+    if (!source) return;
+    const maintenant = new Date().toISOString();
+    const copie = Object.assign({}, source, {
+      id: Storage.uid(),
+      titre: (source.titre || '') + ' (copie)',
+      // Les photos sont partagées avec l'originale : elles vivent dans
+      // FilesDb, on ne duplique que les références.
+      photos: (source.photos || []).map((p) => Object.assign({}, p)),
+      chargesDetail: (source.chargesDetail || []).slice(),
+      statut: 'brouillon',
+      createdAt: maintenant,
+      updatedAt: maintenant,
+    });
+    data.annonceRedactions.push(copie);
+    annonceRedactionId = copie.id;
+    save();
+    renderAnnonces();
+  }
+
+  function supprimerRedactionAnnonce() {
+    const redaction = redactionCourante();
+    if (!redaction) return;
+    if (!confirm('Supprimer cette rédaction ?\n\nLe texte sera perdu. Les photos restent enregistrées.')) return;
+    data.annonceRedactions = data.annonceRedactions.filter((r) => r.id !== redaction.id);
+    annonceRedactionId = '';
+    save();
+    renderAnnonces();
+  }
+
+  // Les gabarits d'état des lieux portent déjà les pièces de chaque bien.
+  // Ils n'en portent PAS les surfaces : on insère les noms, l'utilisateur
+  // complète les m² à la main.
+  function insererPiecesDansAnnonce() {
+    const gabarit = data.bienGabarits.find((g) => g.bienId === annonceBienId);
+    if (!gabarit || !gabarit.pieces || gabarit.pieces.length === 0) {
+      alert('Aucune pièce enregistrée pour ce bien (elles proviennent du gabarit d\'état des lieux).');
+      return;
+    }
+    const zone = byId('annonce-texte');
+    const liste = gabarit.pieces.map((p) => '- ' + p.nom + ' : ').join('\n');
+    // Ligne vide avant la liste pour la détacher du paragraphe précédent, et
+    // aucun saut après : les blocs générés apportent déjà leur séparation, un
+    // saut de plus produirait une ligne vide isolée dans l'annonce publiée.
+    const separation = zone.value.trim() ? '\n\n' : '';
+    zone.value = zone.value.replace(/\s+$/, '') + separation + liste;
+    zone.dispatchEvent(new Event('input', { bubbles: true }));
+    zone.focus();
+  }
+
+  async function copierAnnonce() {
+    const texte = byId('annonce-resultat').value;
+    const retour = byId('annonce-copie-retour');
+    let ok = false;
+    try {
+      await navigator.clipboard.writeText(texte);
+      ok = true;
+    } catch (e) {
+      // Le presse-papier moderne exige un contexte sécurisé et n'est pas
+      // disponible partout : on retombe sur la méthode historique.
+      try {
+        const tmp = document.createElement('textarea');
+        tmp.value = texte;
+        tmp.style.position = 'fixed';
+        tmp.style.opacity = '0';
+        document.body.appendChild(tmp);
+        tmp.select();
+        ok = document.execCommand('copy');
+        document.body.removeChild(tmp);
+      } catch (e2) {
+        console.error('Copie impossible', e2);
+      }
+    }
+    retour.textContent = ok ? 'Annonce copiée.' : 'Copie impossible : sélectionnez le texte et copiez-le à la main.';
+    retour.className = 'annonce-copie-retour ' + (ok ? 'annonce-copie-ok' : 'annonce-copie-ko');
+    setTimeout(() => { retour.textContent = ''; }, 4000);
+  }
 
   // ---------- Import / Export ----------
   function slugify(str) {
