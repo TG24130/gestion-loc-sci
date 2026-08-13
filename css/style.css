@@ -104,6 +104,10 @@ body{
   padding:0;
   font-family:inherit;
   cursor:pointer;
+  /* Les <button> centrent leur texte par défaut. Invisible tant qu'un libellé
+     tient sur une ligne, mais un intitulé long passe sur deux lignes et
+     apparaît alors centré, contrairement aux autres entrées du menu. */
+  text-align:left;
 }
 .nav-group-toggle:hover{color:#c4cde0;}
 .nav-group-arrow{
