@@ -329,6 +329,37 @@ check('le revenu minimum suit le ratio configuré',
   construire(null, null, { ratioRevenus: 4 }).texte
     .indexOf('au moins 3 020 € (quatre fois le loyer hors charges)') !== -1);
 
+// ---------- 8. Nommage des photos exportées ----------
+
+console.log('\n-- Export des photos --');
+
+const nomPhoto = QfAnnonce.nomFichierPhoto;
+const nomZip = QfAnnonce.nomArchivePhotos;
+
+eq('la première photo est 01', nomPhoto(0, 'image/jpeg'), '01.jpg');
+eq('le rang est sur deux chiffres', nomPhoto(8, 'image/jpeg'), '09.jpg');
+eq('au-delà de dix, le tri reste correct', nomPhoto(11, 'image/jpeg'), '12.jpg');
+eq('le PNG garde son extension', nomPhoto(0, 'image/png'), '01.png');
+eq('le webp aussi', nomPhoto(2, 'image/webp'), '03.webp');
+eq('un type inconnu retombe sur jpg', nomPhoto(0, 'application/octet-stream'), '01.jpg');
+
+// Le tri par nom est ce qui préserve l'ordre au moment de la sélection
+// dans le formulaire de dépôt : il doit tenir au-delà de neuf photos.
+const noms = [];
+for (let i = 0; i < 12; i++) noms.push(nomPhoto(i, 'image/jpeg'));
+eq('douze photos restent dans l\'ordre une fois triées par nom',
+  noms.slice().sort(), noms);
+
+eq('l\'archive porte le titre de l\'annonce',
+  nomZip('À louer proche centre-ville Bergerac, maison F4'),
+  'photos-a-louer-proche-centre-ville-bergerac-maison-f4.zip');
+eq('sans titre, un nom générique', nomZip(''), 'photos-annonce.zip');
+eq('un titre sans lettre ni chiffre retombe sur le générique', nomZip('??? !!!'), 'photos-annonce.zip');
+check('le nom d\'archive reste court', nomZip('a'.repeat(200)).length <= 75,
+  'longueur ' + nomZip('a'.repeat(200)).length);
+check('pas de tiret avant l\'extension',
+  nomZip('Titre très long qui sera coupé quelque part au milieu des mots ici').indexOf('-.zip') === -1);
+
 // ---------- Bilan ----------
 
 console.log('\n' + passed + ' réussis, ' + failed + ' échoués.');

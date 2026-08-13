@@ -396,6 +396,34 @@
     });
   }
 
+  // ---------- Export des photos ----------
+
+  const EXTENSIONS_IMAGE = {
+    'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp',
+    'image/gif': 'gif', 'image/avif': 'avif', 'image/heic': 'heic',
+  };
+
+  // Nom d'une photo dans l'archive. Le rang vient en TÊTE et sur deux
+  // chiffres : le formulaire de dépôt trie les fichiers sélectionnés par nom,
+  // c'est ce qui fait que l'ordre choisi ici est celui de l'annonce publiée —
+  // et que la première photo devient la vignette.
+  function nomFichierPhoto(index, mimeType) {
+    return String(index + 1).padStart(2, '0') + '.' + (EXTENSIONS_IMAGE[mimeType] || 'jpg');
+  }
+
+  // Nom de l'archive : le titre de l'annonce, pour retrouver le bon dossier
+  // dans les téléchargements.
+  function nomArchivePhotos(titre) {
+    const base = String(titre || '')
+      .normalize('NFD').replace(/[̀-ͯ]/g, '')
+      .replace(/[^a-zA-Z0-9]+/g, '-')
+      .replace(/(^-+|-+$)/g, '')
+      .toLowerCase()
+      .slice(0, 60)
+      .replace(/-+$/, '');
+    return 'photos-' + (base || 'annonce') + '.zip';
+  }
+
   // ---------- Point d'entrée ----------
 
   function construireAnnonce(bien, redaction, reglagesSci) {
@@ -432,5 +460,5 @@
     return { texte: blocs.join('\n\n'), avertissements: avertissements };
   }
 
-  window.QfAnnonce = { construireAnnonce };
+  window.QfAnnonce = { construireAnnonce, nomFichierPhoto, nomArchivePhotos };
 })();

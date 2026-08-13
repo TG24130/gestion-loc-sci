@@ -4373,6 +4373,20 @@
         </div>
       </div>
 
+      <div class="panel">
+        <h2>Photos</h2>
+        <p class="annonce-aide">La première photo devient la vignette de l'annonce. Les images sont réduites avant enregistrement : une photo de téléphone passe de plusieurs Mo à quelques centaines de Ko, sans différence visible en ligne.</p>
+        <div id="annonce-photos" class="annonce-photos"></div>
+        <div class="annonce-actions">
+          <label class="btn btn-sm annonce-photo-add">
+            Ajouter des photos
+            <input type="file" id="annonce-photo-input" accept="image/*" multiple hidden>
+          </label>
+          <button class="btn btn-sm" id="annonce-exporter-photos">Exporter les photos (.zip)</button>
+          <span id="annonce-photo-retour" class="annonce-copie-retour"></span>
+        </div>
+      </div>
+
       <details class="panel annonce-repliable">
         <summary><h2>Critères de candidature</h2><span class="annonce-summary-note">Communs à toutes vos annonces</span></summary>
         <div class="charges-form-grid">${champsHTML('data-reg-champ', CHAMPS_REGLAGES, reglagesAnnonce())}</div>
@@ -4391,7 +4405,205 @@
     `;
 
     brancherEcouteursAnnonce();
-    if (redaction) majResultatAnnonce();
+    if (redaction) {
+      majResultatAnnonce();
+      afficherVignettesAnnonce();
+    }
+  }
+
+  // Taille au-delà de laquelle on refuse le fichier : au-dessus, ce n'est
+  // probablement pas une photo mais une vidéo ou un TIFF, et le
+  // redimensionnement échouerait après avoir bloqué le navigateur.
+  const ANNONCE_PHOTO_MAX_OCTETS = 15 * 1024 * 1024;
+
+  // Les URL d'objet des vignettes affichées, à révoquer avant chaque nouveau
+  // rendu : sans cela chaque affichage fuit un blob en mémoire.
+  let annoncePhotoUrls = [];
+
+  function libererVignettesAnnonce() {
+    annoncePhotoUrls.forEach((u) => URL.revokeObjectURL(u));
+    annoncePhotoUrls = [];
+  }
+
+  async function afficherVignettesAnnonce() {
+    const conteneur = byId('annonce-photos');
+    const redaction = redactionCourante();
+    if (!conteneur || !redaction) return;
+
+    libererVignettesAnnonce();
+    conteneur.innerHTML = '';
+
+    const photos = redaction.photos || [];
+    if (photos.length === 0) {
+      conteneur.innerHTML = '<p class="annonce-aide">Aucune photo pour l\'instant.</p>';
+      return;
+    }
+
+    for (let i = 0; i < photos.length; i++) {
+      const photo = photos[i];
+      const vignette = document.createElement('div');
+      vignette.className = 'annonce-photo';
+
+      const blob = await FilesDb.getFile(photo.fileId);
+      if (blob) {
+        const url = URL.createObjectURL(blob);
+        annoncePhotoUrls.push(url);
+        const img = document.createElement('img');
+        img.src = url;
+        img.alt = 'Photo ' + (i + 1);
+        vignette.appendChild(img);
+      } else {
+        // La photo n'est ni en local ni dans le cloud : on le dit sans casser
+        // l'écran, la rédaction reste utilisable.
+        const absente = document.createElement('div');
+        absente.className = 'annonce-photo-absente';
+        absente.textContent = 'Photo introuvable';
+        vignette.appendChild(absente);
+      }
+
+      const barre = document.createElement('div');
+      barre.className = 'annonce-photo-barre';
+      barre.innerHTML = `
+        <span class="annonce-photo-rang">${i + 1}${i === 0 ? ' — vignette' : ''}</span>
+        <button type="button" class="btn btn-sm" data-photo-monter="${i}"${i === 0 ? ' disabled' : ''} title="Monter">↑</button>
+        <button type="button" class="btn btn-sm" data-photo-descendre="${i}"${i === photos.length - 1 ? ' disabled' : ''} title="Descendre">↓</button>
+        <button type="button" class="btn btn-sm btn-danger" data-photo-supprimer="${i}" title="Supprimer">×</button>`;
+      vignette.appendChild(barre);
+      conteneur.appendChild(vignette);
+    }
+
+    conteneur.querySelectorAll('[data-photo-monter]').forEach((b) => {
+      b.addEventListener('click', () => deplacerPhotoAnnonce(Number(b.dataset.photoMonter), -1));
+    });
+    conteneur.querySelectorAll('[data-photo-descendre]').forEach((b) => {
+      b.addEventListener('click', () => deplacerPhotoAnnonce(Number(b.dataset.photoDescendre), 1));
+    });
+    conteneur.querySelectorAll('[data-photo-supprimer]').forEach((b) => {
+      b.addEventListener('click', () => supprimerPhotoAnnonce(Number(b.dataset.photoSupprimer)));
+    });
+  }
+
+  // L'ordre du tableau fait foi ; le champ `ordre` n'est qu'un miroir, tenu à
+  // jour à chaque modification pour qu'une lecture externe (export, autre
+  // appareil) n'ait pas à le déduire.
+  function renumeroterPhotosAnnonce(redaction) {
+    (redaction.photos || []).forEach((p, i) => { p.ordre = i; });
+  }
+
+  async function ajouterPhotosAnnonce(fichiers) {
+    const redaction = redactionCourante();
+    if (!redaction || fichiers.length === 0) return;
+
+    const retour = byId('annonce-photo-retour');
+    const refuses = [];
+    let ajoutees = 0;
+
+    for (const fichier of fichiers) {
+      if (!fichier.type || !fichier.type.startsWith('image/')) {
+        refuses.push(fichier.name + ' (pas une image)');
+        continue;
+      }
+      if (fichier.size > ANNONCE_PHOTO_MAX_OCTETS) {
+        refuses.push(fichier.name + ' (plus de 15 Mo)');
+        continue;
+      }
+      // Même réduction que pour les photos d'état des lieux.
+      const reduit = await resizeImageFile(fichier, 1920, 0.85);
+      const fileId = Storage.uid();
+      try {
+        await FilesDb.saveFile(fileId, reduit);
+        if (!redaction.photos) redaction.photos = [];
+        redaction.photos.push({ fileId: fileId, ordre: redaction.photos.length });
+        ajoutees++;
+      } catch (e) {
+        console.error(e);
+        refuses.push(fichier.name + ' (enregistrement impossible)');
+      }
+    }
+
+    if (ajoutees) {
+      renumeroterPhotosAnnonce(redaction);
+      redaction.updatedAt = new Date().toISOString();
+      save();
+      await afficherVignettesAnnonce();
+    }
+
+    retour.textContent = refuses.length
+      ? `${ajoutees} ajoutée(s). Refusé : ${refuses.join(', ')}`
+      : `${ajoutees} photo(s) ajoutée(s).`;
+    retour.className = 'annonce-copie-retour ' + (refuses.length ? 'annonce-copie-ko' : 'annonce-copie-ok');
+  }
+
+  function deplacerPhotoAnnonce(index, sens) {
+    const redaction = redactionCourante();
+    if (!redaction) return;
+    const photos = redaction.photos;
+    const cible = index + sens;
+    if (cible < 0 || cible >= photos.length) return;
+    const tmp = photos[index];
+    photos[index] = photos[cible];
+    photos[cible] = tmp;
+    renumeroterPhotosAnnonce(redaction);
+    redaction.updatedAt = new Date().toISOString();
+    save();
+    afficherVignettesAnnonce();
+  }
+
+  async function supprimerPhotoAnnonce(index) {
+    const redaction = redactionCourante();
+    if (!redaction) return;
+    const photo = redaction.photos[index];
+    if (!photo) return;
+    if (!confirm('Supprimer cette photo ?')) return;
+    redaction.photos.splice(index, 1);
+    renumeroterPhotosAnnonce(redaction);
+    redaction.updatedAt = new Date().toISOString();
+    save();
+    await afficherVignettesAnnonce();
+    try { await FilesDb.deleteFile(photo.fileId); } catch (e) { console.error(e); }
+  }
+
+  async function exporterPhotosAnnonce() {
+    const redaction = redactionCourante();
+    const btn = byId('annonce-exporter-photos');
+    const retour = byId('annonce-photo-retour');
+    if (!redaction || !(redaction.photos || []).length) {
+      retour.textContent = 'Aucune photo à exporter.';
+      retour.className = 'annonce-copie-retour annonce-copie-ko';
+      return;
+    }
+
+    const texteInitial = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Préparation…';
+    try {
+      const zip = new JSZip();
+      let manquantes = 0;
+      for (let i = 0; i < redaction.photos.length; i++) {
+        const blob = await FilesDb.getFile(redaction.photos[i].fileId);
+        if (!blob) { manquantes++; continue; }
+        zip.file(QfAnnonce.nomFichierPhoto(i, blob.type), blob);
+      }
+      const archive = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(archive);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = QfAnnonce.nomArchivePhotos(redaction.titre);
+      a.click();
+      URL.revokeObjectURL(url);
+
+      retour.textContent = manquantes
+        ? `Archive créée, mais ${manquantes} photo(s) introuvable(s).`
+        : 'Archive téléchargée. Extrayez-la, puis sélectionnez toutes les photos sur le formulaire de dépôt.';
+      retour.className = 'annonce-copie-retour ' + (manquantes ? 'annonce-copie-ko' : 'annonce-copie-ok');
+    } catch (e) {
+      console.error(e);
+      retour.textContent = 'La création de l\'archive a échoué.';
+      retour.className = 'annonce-copie-retour annonce-copie-ko';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = texteInitial;
+    }
   }
 
   function brancherEcouteursAnnonce() {
@@ -4420,6 +4632,16 @@
 
     const btnCopier = byId('annonce-copier');
     if (btnCopier) btnCopier.addEventListener('click', copierAnnonce);
+
+    const inputPhotos = byId('annonce-photo-input');
+    if (inputPhotos) inputPhotos.addEventListener('change', async (e) => {
+      const fichiers = Array.from(e.target.files || []);
+      e.target.value = ''; // permet de re-sélectionner le même fichier
+      await ajouterPhotosAnnonce(fichiers);
+    });
+
+    const btnExport = byId('annonce-exporter-photos');
+    if (btnExport) btnExport.addEventListener('click', exporterPhotosAnnonce);
 
     // Délégation : un seul écouteur, et surtout AUCUN nouveau rendu à la
     // frappe — seul le bloc résultat est recalculé, sinon le champ en cours

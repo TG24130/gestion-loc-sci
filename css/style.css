@@ -851,3 +851,29 @@ tr.ligne-impaye td{background:rgba(224,72,63,.05);}
 .annonce-copie-retour{font-size:13px;}
 .annonce-copie-ok{color:#2e9e5b;}
 .annonce-copie-ko{color:var(--danger);}
+
+.annonce-photos{
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));
+  gap:12px;margin:12px 0;
+}
+.annonce-photo{
+  border:1px solid var(--border);border-radius:var(--radius);
+  overflow:hidden;background:var(--card-bg);
+}
+.annonce-photo img{display:block;width:100%;height:110px;object-fit:cover;}
+.annonce-photo-absente{
+  display:flex;align-items:center;justify-content:center;height:110px;
+  background:var(--bg);color:var(--text-muted);font-size:12px;text-align:center;padding:8px;
+}
+.annonce-photo-barre{
+  display:flex;align-items:center;gap:4px;padding:6px;flex-wrap:wrap;
+  border-top:1px solid var(--border);
+}
+/* Le rang occupe sa propre ligne : sur une colonne de 150 px, « 1 — vignette »
+   et les trois boutons ne tiennent pas côte à côte et le texte se faisait
+   tronquer. */
+.annonce-photo-rang{
+  flex-basis:100%;font-size:11px;color:var(--text-muted);
+}
+.annonce-photo-barre .btn{padding:2px 7px;line-height:1.3;}
+.annonce-photo-add{cursor:pointer;}
