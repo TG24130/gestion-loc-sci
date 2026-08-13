@@ -4307,17 +4307,27 @@
     return champs.map((c) => champHTML(attribut, c, source ? source[c.cle] : '')).join('');
   }
 
-  function renderAnnonces() {
+  // `forcer` est vrai quand la reconstruction est demandée par une action de
+  // l'écran (créer, dupliquer, supprimer, changer de bien). Sans argument,
+  // l'appel vient de showView — donc éventuellement d'un retour de
+  // synchronisation Firestore, qu'il ne faut pas laisser interrompre une saisie.
+  function renderAnnonces(forcer) {
     const conteneur = byId('annonces-contenu');
     if (!conteneur) return;
 
-    // Ne JAMAIS reconstruire l'écran pendant une saisie. La synchronisation
-    // Firestore rappelle refreshCurrentView() à chaque enregistrement : sans
-    // ce garde-fou, chaque caractère tapé déclenchait une sauvegarde, qui
-    // revenait du cloud, qui reconstruisait le DOM et faisait perdre le focus
-    // — on ne pouvait saisir qu'une lettre à la fois.
+    // La synchronisation rappelle refreshCurrentView() à chaque enregistrement.
+    // Sans ce garde-fou, chaque caractère tapé déclenchait une sauvegarde, qui
+    // revenait du cloud, qui reconstruisait le DOM : on ne pouvait saisir
+    // qu'une lettre à la fois.
+    //
+    // Il ne vise QUE les champs de saisie : un clic donne le focus au bouton
+    // cliqué, et un garde-fou étendu à tout le conteneur rendait « Nouvelle
+    // rédaction » et ses voisins inertes.
     const actif = document.activeElement;
-    if (actif && actif !== document.body && conteneur.contains(actif)) {
+    const enSaisie = !forcer && actif && conteneur.contains(actif)
+      && (actif.tagName === 'TEXTAREA'
+        || (actif.tagName === 'INPUT' && actif.type !== 'file' && actif.type !== 'button'));
+    if (enSaisie) {
       majResultatAnnonce();
       return;
     }
@@ -4625,13 +4635,13 @@
     byId('annonce-bien').addEventListener('change', (e) => {
       annonceBienId = e.target.value;
       annonceRedactionId = '';
-      renderAnnonces();
+      renderAnnonces(true);
     });
 
     const selRedaction = byId('annonce-redaction');
     if (selRedaction) selRedaction.addEventListener('change', (e) => {
       annonceRedactionId = e.target.value;
-      renderAnnonces();
+      renderAnnonces(true);
     });
 
     byId('annonce-nouvelle').addEventListener('click', creerRedactionAnnonce);
@@ -4769,7 +4779,7 @@
     data.annonceRedactions.push(redaction);
     annonceRedactionId = redaction.id;
     save();
-    renderAnnonces();
+    renderAnnonces(true);
   }
 
   function dupliquerRedactionAnnonce() {
@@ -4790,7 +4800,7 @@
     data.annonceRedactions.push(copie);
     annonceRedactionId = copie.id;
     save();
-    renderAnnonces();
+    renderAnnonces(true);
   }
 
   function supprimerRedactionAnnonce() {
@@ -4800,7 +4810,7 @@
     data.annonceRedactions = data.annonceRedactions.filter((r) => r.id !== redaction.id);
     annonceRedactionId = '';
     save();
-    renderAnnonces();
+    renderAnnonces(true);
   }
 
   // Les gabarits d'état des lieux portent déjà les pièces de chaque bien.
