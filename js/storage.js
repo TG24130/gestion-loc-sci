@@ -37,6 +37,8 @@ const Storage = (function () {
       edlRedactions: [],
       edlModeles: [],
       annonceRedactions: [],
+      candidatures: [],
+      visites: [],
       // Réglages du générateur d'annonce. Clé de premier niveau plutôt que
       // champs ajoutés à `sci` : la fusion de load() est superficielle, donc
       // un `sci` déjà enregistré remplacerait l'objet par défaut en bloc et

@@ -47,7 +47,7 @@ const RECORD_KEYS = [
   'biens', 'locataires', 'documents', 'charges', 'baux', 'etatsDesLieux',
   'documentsAdmin', 'documentsLocataires', 'credits', 'bailRedactions',
   'facturesTravaux', 'bienGabarits', 'edlRedactions', 'edlModeles',
-  'annonceRedactions',
+  'annonceRedactions', 'candidatures', 'visites',
 ];
 
 const META_ID = 'meta';

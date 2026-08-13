@@ -160,6 +160,16 @@ function baseData() {
       loyer: 755, charges: 35, chargesDetail: ['tonte'], depotGarantie: 755,
       disponibleLe: '2026-10-01', photos: [{ fileId: 'f9', ordre: 0 }], statut: 'brouillon',
     }],
+    candidatures: [{
+      id: 'ca1', bienId: 'b1', nom: 'Marie Dupont', telephone: '0600000000',
+      email: 'marie@example.fr', dateReception: '2026-08-13', statut: 'dossier-recu',
+      ressources: 2400, chargesDeclarees: 600, notes: '',
+      pieces: [{ fileId: 'f10', type: 'identite', nom: 'cni.pdf' }],
+    }],
+    visites: [{
+      id: 'vi1', bienId: 'b1', date: '2026-09-05', heureDebut: '09:00',
+      dureeCreneau: 30, creneaux: [{ candidatureId: 'ca1', heure: '09:00' }],
+    }],
     // Cas volontairement tordu : tableaux imbriqués dans des objets imbriqués,
     // exactement la forme des états des lieux rédigés.
     edlRedactions: [{
@@ -194,9 +204,11 @@ async function run() {
     eq('états des lieux (tableaux imbriqués) préservés', rebuilt.edlRedactions, data.edlRedactions);
     eq('réglages d\'annonce préservés', rebuilt.reglagesAnnonce, data.reglagesAnnonce);
     eq('rédactions d\'annonce préservées', rebuilt.annonceRedactions, data.annonceRedactions);
+    eq('candidatures préservées', rebuilt.candidatures, data.candidatures);
+    eq('visites préservées', rebuilt.visites, data.visites);
     check('une fiche = un document Firestore',
-      server.store.size === 1 + 2 + 1 + 2 + 1 + 1,
-      'docs = ' + server.store.size + ' (attendu 8 : meta + 2 biens + 1 locataire + 2 documents + 1 EDL + 1 annonce)');
+      server.store.size === 1 + 2 + 1 + 2 + 1 + 1 + 1 + 1,
+      'docs = ' + server.store.size + ' (attendu 10 : meta + 2 biens + 1 locataire + 2 documents + 1 EDL + 1 annonce + 1 candidature + 1 visite)');
     A.stop();
   }
 

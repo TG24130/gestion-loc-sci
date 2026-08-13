@@ -4959,6 +4959,25 @@
         );
       }
 
+      // Même raison que pour les photos d'annonce : les pièces d'un dossier
+      // vivent sous `pieces`, que filesOf() ne reconnaît pas. Sans cette
+      // boucle, les justificatifs des candidats seraient absents de la
+      // sauvegarde.
+      for (const c of data.candidatures) {
+        if (!c.pieces || c.pieces.length === 0) continue;
+        const bien = bienById(c.bienId);
+        await addFiles(
+          `candidatures/${slugify(bien ? bien.nom : 'bien-inconnu')}/${slugify(c.nom || c.id)}`,
+          {
+            date: c.dateReception || 'sans-date',
+            files: c.pieces.map((p) => ({
+              fileId: p.fileId,
+              fileName: p.nom || (p.type || 'piece'),
+            })),
+          }
+        );
+      }
+
       zip.file('manifest.json', JSON.stringify(manifest, null, 2));
       zip.file('donnees.json', JSON.stringify(data, null, 2));
 
@@ -5015,6 +5034,8 @@
           edlRedactions: parsed.edlRedactions || [],
           edlModeles: parsed.edlModeles || [],
           annonceRedactions: parsed.annonceRedactions || [],
+          candidatures: parsed.candidatures || [],
+          visites: parsed.visites || [],
           reglagesAnnonce: parsed.reglagesAnnonce || Storage.mergeWithDefaults({}).reglagesAnnonce,
         });
         save();
@@ -5068,6 +5089,8 @@
         edlRedactions: parsed.edlRedactions || [],
         edlModeles: parsed.edlModeles || [],
         annonceRedactions: parsed.annonceRedactions || [],
+        candidatures: parsed.candidatures || [],
+        visites: parsed.visites || [],
         reglagesAnnonce: parsed.reglagesAnnonce || Storage.mergeWithDefaults({}).reglagesAnnonce,
       });
       save();
