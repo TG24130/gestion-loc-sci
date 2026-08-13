@@ -66,10 +66,22 @@ le coût reste acceptable.
 `type` reprend les catégories du décret 2015-1437 : `identite`,
 `bulletins-salaire`, `avis-imposition`, `justificatif-domicile`.
 
-Une pièce arrive en **PDF** (le cas courant, un scan de dossier) ou en **image**
-(photo prise au téléphone). Les images sont réduites avant enregistrement par le
-`resizeImageFile` existant ; les PDF sont stockés tels quels, aucun traitement
-côté client n'étant possible sans dépendance supplémentaire.
+Les pièces arrivent en **formats variés** : PDF, Word, PNG, JPG — chaque
+candidat envoie ce qu'il a sous la main.
+
+Formats acceptés : `image/*` (dont HEIC d'iPhone), `application/pdf`, Word
+(`.doc`, `.docx`) et OpenDocument (`.odt`). Tout le reste est refusé — une
+archive, un exécutable ou une vidéo n'a rien à faire dans un dossier de
+candidature.
+
+Seules les **images** sont réduites avant enregistrement, par le
+`resizeImageFile` existant. Il tolère déjà un format qu'il ne sait pas décoder :
+il conserve alors le fichier d'origine. Les documents sont stockés tels quels,
+aucun traitement n'étant possible côté client sans dépendance supplémentaire.
+
+Conséquence sur l'aperçu : un PDF et une image s'affichent dans le navigateur,
+un `.docx` non — il sera proposé au téléchargement. `openStoredFile` gère déjà
+ce repli pour les pièces existantes de l'application.
 
 ### `visites[]`
 
@@ -196,7 +208,8 @@ La suppression d'une candidature efface également ses pièces.
 
 | Situation | Comportement |
 |---|---|
-| Fichier non-image et non-PDF, ou > 15 Mo | Refus avant stockage, message explicite |
+| Format hors liste acceptée, ou > 15 Mo | Refus avant stockage, message nommant le fichier et la raison |
+| Image dans un format non décodable | Conservée telle quelle, sans réduction |
 | `FilesDb.getFile` renvoie `null` | Pièce signalée manquante, fiche utilisable |
 | Ressources à zéro ou absentes | Indicateurs masqués, pas de division par zéro |
 | Bien supprimé, candidatures orphelines | Affichage « Bien supprimé » |
