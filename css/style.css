@@ -881,3 +881,33 @@ tr.ligne-impaye td{background:rgba(224,72,63,.05);}
 }
 .annonce-photo-barre .btn{padding:2px 7px;line-height:1.3;}
 .annonce-photo-add{cursor:pointer;}
+
+/* ---------- Candidatures ---------- */
+
+.candidature-active td{background:rgba(47,111,237,.08);}
+.candidature-alerte{color:var(--danger);font-weight:600;}
+
+.candidature-chiffres{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));
+  gap:12px;margin:4px 0 14px;
+}
+.candidature-chiffres > div{
+  border:1px solid var(--border);border-radius:var(--radius);
+  padding:12px 14px;background:var(--bg);
+}
+.candidature-chiffre{display:block;font-size:19px;font-weight:700;line-height:1.2;}
+.candidature-chiffres small{color:var(--text-muted);font-size:11.5px;}
+
+.candidature-piece{
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  border:1px solid var(--border);border-radius:var(--radius);
+  padding:8px 10px;margin-bottom:8px;
+}
+.candidature-piece-nom{
+  flex:1;min-width:140px;font-size:13px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.candidature-piece select{
+  padding:5px 8px;border:1px solid var(--border);border-radius:6px;
+  background:var(--card-bg);color:var(--text);font-family:inherit;font-size:12.5px;
+}

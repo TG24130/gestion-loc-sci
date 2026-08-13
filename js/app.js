@@ -4837,16 +4837,14 @@
     zone.focus();
   }
 
-  async function copierAnnonce() {
-    const texte = byId('annonce-resultat').value;
-    const retour = byId('annonce-copie-retour');
-    let ok = false;
+  // Copie partagée par l'annonce et le mail de refus. Le presse-papier moderne
+  // exige un contexte sécurisé et n'est pas disponible partout : on retombe
+  // sur la méthode historique.
+  async function copierTexte(texte) {
     try {
       await navigator.clipboard.writeText(texte);
-      ok = true;
+      return true;
     } catch (e) {
-      // Le presse-papier moderne exige un contexte sécurisé et n'est pas
-      // disponible partout : on retombe sur la méthode historique.
       try {
         const tmp = document.createElement('textarea');
         tmp.value = texte;
@@ -4854,12 +4852,19 @@
         tmp.style.opacity = '0';
         document.body.appendChild(tmp);
         tmp.select();
-        ok = document.execCommand('copy');
+        const ok = document.execCommand('copy');
         document.body.removeChild(tmp);
+        return ok;
       } catch (e2) {
         console.error('Copie impossible', e2);
+        return false;
       }
     }
+  }
+
+  async function copierAnnonce() {
+    const retour = byId('annonce-copie-retour');
+    const ok = await copierTexte(byId('annonce-resultat').value);
     retour.textContent = ok ? 'Annonce copiée.' : 'Copie impossible : sélectionnez le texte et copiez-le à la main.';
     retour.className = 'annonce-copie-retour ' + (ok ? 'annonce-copie-ok' : 'annonce-copie-ko');
     setTimeout(() => { retour.textContent = ''; }, 4000);
@@ -4867,10 +4872,483 @@
 
   // ---------- Candidatures ----------
 
-  function renderCandidatures() {
+  let candidatureBienId = '';
+  let candidatureCouranteId = '';
+  let candidatureTri = 'date';
+  let candidatureSaveTimer = null;
+
+  const STATUTS_CANDIDATURE = {
+    'recue': 'Reçue',
+    'dossier-recu': 'Dossier reçu',
+    'retenue': 'Retenue',
+    'refusee': 'Refusée',
+  };
+
+  const TYPES_PIECE = {
+    'identite': 'Pièce d\'identité',
+    'bulletins-salaire': 'Bulletins de salaire',
+    'avis-imposition': 'Avis d\'imposition',
+    'justificatif-domicile': 'Quittances ou taxe foncière',
+    'autre': 'Autre',
+  };
+
+  // Les extensions comptent autant que le type MIME : Windows renvoie parfois
+  // un type vide pour un .doc, et un .odt n'a pas toujours de type déclaré.
+  const EXTENSIONS_PIECE = ['.pdf', '.doc', '.docx', '.odt', '.jpg', '.jpeg', '.png', '.heic', '.webp', '.gif'];
+  const CANDIDATURE_PIECE_MAX_OCTETS = 15 * 1024 * 1024;
+
+  const CHAMPS_CANDIDATURE = [
+    { cle: 'nom', label: 'Nom et prénom', type: 'text' },
+    { cle: 'telephone', label: 'Téléphone', type: 'tel' },
+    { cle: 'email', label: 'Adresse e-mail', type: 'email' },
+    { cle: 'dateReception', label: 'Demande reçue le', type: 'date' },
+    { cle: 'ressources', label: 'Ressources mensuelles (€)', type: 'number', aide: 'Total déclaré : salaires, pensions, autres revenus' },
+    { cle: 'chargesDeclarees', label: 'Charges mensuelles déclarées (€)', type: 'number', aide: 'Crédits, pensions versées. Déclaratif : aucun justificatif ne peut être exigé.' },
+  ];
+
+  function candidaturesDuBien(bienId) {
+    return data.candidatures.filter((c) => c.bienId === bienId);
+  }
+
+  function candidatureCourante() {
+    return data.candidatures.find((c) => c.id === candidatureCouranteId) || null;
+  }
+
+  function planifierSauvegardeCandidature() {
+    if (candidatureSaveTimer) clearTimeout(candidatureSaveTimer);
+    candidatureSaveTimer = setTimeout(() => { candidatureSaveTimer = null; save(); }, 800);
+  }
+
+  function indicateursDe(candidature) {
+    return QfCandidature.calculerIndicateurs(candidature, bienById(candidature.bienId), reglagesAnnonce());
+  }
+
+  function trierCandidatures(liste) {
+    const copie = liste.slice();
+    if (candidatureTri === 'ratio') {
+      copie.sort((a, b) => {
+        const ra = indicateursDe(a).ratioLoyer, rb = indicateursDe(b).ratioLoyer;
+        if (ra === null) return 1;
+        if (rb === null) return -1;
+        return rb - ra;
+      });
+    } else if (candidatureTri === 'reste') {
+      copie.sort((a, b) => {
+        const ra = indicateursDe(a).resteAVivre, rb = indicateursDe(b).resteAVivre;
+        if (ra === null) return 1;
+        if (rb === null) return -1;
+        return rb - ra;
+      });
+    } else {
+      copie.sort((a, b) => String(b.dateReception || '').localeCompare(String(a.dateReception || '')));
+    }
+    return copie;
+  }
+
+  function renderCandidatures(forcer) {
     const conteneur = byId('candidatures-contenu');
     if (!conteneur) return;
-    conteneur.innerHTML = '<div class="panel"><p>Écran en cours de construction.</p></div>';
+
+    // Même garde-fou que l'écran Publication : la synchronisation rappelle
+    // refreshCurrentView() à chaque enregistrement, et reconstruire le DOM
+    // pendant une frappe ferait perdre le focus. Limité aux champs de saisie,
+    // sinon les boutons deviendraient inertes.
+    const actif = document.activeElement;
+    const enSaisie = !forcer && actif && conteneur.contains(actif)
+      && (actif.tagName === 'TEXTAREA'
+        || (actif.tagName === 'INPUT' && actif.type !== 'file' && actif.type !== 'button'));
+    if (enSaisie) { majIndicateursCandidature(); return; }
+
+    if (data.biens.length === 0) {
+      conteneur.innerHTML = '<div class="panel"><p>Aucun bien enregistré. Créez d\'abord un bien dans « Biens ».</p></div>';
+      return;
+    }
+
+    if (!bienById(candidatureBienId)) candidatureBienId = data.biens[0].id;
+
+    const liste = trierCandidatures(candidaturesDuBien(candidatureBienId));
+    if (!liste.some((c) => c.id === candidatureCouranteId)) {
+      candidatureCouranteId = liste.length ? liste[0].id : '';
+    }
+    const candidature = candidatureCourante();
+
+    const optionsBiens = data.biens
+      .map((b) => `<option value="${escapeHTML(b.id)}"${b.id === candidatureBienId ? ' selected' : ''}>${escapeHTML(b.nom)}</option>`)
+      .join('');
+
+    const lignes = liste.length ? liste.map((c) => {
+      const ind = indicateursDe(c);
+      const bloquant = ind.alertes.some((a) => a.gravite === 'bloquant');
+      return `<tr class="${c.id === candidatureCouranteId ? 'candidature-active' : ''}" data-candidature-ligne="${escapeHTML(c.id)}">
+        <td data-label="Nom">${escapeHTML(c.nom || 'Sans nom')}</td>
+        <td data-label="Statut"><span class="badge ${c.statut === 'retenue' ? 'badge-active' : 'badge-inactive'}">${escapeHTML(STATUTS_CANDIDATURE[c.statut] || c.statut || '—')}</span></td>
+        <td data-label="Ratio">${ind.ratioLoyer === null ? '—' : ind.ratioLoyer.toFixed(2)}</td>
+        <td data-label="Reste à vivre" class="${bloquant ? 'candidature-alerte' : ''}">${ind.resteAVivre === null ? '—' : euros(ind.resteAVivre)}</td>
+        <td data-label="Pièces">${(c.pieces || []).length}</td>
+        <td class="actions-cell"><button class="btn btn-sm" data-candidature-ouvrir="${escapeHTML(c.id)}">Ouvrir</button></td>
+      </tr>`;
+    }).join('') : '<tr class="empty-row"><td colspan="6">Aucune candidature pour ce bien.</td></tr>';
+
+    conteneur.innerHTML = `
+      <div class="panel">
+        <h2>Bien concerné</h2>
+        <div class="grid-2">
+          <div class="field"><label>Bien</label><select id="candidature-bien">${optionsBiens}</select></div>
+          <div class="field"><label>Trier par</label>
+            <select id="candidature-tri">
+              <option value="date"${candidatureTri === 'date' ? ' selected' : ''}>Date de réception</option>
+              <option value="ratio"${candidatureTri === 'ratio' ? ' selected' : ''}>Ratio (loyer hors charges)</option>
+              <option value="reste"${candidatureTri === 'reste' ? ' selected' : ''}>Reste à vivre</option>
+            </select></div>
+        </div>
+        <div class="table-scroll">
+          <table class="table table-cartes">
+            <thead><tr><th>Nom</th><th>Statut</th><th>Ratio</th><th>Reste à vivre</th><th>Pièces</th><th></th></tr></thead>
+            <tbody>${lignes}</tbody>
+          </table>
+        </div>
+        <div class="annonce-actions">
+          <button class="btn btn-primary btn-sm" id="candidature-nouvelle">Nouvelle candidature</button>
+        </div>
+      </div>
+
+      ${candidature ? `
+      <div class="panel">
+        <h2>Dossier</h2>
+        <div class="charges-form-grid">${champsHTML('data-cand-champ', CHAMPS_CANDIDATURE, candidature)}</div>
+        <div class="field">
+          <label>Notes</label>
+          <textarea rows="3" data-cand-champ="notes">${escapeHTML(candidature.notes || '')}</textarea>
+        </div>
+        <div id="candidature-indicateurs"></div>
+      </div>
+
+      <div class="panel">
+        <h2>Pièces du dossier</h2>
+        <div id="candidature-pieces"></div>
+        <div class="annonce-actions">
+          <select id="candidature-type-piece">${Object.keys(TYPES_PIECE).map((k) => `<option value="${k}">${escapeHTML(TYPES_PIECE[k])}</option>`).join('')}</select>
+          <label class="btn btn-sm annonce-photo-add">
+            Ajouter des pièces
+            <input type="file" id="candidature-piece-input" accept="image/*,.pdf,.doc,.docx,.odt" multiple hidden>
+          </label>
+          <span id="candidature-piece-retour" class="annonce-copie-retour"></span>
+        </div>
+        <p class="annonce-aide">PDF, Word, JPG, PNG acceptés. Les photos sont réduites automatiquement.</p>
+      </div>
+
+      <div class="panel">
+        <h2>Décision</h2>
+        <div class="annonce-actions">
+          <button class="btn btn-primary btn-sm" id="candidature-retenir"${candidature.statut === 'retenue' ? ' disabled' : ''}>Retenir pour visite</button>
+          <button class="btn btn-sm" id="candidature-refuser"${candidature.statut === 'refusee' ? ' disabled' : ''}>Refuser</button>
+          <button class="btn btn-sm btn-danger" id="candidature-supprimer">Supprimer la candidature</button>
+        </div>
+        <div id="candidature-mail"></div>
+      </div>
+      ` : ''}
+    `;
+
+    brancherEcouteursCandidature();
+    if (candidature) {
+      majIndicateursCandidature();
+      afficherPiecesCandidature();
+      afficherMailRefus();
+    }
+  }
+
+  function brancherEcouteursCandidature() {
+    const conteneur = byId('candidatures-contenu');
+
+    byId('candidature-bien').addEventListener('change', (e) => {
+      candidatureBienId = e.target.value;
+      candidatureCouranteId = '';
+      renderCandidatures(true);
+    });
+    byId('candidature-tri').addEventListener('change', (e) => {
+      candidatureTri = e.target.value;
+      renderCandidatures(true);
+    });
+    byId('candidature-nouvelle').addEventListener('click', creerCandidature);
+
+    conteneur.querySelectorAll('[data-candidature-ouvrir]').forEach((b) => {
+      b.addEventListener('click', () => {
+        candidatureCouranteId = b.dataset.candidatureOuvrir;
+        renderCandidatures(true);
+      });
+    });
+
+    const btnRetenir = byId('candidature-retenir');
+    if (btnRetenir) btnRetenir.addEventListener('click', retenirCandidature);
+    const btnRefuser = byId('candidature-refuser');
+    if (btnRefuser) btnRefuser.addEventListener('click', refuserCandidature);
+    const btnSupprimer = byId('candidature-supprimer');
+    if (btnSupprimer) btnSupprimer.addEventListener('click', supprimerCandidature);
+
+    const inputPieces = byId('candidature-piece-input');
+    if (inputPieces) inputPieces.addEventListener('change', async (e) => {
+      const fichiers = Array.from(e.target.files || []);
+      e.target.value = '';
+      await ajouterPiecesCandidature(fichiers);
+    });
+
+    conteneur.addEventListener('input', (e) => {
+      if (appliquerSaisieCandidature(e.target)) {
+        planifierSauvegardeCandidature();
+        majIndicateursCandidature();
+      }
+    });
+  }
+
+  function appliquerSaisieCandidature(cible) {
+    const champ = cible.dataset.candChamp;
+    if (!champ) return false;
+    const candidature = candidatureCourante();
+    if (!candidature) return false;
+    candidature[champ] = cible.type === 'number'
+      ? (cible.value === '' ? null : Number(cible.value))
+      : cible.value;
+    return true;
+  }
+
+  // Le tableau n'est pas reconstruit pendant la saisie (garde-fou du focus) :
+  // sans cette mise à jour ciblée, le nom qu'on est en train de taper
+  // n'apparaîtrait pas dans la liste, qui resterait sur « Sans nom ».
+  function majLigneCandidature(candidature, ind) {
+    const ligne = document.querySelector('[data-candidature-ligne="' + candidature.id + '"]');
+    if (!ligne) return;
+    const cellules = ligne.querySelectorAll('td');
+    if (cellules.length < 5) return;
+    const bloquant = ind.alertes.some((a) => a.gravite === 'bloquant');
+    cellules[0].textContent = candidature.nom || 'Sans nom';
+    cellules[1].innerHTML = `<span class="badge ${candidature.statut === 'retenue' ? 'badge-active' : 'badge-inactive'}">${escapeHTML(STATUTS_CANDIDATURE[candidature.statut] || '—')}</span>`;
+    cellules[2].textContent = ind.ratioLoyer === null ? '—' : ind.ratioLoyer.toFixed(2);
+    cellules[3].textContent = ind.resteAVivre === null ? '—' : euros(ind.resteAVivre);
+    cellules[3].className = bloquant ? 'candidature-alerte' : '';
+    cellules[4].textContent = (candidature.pieces || []).length;
+  }
+
+  function majIndicateursCandidature() {
+    const zone = byId('candidature-indicateurs');
+    const candidature = candidatureCourante();
+    if (!zone || !candidature) return;
+
+    const ind = indicateursDe(candidature);
+    majLigneCandidature(candidature, ind);
+    let html = '';
+
+    if (ind.ratioLoyer !== null) {
+      html += `<div class="candidature-chiffres">
+        <div><span class="candidature-chiffre">${(ind.tauxEffort * 100).toFixed(1)} %</span><small>Taux d'effort</small></div>
+        <div><span class="candidature-chiffre">${euros(ind.resteAVivre)}</span><small>Reste à vivre</small></div>
+        <div><span class="candidature-chiffre">${ind.ratioLoyer.toFixed(2)} ×</span><small>Le loyer hors charges</small></div>
+      </div>`;
+    }
+
+    ind.alertes.forEach((a) => {
+      const classe = a.gravite === 'bloquant' ? 'annonce-alerte-bloquant' : 'annonce-alerte-attention';
+      html += `<div class="annonce-alerte ${classe}">${escapeHTML(a.message)}</div>`;
+    });
+
+    zone.innerHTML = html;
+  }
+
+  function creerCandidature() {
+    const candidature = {
+      id: Storage.uid(),
+      bienId: candidatureBienId,
+      nom: '', telephone: '', email: '',
+      dateReception: todayISO(),
+      statut: 'recue',
+      ressources: null, chargesDeclarees: null,
+      pieces: [], notes: '', dateDecision: '',
+    };
+    data.candidatures.push(candidature);
+    candidatureCouranteId = candidature.id;
+    save();
+    renderCandidatures(true);
+  }
+
+  function retenirCandidature() {
+    const candidature = candidatureCourante();
+    if (!candidature) return;
+    candidature.statut = 'retenue';
+    candidature.dateDecision = todayISO();
+    save();
+    renderCandidatures(true);
+  }
+
+  // Les pièces sont effacées au refus : un dossier contient une pièce
+  // d'identité, des bulletins de salaire et des avis d'imposition, et rien ne
+  // justifie de les conserver une fois la décision prise. La fiche reste, pour
+  // garder trace de qui a candidaté.
+  async function refuserCandidature() {
+    const candidature = candidatureCourante();
+    if (!candidature) return;
+    const nb = (candidature.pieces || []).length;
+    const message = nb
+      ? `Refuser cette candidature ?\n\nLes ${nb} pièce(s) du dossier seront définitivement supprimées. La fiche (nom, contact, date) est conservée.`
+      : 'Refuser cette candidature ?';
+    if (!confirm(message)) return;
+
+    const pieces = (candidature.pieces || []).slice();
+    candidature.pieces = [];
+    candidature.statut = 'refusee';
+    candidature.dateDecision = todayISO();
+    save();
+    renderCandidatures(true);
+
+    for (const p of pieces) {
+      try { await FilesDb.deleteFile(p.fileId); } catch (e) { console.error(e); }
+    }
+  }
+
+  async function supprimerCandidature() {
+    const candidature = candidatureCourante();
+    if (!candidature) return;
+    if (!confirm('Supprimer définitivement cette candidature et ses pièces ?')) return;
+    const pieces = (candidature.pieces || []).slice();
+    data.candidatures = data.candidatures.filter((c) => c.id !== candidature.id);
+    // Un candidat supprimé ne doit plus figurer dans un planning de visite.
+    data.visites.forEach((v) => {
+      v.creneaux = (v.creneaux || []).filter((cr) => cr.candidatureId !== candidature.id);
+    });
+    candidatureCouranteId = '';
+    save();
+    renderCandidatures(true);
+    for (const p of pieces) {
+      try { await FilesDb.deleteFile(p.fileId); } catch (e) { console.error(e); }
+    }
+  }
+
+  function afficherMailRefus() {
+    const zone = byId('candidature-mail');
+    const candidature = candidatureCourante();
+    if (!zone || !candidature) return;
+    if (candidature.statut !== 'refusee') { zone.innerHTML = ''; return; }
+
+    const mail = QfCandidature.construireMailRefus(candidature, bienById(candidature.bienId), data.sci);
+    zone.innerHTML = `
+      <div class="field"><label>Objet</label><input type="text" id="candidature-mail-objet" value="${escapeHTML(mail.objet)}" readonly></div>
+      <div class="field"><label>Message</label><textarea id="candidature-mail-corps" rows="12" readonly>${escapeHTML(mail.corps)}</textarea></div>
+      <div class="annonce-actions">
+        <button class="btn btn-primary btn-sm" id="candidature-copier-mail">Copier le message</button>
+        <span id="candidature-mail-retour" class="annonce-copie-retour"></span>
+      </div>
+      <p class="annonce-aide">Le message ne donne aucun motif : un refus n'a pas à être justifié, et un motif mal formulé se lit comme discriminatoire. Relisez-le avant de l'envoyer depuis votre messagerie.</p>`;
+
+    byId('candidature-copier-mail').addEventListener('click', async () => {
+      const retour = byId('candidature-mail-retour');
+      const ok = await copierTexte(byId('candidature-mail-corps').value);
+      retour.textContent = ok ? 'Message copié.' : 'Copie impossible : sélectionnez le texte et copiez-le à la main.';
+      retour.className = 'annonce-copie-retour ' + (ok ? 'annonce-copie-ok' : 'annonce-copie-ko');
+      setTimeout(() => { retour.textContent = ''; }, 4000);
+    });
+  }
+
+  // ---------- Pièces d'un dossier ----------
+
+  let candidaturePieceUrls = [];
+
+  function pieceAcceptee(fichier) {
+    const type = fichier.type || '';
+    if (type.startsWith('image/') || type === 'application/pdf') return true;
+    if (type.indexOf('word') !== -1 || type.indexOf('opendocument.text') !== -1) return true;
+    // Repli sur l'extension : Windows renvoie parfois un type vide pour un .doc.
+    const nom = String(fichier.name || '').toLowerCase();
+    return EXTENSIONS_PIECE.some((ext) => nom.endsWith(ext));
+  }
+
+  async function ajouterPiecesCandidature(fichiers) {
+    const candidature = candidatureCourante();
+    if (!candidature || fichiers.length === 0) return;
+    const typeChoisi = byId('candidature-type-piece').value;
+    const retour = byId('candidature-piece-retour');
+    const refuses = [];
+    let ajoutees = 0;
+
+    for (const fichier of fichiers) {
+      if (!pieceAcceptee(fichier)) { refuses.push(fichier.name + ' (format non accepté)'); continue; }
+      if (fichier.size > CANDIDATURE_PIECE_MAX_OCTETS) { refuses.push(fichier.name + ' (plus de 15 Mo)'); continue; }
+
+      // Seules les images sont réduites ; un PDF ou un .docx est stocké tel quel.
+      const aStocker = (fichier.type || '').startsWith('image/')
+        ? await resizeImageFile(fichier, 1920, 0.85)
+        : fichier;
+
+      const fileId = Storage.uid();
+      try {
+        await FilesDb.saveFile(fileId, aStocker);
+        if (!candidature.pieces) candidature.pieces = [];
+        candidature.pieces.push({ fileId: fileId, type: typeChoisi, nom: fichier.name });
+        ajoutees++;
+      } catch (e) {
+        console.error(e);
+        refuses.push(fichier.name + ' (enregistrement impossible)');
+      }
+    }
+
+    if (ajoutees) {
+      // Recevoir une pièce, c'est avoir le dossier : le statut suit tout seul.
+      if (candidature.statut === 'recue') candidature.statut = 'dossier-recu';
+      save();
+      renderCandidatures(true);
+    }
+
+    const zoneRetour = byId('candidature-piece-retour') || retour;
+    if (zoneRetour) {
+      zoneRetour.textContent = refuses.length
+        ? `${ajoutees} ajoutée(s). Refusé : ${refuses.join(', ')}`
+        : `${ajoutees} pièce(s) ajoutée(s).`;
+      zoneRetour.className = 'annonce-copie-retour ' + (refuses.length ? 'annonce-copie-ko' : 'annonce-copie-ok');
+    }
+  }
+
+  async function afficherPiecesCandidature() {
+    const zone = byId('candidature-pieces');
+    const candidature = candidatureCourante();
+    if (!zone || !candidature) return;
+
+    candidaturePieceUrls.forEach((u) => URL.revokeObjectURL(u));
+    candidaturePieceUrls = [];
+
+    const pieces = candidature.pieces || [];
+    if (pieces.length === 0) {
+      zone.innerHTML = '<p class="annonce-aide">Aucune pièce enregistrée.</p>';
+      return;
+    }
+
+    zone.innerHTML = pieces.map((p, i) => `
+      <div class="candidature-piece">
+        <span class="candidature-piece-nom">${escapeHTML(p.nom || 'Sans nom')}</span>
+        <select data-piece-type="${i}">${Object.keys(TYPES_PIECE).map((k) => `<option value="${k}"${k === p.type ? ' selected' : ''}>${escapeHTML(TYPES_PIECE[k])}</option>`).join('')}</select>
+        <button class="btn btn-sm" data-piece-ouvrir="${i}">Ouvrir</button>
+        <button class="btn btn-sm btn-danger" data-piece-supprimer="${i}">×</button>
+      </div>`).join('');
+
+    zone.querySelectorAll('[data-piece-ouvrir]').forEach((b) => {
+      b.addEventListener('click', () => {
+        const p = pieces[Number(b.dataset.pieceOuvrir)];
+        openStoredFile(p.fileId, p.nom);
+      });
+    });
+    zone.querySelectorAll('[data-piece-type]').forEach((s) => {
+      s.addEventListener('change', () => {
+        pieces[Number(s.dataset.pieceType)].type = s.value;
+        save();
+      });
+    });
+    zone.querySelectorAll('[data-piece-supprimer]').forEach((b) => {
+      b.addEventListener('click', async () => {
+        const i = Number(b.dataset.pieceSupprimer);
+        const p = pieces[i];
+        if (!confirm('Supprimer « ' + (p.nom || 'cette pièce') + ' » ?')) return;
+        pieces.splice(i, 1);
+        save();
+        await afficherPiecesCandidature();
+        try { await FilesDb.deleteFile(p.fileId); } catch (e) { console.error(e); }
+      });
+    });
   }
 
   // ---------- Visites ----------
