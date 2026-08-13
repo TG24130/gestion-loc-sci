@@ -234,8 +234,10 @@
     const isDocsAdmin = view.indexOf('docsadmin-') === 0;
     const isCredits = view.indexOf('credits-') === 0;
     const isFacturesTravaux = view.indexOf('facturestravaux-') === 0;
-    const isAnnonces = view.indexOf('annonces-') === 0;
-    const sectionId = isCharges ? 'view-charges' : isDocsAdmin ? 'view-docsadmin' : isCredits ? 'view-credits' : isFacturesTravaux ? 'view-facturestravaux' : isAnnonces ? 'view-annonces' : 'view-' + view;
+    // Le groupe « annonces » n'a pas de cas particulier ici : chacune de ses
+    // entrées a sa propre section, comme bail et etatslieux. Seuls les groupes
+    // dont les entrées partagent un même écran en ont besoin.
+    const sectionId = isCharges ? 'view-charges' : isDocsAdmin ? 'view-docsadmin' : isCredits ? 'view-credits' : isFacturesTravaux ? 'view-facturestravaux' : 'view-' + view;
     document.querySelectorAll('.nav-btn').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
     document.querySelectorAll('.view').forEach((v) => v.classList.toggle('active', v.id === sectionId));
     if (view === 'dashboard') renderDashboard();
@@ -253,7 +255,9 @@
     if (isDocsAdmin) renderDocsAdminView(view.slice('docsadmin-'.length));
     if (isCredits) renderCreditsView(view.slice('credits-'.length));
     if (isFacturesTravaux) renderFacturesTravauxView(view.slice('facturestravaux-'.length));
-    if (isAnnonces) renderAnnonces();
+    if (view === 'annonces-publication') renderAnnonces();
+    if (view === 'annonces-candidatures') renderCandidatures();
+    if (view === 'annonces-visites') renderVisites();
   }
 
   document.querySelectorAll('[data-action="quick-quittance"]').forEach((b) => b.addEventListener('click', () => showView('generer')));
@@ -4859,6 +4863,22 @@
     retour.textContent = ok ? 'Annonce copiée.' : 'Copie impossible : sélectionnez le texte et copiez-le à la main.';
     retour.className = 'annonce-copie-retour ' + (ok ? 'annonce-copie-ok' : 'annonce-copie-ko');
     setTimeout(() => { retour.textContent = ''; }, 4000);
+  }
+
+  // ---------- Candidatures ----------
+
+  function renderCandidatures() {
+    const conteneur = byId('candidatures-contenu');
+    if (!conteneur) return;
+    conteneur.innerHTML = '<div class="panel"><p>Écran en cours de construction.</p></div>';
+  }
+
+  // ---------- Visites ----------
+
+  function renderVisites() {
+    const conteneur = byId('visites-contenu');
+    if (!conteneur) return;
+    conteneur.innerHTML = '<div class="panel"><p>Écran en cours de construction.</p></div>';
   }
 
   // ---------- Import / Export ----------
