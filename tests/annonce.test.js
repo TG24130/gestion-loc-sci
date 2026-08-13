@@ -67,20 +67,20 @@ function attentions(res) {
 // charges, ordures, caution, critères, visites) : c'est exactement l'état
 // attendu après reprise d'une annonce existante.
 
+// Le descriptif ne garde que ce qu'aucun champ ne porte : l'environnement, la
+// distribution pièce par pièce, les matériaux. L'année, la norme, le chauffage,
+// le stationnement, les extérieurs et les annexes sont désormais des
+// caractéristiques du bien et sortent dans le bloc « logement ».
 const DESCRIPTIF = [
-  'Année 2016, norme RT 2012.',
   'Dans un quartier calme, proche tous commerces, collège/lycée Saint-Front à 300 m.',
   'École primaire à 700 m, gare à 500 m, supermarchés à 200 m.',
   'Dans une petite résidence de 5 maisons accolées non mitoyennes.',
-  'Très agréable maison à ossature bois, 3 chambres, 1 place de parking privative.',
-  'Terrasse avec pergola et jardinet exposés sud.',
+  'Très agréable maison à ossature bois.',
   'Au rez-de-chaussée : entrée desservant une chambre de 13 m², une salle d\'eau avec WC',
   'et douche à l\'italienne, norme PMR, cuisine équipée ouverte sur pièce à vivre (30 m²)',
   'exposée sud et donnant sur la terrasse et le jardinet.',
   'À l\'étage : dégagement, WC, 2 chambres de 12 et 15 m², dressing ou bureau de 4 m².',
-  'Local vélo et local poubelles.',
   'Isolation renforcée en laine de bois et ouate de cellulose, peinture naturelle.',
-  'Chauffage et eau chaude sanitaire par chaudière gaz à condensation.',
   '2 panneaux photovoltaïques sur toiture.',
 ].join('\n');
 
@@ -89,7 +89,12 @@ function bienRef() {
     id: 'b1',
     nom: 'Maison Bergerac',
     adresse: '15 rue des Acacias\n24100 Bergerac',
+    typeBien: 'Maison',
     surfaceHabitable: 95,
+    nbPieces: 4,
+    nbChambres: 3,
+    anneeConstruction: 2016,
+    normeConstruction: 'RT 2012',
     dpeClasse: 'B',
     gesClasse: 'B',
     dpeConsommation: 61,
@@ -97,6 +102,12 @@ function bienRef() {
     energieCoutMin: 650,
     energieCoutMax: 950,
     energieAnneeReference: 2023,
+    chauffageType: 'chaudière gaz à condensation',
+    eauChaudeType: 'chaudière gaz à condensation',
+    climatisation: 'réversible au rez-de-chaussée et à l\'étage',
+    stationnement: '1 place privative',
+    exterieurs: 'terrasse avec pergola et jardinet exposés sud',
+    annexes: 'local vélo et local poubelles',
   };
 }
 
@@ -144,6 +155,14 @@ console.log('\n-- Cas de référence --');
 const TEXTE_ATTENDU = [
   'À louer proche centre-ville Bergerac, maison F4 de 95 m²',
   '',
+  'Maison de 95 m² habitables, 4 pièces dont 3 chambres, année 2016, norme RT 2012.',
+  'Chauffage : chaudière gaz à condensation.',
+  'Eau chaude sanitaire : chaudière gaz à condensation.',
+  'Climatisation : réversible au rez-de-chaussée et à l\'étage.',
+  'Stationnement : 1 place privative.',
+  'Extérieurs : terrasse avec pergola et jardinet exposés sud.',
+  'Annexes : local vélo et local poubelles.',
+  '',
   DESCRIPTIF,
   '',
   'Performance énergétique : DPE classe B — GES classe B.',
@@ -154,7 +173,7 @@ const TEXTE_ATTENDU = [
   'Provision mensuelle sur charges : 35 €, régularisation annuelle, couvrant l\'entretien annuel de la chaudière, l\'électricité des communs et la tonte des jardins.',
   'La taxe d\'enlèvement des ordures ménagères à la charge du locataire.',
   'Dépôt de garantie : 755 € (un mois de loyer hors charges).',
-  'Surface habitable : 95 m². Logement situé à Bergerac (24100).',
+  'Logement situé à Bergerac (24100).',
   'Disponible à compter du 1er octobre 2026.',
   'Aucun honoraire de location (location en direct).',
   '',
@@ -235,6 +254,31 @@ check('des modalités de visite dans le descriptif sont signalées',
   attentions(construire(null, { texteLibre: DESCRIPTIF + '\nVisites le samedi.' }))
     .indexOf('texteLibre.visite') !== -1);
 eq('le descriptif de référence ne déclenche aucune répétition', attentions(ref), []);
+
+// ---------- 5 bis. Bloc « logement » ----------
+
+console.log('\n-- Caractéristiques du logement --');
+
+check('la climatisation apparaît dans l\'annonce',
+  ref.texte.indexOf('Climatisation : réversible au rez-de-chaussée et à l\'étage.') !== -1);
+check('la surface est annoncée une seule fois',
+  ref.texte.split('95 m²').length - 1 === 2,
+  'occurrences de « 95 m² » : ' + (ref.texte.split('95 m²').length - 1) + ' (attendu 2 : le titre et le bloc logement)');
+check('une climatisation dans le descriptif est signalée comme répétition',
+  attentions(construire(null, { texteLibre: DESCRIPTIF + '\nClimatisation réversible.' }))
+    .indexOf('texteLibre.climatisation') !== -1);
+check('un chauffage dans le descriptif est signalé comme répétition',
+  attentions(construire(null, { texteLibre: DESCRIPTIF + '\nChauffage par chaudière gaz.' }))
+    .indexOf('texteLibre.chauffage') !== -1);
+
+check('les équipements non renseignés sont omis, pas laissés vides',
+  construire({ climatisation: '', stationnement: '', annexes: '' }).texte.indexOf('Climatisation') === -1);
+check('un bien sans type reste décrit',
+  construire({ typeBien: '' }).texte.indexOf('Logement de 95 m² habitables') !== -1);
+check('le singulier est respecté',
+  construire({ nbPieces: 1, nbChambres: 1 }).texte.indexOf('1 pièce dont 1 chambre') !== -1);
+check('pas de participe mal accordé',
+  ref.texte.indexOf('construit en') === -1 && ref.texte.indexOf('année 2016') !== -1);
 
 // ---------- 6. Contrôles de qualité ----------
 

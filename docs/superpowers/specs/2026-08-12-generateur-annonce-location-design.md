@@ -99,7 +99,7 @@ datés (texte, loyer du moment, disponibilité, photos) vivent dans une entité
 | Nature | `typeBien`, `nbPieces`, `nbChambres`, `anneeConstruction`, `normeConstruction` |
 | Surface | `surfaceHabitable` (m², valeur exacte du mesurage) |
 | Énergie | `dpeClasse`, `gesClasse`, `dpeConsommation` (kWh/m²/an), `dpeDateRealisation`, `energieCoutMin`, `energieCoutMax`, `energieAnneeReference` |
-| Équipement | `chauffageType`, `eauChaudeType`, `stationnement`, `exterieurs`, `annexes` |
+| Équipement | `chauffageType`, `eauChaudeType`, `climatisation`, `stationnement`, `exterieurs`, `annexes` |
 
 Tous ces champs sont optionnels au niveau du stockage. Leur absence est
 signalée par un avertissement au moment de la génération, pas par un refus
@@ -166,14 +166,29 @@ Fonction pure : ni DOM, ni IndexedDB, ni réseau.
 ### Ordre du texte produit
 
 1. Titre
-2. Texte libre, restitué sans modification
-3. Bloc performance énergétique — généré
-4. Bloc conditions financières — généré
-5. Bloc candidature et visite — généré
-
-Cet ordre reproduit celui des annonces déjà rédigées à la main.
+2. **Bloc « le logement » — généré**
+3. Texte libre, restitué sans modification
+4. Bloc performance énergétique — généré
+5. Bloc conditions financières — généré
+6. Bloc candidature et visite — généré
 
 ### Contenu des blocs générés
+
+**Le logement** — résumé factuel placé avant le descriptif : type de bien,
+surface habitable, nombre de pièces et de chambres, année et norme de
+construction, puis une ligne par équipement renseigné (chauffage, eau chaude,
+**climatisation**, stationnement, extérieurs, annexes).
+
+Ce bloc a été ajouté après coup : la première version du spec listait ces
+champs sans qu'aucun bloc ne les utilise. Dix des dix-huit caractéristiques
+étaient donc saisies, stockées et synchronisées **sans jamais apparaître dans
+l'annonce**. Le défaut est apparu quand il a fallu ajouter la climatisation,
+qui n'avait nulle part où aller.
+
+La surface habitable est annoncée ici et **pas** dans le bloc financier, pour
+éviter de la répéter. L'année de construction s'écrit « année 2016 » et non
+« construite en 2016 » : le participe devrait s'accorder avec un type de bien
+que l'utilisateur saisit librement.
 
 **Performance énergétique** — classes DPE et GES, consommation en kWh/m²/an,
 date de réalisation du diagnostic, fourchette des dépenses annuelles d'énergie

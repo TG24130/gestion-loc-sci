@@ -98,6 +98,66 @@
 
   // ---------- Blocs générés ----------
 
+  // Résumé factuel du bien, placé avant le descriptif : il pose les
+  // caractéristiques, le texte libre les raconte ensuite. C'est ici que la
+  // surface habitable est annoncée — mention obligatoire, mais qui se lit
+  // mieux avec le reste du logement qu'au milieu des conditions financières.
+  function blocLogement(bien, avertir) {
+    const lignes = [];
+    const surfaceRenseignee = estRenseigne(bien.surfaceHabitable) && Number(bien.surfaceHabitable) > 0;
+
+    // Phrase d'ouverture : nature, surface, distribution, année.
+    const nature = estRenseigne(bien.typeBien) ? String(bien.typeBien).trim() : 'Logement';
+    const qualites = [];
+    if (surfaceRenseignee) qualites.push(bien.surfaceHabitable + ' m² habitables');
+    if (estRenseigne(bien.nbPieces)) {
+      let pieces = bien.nbPieces + (Number(bien.nbPieces) > 1 ? ' pièces' : ' pièce');
+      if (estRenseigne(bien.nbChambres)) {
+        pieces += ' dont ' + bien.nbChambres + (Number(bien.nbChambres) > 1 ? ' chambres' : ' chambre');
+      }
+      qualites.push(pieces);
+    } else if (estRenseigne(bien.nbChambres)) {
+      qualites.push(bien.nbChambres + (Number(bien.nbChambres) > 1 ? ' chambres' : ' chambre'));
+    }
+
+    let ouverture = nature;
+    // Virgules et non « et » : c'est une liste de caractéristiques, pas une
+    // énumération de fin de phrase.
+    if (qualites.length) ouverture += ' de ' + qualites.join(', ');
+    const construction = [];
+    // « année 2016 » plutôt que « construite en 2016 » : le participe devrait
+    // s'accorder avec le type de bien, que l'utilisateur saisit librement.
+    if (estRenseigne(bien.anneeConstruction)) construction.push('année ' + bien.anneeConstruction);
+    if (estRenseigne(bien.normeConstruction)) construction.push('norme ' + String(bien.normeConstruction).trim());
+    if (construction.length) ouverture += ', ' + construction.join(', ');
+    lignes.push(ouverture + '.');
+
+    if (!surfaceRenseignee) {
+      avertir(
+        'surfaceHabitable', GRAVITE_BLOQUANT,
+        'Surface habitable absente : elle est obligatoire et doit être la valeur exacte du mesurage.'
+      );
+    }
+
+    // Équipements : une ligne chacun, omis s'ils ne sont pas renseignés.
+    const equipements = [
+      { cle: 'chauffageType', prefixe: 'Chauffage : ' },
+      { cle: 'eauChaudeType', prefixe: 'Eau chaude sanitaire : ' },
+      { cle: 'climatisation', prefixe: 'Climatisation : ' },
+      { cle: 'stationnement', prefixe: 'Stationnement : ' },
+      { cle: 'exterieurs', prefixe: 'Extérieurs : ' },
+      { cle: 'annexes', prefixe: 'Annexes : ' },
+    ];
+    equipements.forEach((eq) => {
+      if (estRenseigne(bien[eq.cle])) {
+        const valeur = String(bien[eq.cle]).trim();
+        lignes.push(eq.prefixe + valeur + (/[.!?]$/.test(valeur) ? '' : '.'));
+      }
+    });
+
+    return lignes.join('\n');
+  }
+
   function blocEnergie(bien, avertir) {
     const lignes = [];
 
@@ -222,27 +282,17 @@
       avertir('depotGarantie', GRAVITE_BLOQUANT, 'Dépôt de garantie absent : il est obligatoire dans l\'annonce.');
     }
 
+    // La surface habitable est annoncée par le bloc « logement », en tête :
+    // elle n'est pas répétée ici.
     const commune = extraireCommune(bien.adresse);
-    const surfaceRenseignee = estRenseigne(bien.surfaceHabitable) && Number(bien.surfaceHabitable) > 0;
-    const morceaux = [];
-
-    if (surfaceRenseignee) {
-      morceaux.push('Surface habitable : ' + bien.surfaceHabitable + ' m².');
-    } else {
-      avertir(
-        'surfaceHabitable', GRAVITE_BLOQUANT,
-        'Surface habitable absente : elle est obligatoire et doit être la valeur exacte du mesurage.'
-      );
-    }
     if (commune) {
-      morceaux.push('Logement situé à ' + commune.ville + ' (' + commune.codePostal + ').');
+      lignes.push('Logement situé à ' + commune.ville + ' (' + commune.codePostal + ').');
     } else {
       avertir(
         'commune', GRAVITE_BLOQUANT,
         'Commune introuvable dans l\'adresse du bien : la commune est obligatoire dans l\'annonce.'
       );
     }
-    if (morceaux.length) lignes.push(morceaux.join(' '));
 
     const dispo = formaterDate(redaction.disponibleLe);
     if (dispo) {
@@ -304,6 +354,9 @@
     { champ: 'texteLibre.depot', regex: /\bcaution\b|\bdépôt\s+de\s+garantie\b/i, quoi: 'le dépôt de garantie' },
     { champ: 'texteLibre.candidature', regex: /\bCDI\b|\brevenus?\b/i, quoi: 'les critères de candidature' },
     { champ: 'texteLibre.visite', regex: /\bvisites?\b/i, quoi: 'les modalités de visite' },
+    { champ: 'texteLibre.chauffage', regex: /\bchauffage\b|\beau chaude\b/i, quoi: 'le chauffage' },
+    { champ: 'texteLibre.climatisation', regex: /\bclimatisation\b|\bclim\b/i, quoi: 'la climatisation' },
+    { champ: 'texteLibre.stationnement', regex: /\bstationnement\b|\bparking\b|\bgarage\b/i, quoi: 'le stationnement' },
   ];
 
   // "95m2 environ", "95 m² env.", "environ 95 m2" : la surface habitable doit
@@ -358,6 +411,9 @@
     const blocs = [];
 
     if (estRenseigne(r.titre)) blocs.push(String(r.titre).trim());
+
+    const logement = blocLogement(b, avertir);
+    if (logement) blocs.push(logement);
 
     // Restitué tel quel : ni reformulé, ni recadré, ni nettoyé.
     if (estRenseigne(r.texteLibre)) blocs.push(r.texteLibre);
