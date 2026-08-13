@@ -291,6 +291,28 @@ le formulaire de dépôt n'en accepte pas.
 fichiers sont préfixés par leur rang (`01-facade.jpg`, `02-sejour.jpg`) pour que
 l'envoi manuel conserve l'ordre.
 
+## Sauvegarde et restauration
+
+Trois endroits listent explicitement les clés de données qu'ils transportent.
+Une clé oubliée dans l'un d'eux disparaît **en silence** :
+
+| Fichier | Liste | Conséquence d'un oubli |
+|---|---|---|
+| `js/firestoreSync.js` | `META_KEYS`, `RECORD_KEYS` | La donnée ne passe pas d'un appareil à l'autre |
+| `js/app.js`, export `.zip` | boucles `for` par collection | La donnée est absente de la sauvegarde |
+| `js/app.js`, imports JSON et ZIP | `Object.assign` | La donnée n'est pas restaurée |
+
+Les trois ont dû être modifiés. L'export mérite une attention particulière :
+`filesOf()` ne reconnaît que `record.files` et `record.fileId`, alors que les
+photos d'annonce vivent sous `record.photos`. Elles sont donc présentées à
+`addFiles()` par une boucle dédiée, sans quoi elles seraient absentes de
+l'archive — alors que l'export manuel est la seule protection contre une perte
+de données.
+
+Vérifié par un aller-retour complet : export, effacement de tous les blobs et
+altération du titre, puis réimport. Les deux photos et le titre d'origine
+reviennent.
+
 ## Gestion des erreurs
 
 | Situation | Comportement |

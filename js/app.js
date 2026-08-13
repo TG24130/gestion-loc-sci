@@ -4912,6 +4912,25 @@
         }
       }
 
+      // Les photos d'annonce sont rangées sous `photos` et non sous `files` :
+      // filesOf() ne les voit pas, il faut donc les présenter explicitement.
+      // Sans cette boucle elles seraient absentes de la sauvegarde, alors que
+      // l'export manuel est la seule protection contre une perte de données.
+      for (const r of data.annonceRedactions) {
+        if (!r.photos || r.photos.length === 0) continue;
+        const bien = bienById(r.bienId);
+        await addFiles(
+          `annonces/${slugify(bien ? bien.nom : 'bien-inconnu')}/${slugify(r.titre || r.id)}`,
+          {
+            date: (r.createdAt || '').slice(0, 10) || 'sans-date',
+            files: r.photos.map((p, i) => ({
+              fileId: p.fileId,
+              fileName: QfAnnonce.nomFichierPhoto(i, 'image/jpeg'),
+            })),
+          }
+        );
+      }
+
       zip.file('manifest.json', JSON.stringify(manifest, null, 2));
       zip.file('donnees.json', JSON.stringify(data, null, 2));
 
@@ -4967,6 +4986,8 @@
           bienGabarits: parsed.bienGabarits || [],
           edlRedactions: parsed.edlRedactions || [],
           edlModeles: parsed.edlModeles || [],
+          annonceRedactions: parsed.annonceRedactions || [],
+          reglagesAnnonce: parsed.reglagesAnnonce || Storage.mergeWithDefaults({}).reglagesAnnonce,
         });
         save();
         showView('dashboard');
@@ -5018,6 +5039,8 @@
         bienGabarits: parsed.bienGabarits || [],
         edlRedactions: parsed.edlRedactions || [],
         edlModeles: parsed.edlModeles || [],
+        annonceRedactions: parsed.annonceRedactions || [],
+        reglagesAnnonce: parsed.reglagesAnnonce || Storage.mergeWithDefaults({}).reglagesAnnonce,
       });
       save();
       showView('dashboard');
