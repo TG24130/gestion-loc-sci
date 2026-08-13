@@ -313,7 +313,7 @@
     return lignes.join('\n');
   }
 
-  function blocCandidature(redaction, reglages) {
+  function blocCandidature(redaction, reglages, avertir) {
     const lignes = [];
     const exigences = [];
 
@@ -323,6 +323,19 @@
 
     const ratio = Number(reglages.ratioRevenus);
     const loyer = Number(redaction.loyer);
+
+    // Un multiplicateur au-delà de 20 n'a aucun sens : c'est presque toujours
+    // un montant en euros saisi dans le champ du multiple, ce qui produit une
+    // exigence de revenus absurde dans l'annonce publiée.
+    if (ratio > 20) {
+      avertir(
+        'ratioRevenus', GRAVITE_BLOQUANT,
+        'Le multiple du loyer vaut ' + ratio + ' : l\'annonce exigerait '
+        + formaterEuros(ratio * loyer) + ' de revenus. Ce champ attend un nombre de fois '
+        + 'le loyer (3, par exemple), pas un montant en euros.'
+      );
+    }
+
     if (ratio > 0 && loyer > 0) {
       exigences.push(
         'revenus nets mensuels d\'au moins ' + formaterEuros(ratio * loyer)
@@ -454,7 +467,7 @@
     const financier = blocFinancier(b, r, avertir);
     if (financier) blocs.push(financier);
 
-    const candidature = blocCandidature(r, reglages);
+    const candidature = blocCandidature(r, reglages, avertir);
     if (candidature) blocs.push(candidature);
 
     return { texte: blocs.join('\n\n'), avertissements: avertissements };

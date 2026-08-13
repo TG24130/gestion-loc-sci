@@ -329,6 +329,26 @@ check('le revenu minimum suit le ratio configuré',
   construire(null, null, { ratioRevenus: 4 }).texte
     .indexOf('au moins 3 020 € (quatre fois le loyer hors charges)') !== -1);
 
+// ---------- 7 bis. Multiple du loyer aberrant ----------
+//
+// Constaté en production : le montant du revenu minimum (2265 €) avait été
+// saisi dans le champ du multiplicateur, et l'annonce exigeait 1 710 075 € de
+// revenus mensuels.
+
+console.log('\n-- Multiple du loyer --');
+
+const ratioAbsurde = construire(null, null, { ratioRevenus: 2265 });
+check('un multiple aberrant est bloquant',
+  bloquants(ratioAbsurde).indexOf('ratioRevenus') !== -1);
+check('le message cite le montant absurde qui en résulte',
+  ratioAbsurde.avertissements.some((a) => a.champ === 'ratioRevenus' && a.message.indexOf('1 710 075 €') !== -1),
+  JSON.stringify(ratioAbsurde.avertissements.filter((a) => a.champ === 'ratioRevenus')));
+eq('un multiple normal ne déclenche rien', bloquants(construire(null, null, { ratioRevenus: 3 })), []);
+eq('un multiple élevé mais plausible passe', bloquants(construire(null, null, { ratioRevenus: 4 })), []);
+check('la limite est à 20 inclus',
+  bloquants(construire(null, null, { ratioRevenus: 20 })).length === 0
+  && bloquants(construire(null, null, { ratioRevenus: 21 })).indexOf('ratioRevenus') !== -1);
+
 // ---------- 8. Nommage des photos exportées ----------
 
 console.log('\n-- Export des photos --');

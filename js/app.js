@@ -4260,7 +4260,9 @@
 
   const CHAMPS_REGLAGES = [
     { cle: 'critereContrat', label: 'Contrat exigé', type: 'text', aide: 'Ex : CDI' },
-    { cle: 'ratioRevenus', label: 'Revenus exigés (× le loyer)', type: 'number' },
+    // Libellé explicite : « Revenus exigés (× le loyer) » a été compris comme
+    // le montant, et une saisie de 2265 a produit « 2265 fois le loyer ».
+    { cle: 'ratioRevenus', label: 'Revenus exigés : combien de fois le loyer ?', type: 'number', aide: 'Saisir 3, pas un montant. Le montant en euros est calculé tout seul.' },
     { cle: 'modalitesVisite', label: 'Modalités de visite', type: 'text' },
     { cle: 'canalContact', label: 'Prise de contact', type: 'text' },
   ];
@@ -4308,6 +4310,17 @@
   function renderAnnonces() {
     const conteneur = byId('annonces-contenu');
     if (!conteneur) return;
+
+    // Ne JAMAIS reconstruire l'écran pendant une saisie. La synchronisation
+    // Firestore rappelle refreshCurrentView() à chaque enregistrement : sans
+    // ce garde-fou, chaque caractère tapé déclenchait une sauvegarde, qui
+    // revenait du cloud, qui reconstruisait le DOM et faisait perdre le focus
+    // — on ne pouvait saisir qu'une lettre à la fois.
+    const actif = document.activeElement;
+    if (actif && actif !== document.body && conteneur.contains(actif)) {
+      majResultatAnnonce();
+      return;
+    }
 
     if (data.biens.length === 0) {
       conteneur.innerHTML = '<div class="panel"><p>Aucun bien enregistré. Créez d\'abord un bien dans « Biens ».</p></div>';
@@ -4678,7 +4691,12 @@
       const redaction = redactionCourante();
       if (!redaction) return false;
       if (champRed === 'chargesDetail') {
-        redaction.chargesDetail = valeur.split('\n').map((s) => s.trim()).filter(Boolean);
+        // Les puces éventuellement collées depuis un ancien texte sont
+        // retirées : la liste est réassemblée en phrase (« couvrant a, b et
+        // c »), un tiret en tête s'y retrouverait au milieu de la phrase.
+        redaction.chargesDetail = valeur.split('\n')
+          .map((s) => s.replace(/^\s*[-–—•*]\s*/, '').trim())
+          .filter(Boolean);
       } else if (cible.type === 'number') {
         redaction[champRed] = valeur === '' ? null : Number(valeur);
       } else {
