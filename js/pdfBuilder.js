@@ -235,7 +235,7 @@ const PdfBuilder = (function () {
     doc.setDrawColor(120);
     doc.line(MARGIN, y + 3.5, MARGIN + CONTENT_W, y + 3.5);
     doc.setFont('times', 'normal');
-    return y + 17;
+    return y + 15;
   }
 
   // Une ligne de champs vierges : le libellé, puis un trait jusqu'au champ
@@ -253,7 +253,7 @@ const PdfBuilder = (function () {
       const fin = x + colW - (i === labels.length - 1 ? 0 : 12);
       if (fin > debut) doc.line(debut, y + 2, fin, y + 2);
     });
-    return y + 19;
+    return y + 17;
   }
 
   // Fiche vierge remise au candidat. Volontairement sans « régime matrimonial »
@@ -324,9 +324,9 @@ const PdfBuilder = (function () {
       "Deux derniers avis d'imposition",
       'Trois dernières quittances de loyer, ou avis de taxe foncière si vous êtes propriétaire',
     ].forEach((p) => {
-      y = addWrapped(doc, '-  ' + p, MARGIN + 6, y, CONTENT_W - 6, 13) + 1;
+      y = addWrapped(doc, '-  ' + p, MARGIN + 6, y, CONTENT_W - 6, 12) + 1;
     });
-    y += 14;
+    y += 10;
 
     doc.setFontSize(10);
     doc.text('Fait à …………………………………………, le ……… / ……… / …………', MARGIN, y);
@@ -334,6 +334,25 @@ const PdfBuilder = (function () {
     doc.setTextColor(120);
     doc.text('Signature du ou des candidats', PAGE_W - MARGIN, y, { align: 'right' });
     doc.setTextColor(20);
+
+    // Bandeau final, volontairement voyant : c'est la seule instruction que le
+    // candidat doit suivre après avoir rempli la fiche, elle ne doit pas se
+    // perdre dans le reste du texte.
+    const bandeauY = y + 20;
+    const bandeauH = 40;
+    doc.setFillColor(255, 244, 214);
+    doc.setDrawColor(200, 150, 40);
+    doc.setLineWidth(1.2);
+    doc.rect(MARGIN, bandeauY, CONTENT_W, bandeauH, 'FD');
+    doc.setLineWidth(0.5);
+
+    doc.setFont('times', 'bold');
+    doc.setTextColor(20);
+    doc.setFontSize(13);
+    doc.text('DOSSIER COMPLET À RENVOYER PAR E-MAIL À', PAGE_W / 2, bandeauY + 17, { align: 'center' });
+    doc.setFontSize(16);
+    doc.text('sci.gp2ie@gmail.com', PAGE_W / 2, bandeauY + 33, { align: 'center' });
+    doc.setFont('times', 'normal');
   }
 
   function libre(doc, ctx) {
