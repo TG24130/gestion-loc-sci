@@ -1089,6 +1089,14 @@
     return !!(data.sci && (data.sci.nom || data.sci.siret));
   }
 
+  // Une saisie est-elle en cours quelque part ? Les écrans à saisie continue
+  // (annonce, candidature, visite) écrivent dans `data` à chaque frappe et
+  // n'enregistrent qu'après 800 ms de pause. Tant que ce délai court, la frappe
+  // n'existe QUE dans `data` : un Object.assign venu du cloud l'effacerait.
+  function saisieEnAttenteDeSauvegarde() {
+    return !!(annonceSaveTimer || candidatureSaveTimer || visiteSaveTimer);
+  }
+
   function onRemoteData(remoteData) {
     if (remoteData === null) {
       // Le cloud n'a pas (encore) de données exploitables. On n'y publie la
@@ -1101,6 +1109,26 @@
       else console.warn('Aucune donnée locale : rien n\'est publié vers le cloud (protection).');
       return;
     }
+    // Deux raisons d'écarter un instantané distant, toutes deux liées au même
+    // symptôme : un caractère saisi qui « ressort » du champ.
+    //
+    // 1. Une saisie est en cours. La frappe des dernières centaines de
+    //    millisecondes n'est encore que dans `data` ; l'écraser la perd, et la
+    //    sauvegarde qui suit renverrait au cloud l'état amputé. On laisse donc
+    //    la sauvegarde locale partir : elle produira un nouvel instantané.
+    // 2. L'instantané est l'écho de notre propre écriture, revenu après un
+    //    save() et déjà dépassé par ce que contient `data`. Il n'apprend rien
+    //    et ne peut que défaire une frappe partie entre-temps.
+    //
+    // La condition 2 est volontairement limitée aux instantanés émis par CET
+    // appareil : écarter ceux d'un autre appareil sur la seule foi des dates
+    // ferait disparaître ses modifications si son horloge retarde.
+    const distant = remoteData.syncMeta || {};
+    const distantLe = distant.updatedAt || '';
+    const localLe = (data.syncMeta && data.syncMeta.updatedAt) || '';
+    if (saisieEnAttenteDeSauvegarde()) return;
+    if (distant.updatedBy === deviceId() && distantLe && localLe && distantLe <= localLe) return;
+
     Object.assign(data, Storage.mergeWithDefaults(remoteData));
     // Les données venues du cloud peuvent encore contenir les anciennes copies
     // de signature : on les allège ici aussi, sinon un appareil déjà nettoyé
