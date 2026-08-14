@@ -13,6 +13,39 @@ un push sur `main` atteint la production en une à deux minutes.
 
 ---
 
+## État au 2026-08-14
+
+**Les 7 phases sont codées et poussées sur `main`** (`e11aec7`, cache
+`gls-cache-2026081404`). En production.
+
+Ajouts hors plan initial, sur demande utilisateur :
+- Loyer des maisons 1 à 5 relevé à 755 € + 35 € de charges (saisie manuelle par
+  l'utilisateur dans « Biens » — pas de code, la fiche PDF lit `bien.loyer` en
+  direct).
+- Mode d'entraînement dans l'écran Candidatures : bouton **🧪 Tester avec un
+  exemple** crée un bien fictif (755 €/35 €) + 3 candidatures aux profils
+  contrastés (2600 €/2100 €/1500 € de ressources) ; bouton rouge **Supprimer
+  les données de test** efface bien + candidatures + pièces IndexedDB +
+  annonces/photos du bien + séances de visites liées. Identifiants fixes,
+  cf. `CAND_TEST_BIEN_ID` dans `js/app.js`.
+- Feuille de test imprimable livrée à l'utilisateur :
+  `C:\Users\greni\Desktop\test-candidature\procedure-test.html` (+ 2 faux
+  fichiers de pièces dans le même dossier). Parcours complet en 9 étapes,
+  de la rédaction d'annonce au planning de visites, avec valeurs attendues
+  (ratios calculés pour 755 €/35 €) et tableau de relevé d'anomalies.
+
+**Prochaine étape : l'utilisateur teste avec cette feuille cet après-midi ou
+demain (2026-08-14/15) et revient avec les bugs/retouches constatés.**
+Rien à faire tant que son retour n'est pas arrivé — ne pas relancer de
+vérification automatique en son absence, le login Firebase bloque l'accès à
+l'écran réel depuis ce poste.
+
+Aucun test automatisé nouveau requis par ce retour : les 3 suites existantes
+(`node tests/candidature.test.js`, `annonce.test.js`, `syncLogic.test.js`)
+passaient au dernier commit.
+
+---
+
 ## Phase 0 — Découverte (faite, à lire avant d'implémenter)
 
 ### APIs réelles, vérifiées dans le code

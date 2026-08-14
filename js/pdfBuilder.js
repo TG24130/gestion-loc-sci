@@ -301,7 +301,10 @@ const PdfBuilder = (function () {
     y = drawFields(doc, ['Profession :', 'Employeur :'], y);
     y = drawFields(doc, ['Type de contrat :', 'Depuis le :'], y);
     y = drawFields(doc, ['Revenus mensuels nets :', 'Autres ressources (nature, montant) :'], y);
-    y = drawFields(doc, ['Ressources du second candidat :', 'Profession :'], y);
+
+    y = drawFields(doc, ['Profession du 2nd candidat :', 'Employeur :'], y);
+    y = drawFields(doc, ['Type de contrat :', 'Depuis le :'], y);
+    y = drawFields(doc, ['Revenus mensuels nets :', 'Autres ressources (nature, montant) :'], y);
 
     y = drawSection(doc, 'Charges déclarées', y);
     y = drawFields(doc, ['Remboursement de prêts (par mois) :', 'Pension versée :'], y);
