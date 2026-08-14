@@ -4948,6 +4948,7 @@
   function renderCandidatures(forcer) {
     const conteneur = byId('candidatures-contenu');
     if (!conteneur) return;
+    majBoutonNettoyageTest();
 
     // Même garde-fou que l'écran Publication : la synchronisation rappelle
     // refreshCurrentView() à chaque enregistrement, et reconstruire le DOM
@@ -5155,6 +5156,96 @@
 
     zone.innerHTML = html;
   }
+
+  // ---------- Données de test des candidatures ----------
+  // Même principe que le mode d'entraînement des états des lieux : des
+  // identifiants fixes, un préfixe visible, et un nettoyage qui efface aussi
+  // les pièces déposées dans IndexedDB.
+  const CAND_TEST_BIEN_ID = 'candidature-test-bien';
+
+  const CANDIDATURES_TEST = [
+    {
+      id: 'candidature-test-1', nom: '🧪 TEST — Claire Martin',
+      telephone: '06 00 00 00 01', email: 'claire.martin@exemple.fr',
+      ressources: 2600, chargesDeclarees: 150,
+      notes: 'Dossier complet. Sert à vérifier un candidat nettement au-dessus du seuil.',
+    },
+    {
+      id: 'candidature-test-2', nom: '🧪 TEST — Samir Benali',
+      telephone: '06 00 00 00 02', email: 'samir.benali@exemple.fr',
+      ressources: 2100, chargesDeclarees: 380,
+      notes: 'Cas limite : ratio juste au-dessus, reste à vivre plus faible.',
+    },
+    {
+      id: 'candidature-test-3', nom: '🧪 TEST — Léa Nguyen',
+      telephone: '06 00 00 00 03', email: 'lea.nguyen@exemple.fr',
+      ressources: 1500, chargesDeclarees: 300,
+      notes: 'Sous le seuil : sert à déclencher une alerte, puis à tester le refus.',
+    },
+  ];
+
+  function ensureCandidatureTestData() {
+    let bien = data.biens.find((b) => b.id === CAND_TEST_BIEN_ID);
+    if (!bien) {
+      bien = {
+        id: CAND_TEST_BIEN_ID,
+        nom: "🧪 TEST — Maison d'exemple",
+        adresse: "5 rue de l'Exemple\n31000 Toulouse",
+        loyer: 755,
+        charges: 35,
+        isTest: true,
+      };
+      data.biens.push(bien);
+    }
+
+    CANDIDATURES_TEST.forEach((modele) => {
+      if (data.candidatures.some((c) => c.id === modele.id)) return;
+      data.candidatures.push(Object.assign({
+        bienId: CAND_TEST_BIEN_ID,
+        dateReception: todayISO(),
+        statut: 'recue',
+        pieces: [],
+        dateDecision: '',
+        isTest: true,
+      }, modele));
+    });
+
+    candidatureBienId = CAND_TEST_BIEN_ID;
+    candidatureCouranteId = CANDIDATURES_TEST[0].id;
+    save();
+  }
+
+  async function cleanupCandidatureTestData() {
+    if (!confirm("Supprimer le bien, les candidatures, les pièces et les séances de visites de test ?")) return;
+    const aSupprimer = data.candidatures.filter((c) => c.bienId === CAND_TEST_BIEN_ID);
+    const pieces = aSupprimer.reduce((acc, c) => acc.concat(c.pieces || []), []);
+
+    data.candidatures = data.candidatures.filter((c) => c.bienId !== CAND_TEST_BIEN_ID);
+    data.visites = data.visites.filter((v) => v.bienId !== CAND_TEST_BIEN_ID);
+    data.biens = data.biens.filter((b) => b.id !== CAND_TEST_BIEN_ID);
+    if (candidatureBienId === CAND_TEST_BIEN_ID) { candidatureBienId = ''; candidatureCouranteId = ''; }
+    if (visiteBienId === CAND_TEST_BIEN_ID) { visiteBienId = ''; visiteCouranteId = ''; }
+    save();
+    renderCandidatures(true);
+    renderVisites(true);
+
+    for (const p of pieces) {
+      try { await FilesDb.deleteFile(p.fileId); } catch (e) { console.error(e); }
+    }
+  }
+
+  function majBoutonNettoyageTest() {
+    const btn = byId('btn-candidature-test-clean');
+    if (btn) btn.hidden = !data.biens.some((b) => b.id === CAND_TEST_BIEN_ID);
+  }
+
+  byId('btn-candidature-test').addEventListener('click', () => {
+    ensureCandidatureTestData();
+    renderCandidatures(true);
+    alert("Un bien « 🧪 TEST — Maison d'exemple » (755 € + 35 € de charges) et trois candidatures fictives ont été créés. Refaites le parcours complet : pièces, indicateurs, refus, fiche de renseignements, puis planning dans « Visites ». Le bouton rouge supprime tout à la fin.");
+  });
+
+  byId('btn-candidature-test-clean').addEventListener('click', cleanupCandidatureTestData);
 
   // Fiche vierge du bien sélectionné : montants pris sur le bien, jamais figés
   // dans le PDF. Le dépôt de garantie vaut un mois de loyer hors charges
