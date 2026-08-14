@@ -284,7 +284,7 @@ const PdfBuilder = (function () {
       { label: 'Dépôt de garantie', value: montant(ctx.depotGarantie), total: true },
     ], y);
 
-    y = drawSection(doc, 'Candidat', y);
+    y = drawSection(doc, 'Candidat(e)(s)', y);
     y = drawFields(doc, ['Nom et prénom :'], y);
     y = drawFields(doc, ['Né(e) le :', 'à :'], y);
     y = drawFields(doc, ['Téléphone :', 'Adresse e-mail :'], y);
@@ -297,7 +297,7 @@ const PdfBuilder = (function () {
     y = drawFields(doc, ['Né(e) le :', 'à :'], y);
     y = drawFields(doc, ['Téléphone :', 'Adresse e-mail :'], y);
 
-    y = drawSection(doc, 'Situation professionnelle et ressources', y);
+    y = drawSection(doc, 'Situation(s) professionnelle(s) et ressources', y);
     y = drawFields(doc, ['Profession :', 'Employeur :'], y);
     y = drawFields(doc, ['Type de contrat :', 'Depuis le :'], y);
     y = drawFields(doc, ['Revenus mensuels nets :', 'Autres ressources (nature, montant) :'], y);
@@ -305,15 +305,18 @@ const PdfBuilder = (function () {
     y = drawFields(doc, ['Profession du 2nd candidat :', 'Employeur :'], y);
     y = drawFields(doc, ['Type de contrat :', 'Depuis le :'], y);
     y = drawFields(doc, ['Revenus mensuels nets :', 'Autres ressources (nature, montant) :'], y);
+    y = drawFields(doc, ['Total des revenus (candidat 1 et/ou candidats 1+2) :'], y);
 
     y = drawSection(doc, 'Charges déclarées', y);
-    y = drawFields(doc, ['Remboursement de prêts (par mois) :', 'Pension versée :'], y);
+    y = drawFields(doc, ['Candidat 1 — Remboursement de prêts (par mois) :', 'Pension versée :'], y);
+    y = drawFields(doc, ['Candidat 2 — Remboursement de prêts (par mois) :', 'Pension versée :'], y);
+    y = drawFields(doc, ['Total des charges (candidat 1 et/ou candidats 1+2) :'], y);
 
     y = drawSection(doc, 'Garant (le cas échéant)', y);
     y = drawFields(doc, ['Nom et prénom :', 'Profession :'], y);
     y = drawFields(doc, ['Adresse :', 'Revenus mensuels nets :'], y);
 
-    y = drawSection(doc, 'Pièces à joindre', y);
+    y = drawSection(doc, 'Pièces à joindre (candidat 1 et/ou candidats 1+2)', y);
     doc.setFontSize(9.5);
     [
       "Pièce d'identité en cours de validité, recto-verso",
