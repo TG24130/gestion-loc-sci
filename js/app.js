@@ -57,6 +57,47 @@
   function bienById(id) { return data.biens.find((b) => b.id === id); }
   function locataireById(id) { return data.locataires.find((l) => l.id === id); }
 
+  // Onglets des écrans Publication, Candidatures et Visites. Le groupe est un
+  // champ du bien, saisi dans sa fiche : deviner d'après le nom casserait au
+  // premier renommage. Les biens créés avant cette version n'ont pas le champ
+  // et retombent sur le premier groupe.
+  const GROUPES_BIENS = [
+    { id: 'maisons-1-5', label: 'Maisons 1 à 5' },
+    { id: 'maison-229a', label: 'Maison 229a' },
+  ];
+
+  function groupeDuBien(bien) {
+    const g = bien && bien.groupe;
+    return GROUPES_BIENS.some((x) => x.id === g) ? g : GROUPES_BIENS[0].id;
+  }
+
+  // Onglet courant, partagé par les trois écrans : passer de Candidatures à
+  // Visites doit rester sur le même groupe de biens.
+  let groupeBienActif = GROUPES_BIENS[0].id;
+
+  function biensDuGroupe(groupeId) {
+    return data.biens.filter((b) => groupeDuBien(b) === groupeId);
+  }
+
+  function ongletsGroupesHTML() {
+    return `<div class="groupe-onglets">${GROUPES_BIENS.map((g) => {
+      const nb = biensDuGroupe(g.id).length;
+      return `<button type="button" class="toggle-btn${g.id === groupeBienActif ? ' active' : ''}" data-groupe-bien="${g.id}">${escapeHTML(g.label)}<span class="groupe-compte">${nb}</span></button>`;
+    }).join('')}</div>`;
+  }
+
+  // Chaque écran passe sa propre fonction de rendu : l'onglet est commun, mais
+  // c'est l'écran affiché qui doit se redessiner.
+  function brancherOngletsGroupes(conteneur, rerender) {
+    conteneur.querySelectorAll('[data-groupe-bien]').forEach((b) => {
+      b.addEventListener('click', () => {
+        if (groupeBienActif === b.dataset.groupeBien) return;
+        groupeBienActif = b.dataset.groupeBien;
+        rerender(true);
+      });
+    });
+  }
+
   function findLatestEntrantRedaction(bienId, locataireId) {
     return data.edlRedactions
       .filter((r) => r.bienId === bienId && r.locataireId === locataireId && r.sens === 'entrant')
@@ -521,6 +562,9 @@
       <div class="field"><label>Adresse</label><textarea id="m-bien-adresse" rows="3" placeholder="12 rue de la Paix&#10;75002 Paris"></textarea></div>
       <div class="field"><label>Loyer mensuel (€)</label><input type="number" step="0.01" id="m-bien-loyer"></div>
       <div class="field"><label>Charges mensuelles (€)</label><input type="number" step="0.01" id="m-bien-charges"></div>
+      <div class="field"><label>Groupe</label>
+        <select id="m-bien-groupe">${GROUPES_BIENS.map((g) => `<option value="${g.id}">${escapeHTML(g.label)}</option>`).join('')}</select>
+        <small class="annonce-aide">Sert d'onglet dans les écrans Publication, Candidatures et Visites.</small></div>
       <div class="field"><label>Périodicité du loyer</label>
         <select id="m-bien-periodicite">
           <option value="mensuelle">Mensuelle</option>
@@ -537,6 +581,7 @@
       byId('m-bien-charges').value = existing.charges || 0;
       byId('m-bien-periodicite').value = existing.periodicite || 'mensuelle';
       byId('m-bien-mois-depart').value = existing.moisDepart || 1;
+      byId('m-bien-groupe').value = groupeDuBien(existing);
     }
     const majPeriodiciteBien = () => {
       byId('m-bien-mois-bloc').hidden = byId('m-bien-periodicite').value !== 'trimestrielle';
@@ -557,6 +602,7 @@
         // locataires de ce bien (cas d'un local commercial paye au trimestre).
         periodicite: byId('m-bien-periodicite').value,
         moisDepart: parseInt(byId('m-bien-mois-depart').value, 10) || 1,
+        groupe: byId('m-bien-groupe').value,
       };
       if (isEdit) {
         Object.assign(existing, record);
@@ -4341,8 +4387,15 @@
       return;
     }
 
-    // Le bien mémorisé peut avoir été supprimé depuis le dernier affichage.
-    if (!bienById(annonceBienId)) annonceBienId = data.biens[0].id;
+    const biensGroupe = biensDuGroupe(groupeBienActif);
+    if (biensGroupe.length === 0) {
+      conteneur.innerHTML = `${ongletsGroupesHTML()}<div class="panel"><p>Aucun bien dans ce groupe. Ouvrez « Biens », modifiez un bien et choisissez son groupe.</p></div>`;
+      brancherOngletsGroupes(conteneur, renderAnnonces);
+      return;
+    }
+
+    // Le bien mémorisé peut avoir été supprimé, ou appartenir à l'autre onglet.
+    if (!biensGroupe.some((b) => b.id === annonceBienId)) annonceBienId = biensGroupe[0].id;
     const bien = bienById(annonceBienId);
 
     const redactions = redactionsDuBien(annonceBienId);
@@ -4351,7 +4404,7 @@
     }
     const redaction = redactionCourante();
 
-    const optionsBiens = data.biens
+    const optionsBiens = biensGroupe
       .map((b) => `<option value="${escapeHTML(b.id)}"${b.id === annonceBienId ? ' selected' : ''}>${escapeHTML(b.nom)}</option>`)
       .join('');
 
@@ -4364,6 +4417,7 @@
       : '<option value="">Aucune rédaction</option>';
 
     conteneur.innerHTML = `
+      ${ongletsGroupesHTML()}
       <div class="panel">
         <h2>Bien et rédaction</h2>
         <div class="grid-2">
@@ -4635,6 +4689,7 @@
 
   function brancherEcouteursAnnonce() {
     const conteneur = byId('annonces-contenu');
+    brancherOngletsGroupes(conteneur, renderAnnonces);
 
     byId('annonce-bien').addEventListener('change', (e) => {
       annonceBienId = e.target.value;
@@ -4965,7 +5020,14 @@
       return;
     }
 
-    if (!bienById(candidatureBienId)) candidatureBienId = data.biens[0].id;
+    const biensGroupe = biensDuGroupe(groupeBienActif);
+    if (biensGroupe.length === 0) {
+      conteneur.innerHTML = `${ongletsGroupesHTML()}<div class="panel"><p>Aucun bien dans ce groupe. Ouvrez « Biens », modifiez un bien et choisissez son groupe.</p></div>`;
+      brancherOngletsGroupes(conteneur, renderCandidatures);
+      return;
+    }
+
+    if (!biensGroupe.some((b) => b.id === candidatureBienId)) candidatureBienId = biensGroupe[0].id;
 
     const liste = trierCandidatures(candidaturesDuBien(candidatureBienId));
     if (!liste.some((c) => c.id === candidatureCouranteId)) {
@@ -4973,7 +5035,7 @@
     }
     const candidature = candidatureCourante();
 
-    const optionsBiens = data.biens
+    const optionsBiens = biensGroupe
       .map((b) => `<option value="${escapeHTML(b.id)}"${b.id === candidatureBienId ? ' selected' : ''}>${escapeHTML(b.nom)}</option>`)
       .join('');
 
@@ -4991,6 +5053,7 @@
     }).join('') : '<tr class="empty-row"><td colspan="6">Aucune candidature pour ce bien.</td></tr>';
 
     conteneur.innerHTML = `
+      ${ongletsGroupesHTML()}
       <div class="panel">
         <h2>Bien concerné</h2>
         <div class="grid-2">
@@ -5062,6 +5125,7 @@
 
   function brancherEcouteursCandidature() {
     const conteneur = byId('candidatures-contenu');
+    brancherOngletsGroupes(conteneur, renderCandidatures);
 
     byId('candidature-bien').addEventListener('change', (e) => {
       candidatureBienId = e.target.value;
@@ -5193,10 +5257,12 @@
         adresse: "5 rue de l'Exemple\n31000 Toulouse",
         loyer: 755,
         charges: 35,
+        groupe: GROUPES_BIENS[0].id,
         isTest: true,
       };
       data.biens.push(bien);
     }
+    groupeBienActif = GROUPES_BIENS[0].id;
 
     CANDIDATURES_TEST.forEach((modele) => {
       if (data.candidatures.some((c) => c.id === modele.id)) return;
@@ -5562,7 +5628,14 @@
       return;
     }
 
-    if (!bienById(visiteBienId)) visiteBienId = data.biens[0].id;
+    const biensGroupe = biensDuGroupe(groupeBienActif);
+    if (biensGroupe.length === 0) {
+      conteneur.innerHTML = `${ongletsGroupesHTML()}<div class="panel"><p>Aucun bien dans ce groupe. Ouvrez « Biens », modifiez un bien et choisissez son groupe.</p></div>`;
+      brancherOngletsGroupes(conteneur, renderVisites);
+      return;
+    }
+
+    if (!biensGroupe.some((b) => b.id === visiteBienId)) visiteBienId = biensGroupe[0].id;
 
     const seances = visitesDuBien(visiteBienId);
     if (!seances.some((v) => v.id === visiteCouranteId)) {
@@ -5577,7 +5650,7 @@
       if (modifie) save();
     }
 
-    const optionsBiens = data.biens
+    const optionsBiens = biensGroupe
       .map((b) => `<option value="${escapeHTML(b.id)}"${b.id === visiteBienId ? ' selected' : ''}>${escapeHTML(b.nom)}</option>`)
       .join('');
     const optionsSeances = seances
@@ -5587,6 +5660,7 @@
     const retenues = data.candidatures.filter((c) => c.bienId === visiteBienId && c.statut === 'retenue');
 
     conteneur.innerHTML = `
+      ${ongletsGroupesHTML()}
       <div class="panel">
         <h2>Séance de visites</h2>
         <div class="grid-2">
@@ -5676,6 +5750,7 @@
 
   function brancherEcouteursVisite() {
     const conteneur = byId('visites-contenu');
+    brancherOngletsGroupes(conteneur, renderVisites);
 
     byId('visite-bien').addEventListener('change', (e) => {
       visiteBienId = e.target.value;

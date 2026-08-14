@@ -388,6 +388,22 @@ body{
 .toggle-btn + .toggle-btn{border-left:1px solid var(--border);}
 .toggle-btn.active{background:var(--accent);color:#fff;}
 
+/* Onglets de groupe des écrans Publication, Candidatures et Visites */
+.groupe-onglets{
+  display:flex;flex-wrap:wrap;gap:0;margin-bottom:18px;
+  border:1px solid var(--border);border-radius:8px;overflow:hidden;width:fit-content;max-width:100%;
+}
+.groupe-onglets .toggle-btn{padding:10px 22px;display:flex;align-items:center;gap:8px;}
+.groupe-compte{
+  font-size:11px;font-weight:700;line-height:1;padding:3px 7px;border-radius:10px;
+  background:var(--border);color:var(--text);
+}
+.toggle-btn.active .groupe-compte{background:rgba(255,255,255,.28);color:#fff;}
+@media(max-width:560px){
+  .groupe-onglets{width:100%;}
+  .groupe-onglets .toggle-btn{flex:1;justify-content:center;padding:10px 12px;font-size:13px;}
+}
+
 /* Rédaction du bail : éditeur de texte riche */
 .rte-toolbar{display:flex;gap:4px;margin-bottom:8px;}
 .rte-toolbar button{
