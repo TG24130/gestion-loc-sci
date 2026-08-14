@@ -226,6 +226,110 @@ const PdfBuilder = (function () {
     }
   }
 
+  // Titre de section souligné, pour les documents à remplir à la main.
+  function drawSection(doc, titre, y) {
+    doc.setFont('times', 'bold');
+    doc.setFontSize(10.5);
+    doc.setTextColor(20);
+    doc.text(titre, MARGIN, y);
+    doc.setDrawColor(120);
+    doc.line(MARGIN, y + 3.5, MARGIN + CONTENT_W, y + 3.5);
+    doc.setFont('times', 'normal');
+    return y + 17;
+  }
+
+  // Une ligne de champs vierges : le libellé, puis un trait jusqu'au champ
+  // suivant. Les colonnes se partagent la largeur utile à parts égales.
+  function drawFields(doc, labels, y) {
+    const colW = CONTENT_W / labels.length;
+    doc.setFont('times', 'normal');
+    doc.setFontSize(9.5);
+    doc.setTextColor(20);
+    doc.setDrawColor(175);
+    labels.forEach((label, i) => {
+      const x = MARGIN + i * colW;
+      doc.text(label, x, y);
+      const debut = x + doc.getTextWidth(label) + 5;
+      const fin = x + colW - (i === labels.length - 1 ? 0 : 12);
+      if (fin > debut) doc.line(debut, y + 2, fin, y + 2);
+    });
+    return y + 19;
+  }
+
+  // Fiche vierge remise au candidat. Volontairement sans « régime matrimonial »
+  // ni « lieu de mariage » : l'article 1751 du Code civil rend les époux
+  // cotitulaires du bail quel que soit leur régime, et le contrat de mariage
+  // fait partie des pièces dont la remise est interdite. Le remboursement de
+  // prêts reste demandé en déclaratif — c'est le justificatif qui est interdit,
+  // pas le renseignement.
+  function ficheRenseignements(doc, ctx) {
+    const montant = (v) => (v === null || v === undefined || v === '' ? '—' : fmtEUR(v) + ' €');
+    let y = 58;
+    y = drawTitle(doc, 'FICHE DE RENSEIGNEMENTS', ctx.sciNom ? `${ctx.sciNom} — candidature à la location` : 'Candidature à la location', y);
+
+    doc.setFont('times', 'normal');
+    doc.setFontSize(8.5);
+    doc.setTextColor(110);
+    y = addWrapped(
+      doc,
+      "À remplir par le candidat. Ces informations servent uniquement à l'examen de la candidature et sont détruites en cas de refus. Aucun document autre que ceux listés en bas de page ne peut être exigé (décret n° 2015-1437 du 5 novembre 2015).",
+      MARGIN, y, CONTENT_W, 10.5
+    ) + 10;
+    doc.setTextColor(20);
+
+    y = drawTable(doc, [
+      { label: 'Logement concerné', value: (ctx.locationAdresse || ctx.bienNom || '').replace(/\n/g, ', ') },
+      { label: 'Loyer hors charges', value: montant(ctx.loyer) },
+      { label: 'Provisions pour charges', value: montant(ctx.charges) },
+      { label: 'Dépôt de garantie', value: montant(ctx.depotGarantie), total: true },
+    ], y);
+
+    y = drawSection(doc, 'Candidat', y);
+    y = drawFields(doc, ['Nom et prénom :'], y);
+    y = drawFields(doc, ['Né(e) le :', 'à :'], y);
+    y = drawFields(doc, ['Téléphone :', 'Adresse e-mail :'], y);
+    y = drawFields(doc, ['Adresse actuelle :'], y);
+    y = drawFields(doc, ['Situation actuelle (locataire, propriétaire, hébergé) :'], y);
+    y = drawFields(doc, ['Situation familiale (marié, pacsé, concubin, seul) :', 'Personnes à charge :'], y);
+
+    y = drawSection(doc, 'Second candidat (le cas échéant)', y);
+    y = drawFields(doc, ['Nom et prénom :'], y);
+    y = drawFields(doc, ['Né(e) le :', 'à :'], y);
+    y = drawFields(doc, ['Téléphone :', 'Adresse e-mail :'], y);
+
+    y = drawSection(doc, 'Situation professionnelle et ressources', y);
+    y = drawFields(doc, ['Profession :', 'Employeur :'], y);
+    y = drawFields(doc, ['Type de contrat :', 'Depuis le :'], y);
+    y = drawFields(doc, ['Revenus mensuels nets :', 'Autres ressources (nature, montant) :'], y);
+    y = drawFields(doc, ['Ressources du second candidat :', 'Profession :'], y);
+
+    y = drawSection(doc, 'Charges déclarées', y);
+    y = drawFields(doc, ['Remboursement de prêts (par mois) :', 'Pension versée :'], y);
+
+    y = drawSection(doc, 'Garant (le cas échéant)', y);
+    y = drawFields(doc, ['Nom et prénom :', 'Profession :'], y);
+    y = drawFields(doc, ['Adresse :', 'Revenus mensuels nets :'], y);
+
+    y = drawSection(doc, 'Pièces à joindre', y);
+    doc.setFontSize(9.5);
+    [
+      "Pièce d'identité en cours de validité, recto-verso",
+      'Trois derniers bulletins de salaire',
+      "Deux derniers avis d'imposition",
+      'Trois dernières quittances de loyer, ou avis de taxe foncière si vous êtes propriétaire',
+    ].forEach((p) => {
+      y = addWrapped(doc, '-  ' + p, MARGIN + 6, y, CONTENT_W - 6, 13) + 1;
+    });
+    y += 14;
+
+    doc.setFontSize(10);
+    doc.text('Fait à …………………………………………, le ……… / ……… / …………', MARGIN, y);
+    doc.setFontSize(8.5);
+    doc.setTextColor(120);
+    doc.text('Signature du ou des candidats', PAGE_W - MARGIN, y, { align: 'right' });
+    doc.setTextColor(20);
+  }
+
   function libre(doc, ctx) {
     let y = drawHeader(doc, ctx, 64);
     y = drawTitle(doc, ctx.objet || 'Courrier', null, y);
@@ -244,6 +348,7 @@ const PdfBuilder = (function () {
     else if (type === 'relance') relance(doc, full);
     else if (type === 'avenant') avenant(doc, full);
     else if (type === 'libre') libre(doc, full);
+    else if (type === 'fiche-renseignements') ficheRenseignements(doc, full);
     return doc;
   }
 
@@ -256,6 +361,11 @@ const PdfBuilder = (function () {
   }
 
   function filename(type, ctx) {
+    // La fiche est vierge : elle est nommée d'après le bien, pas d'un locataire.
+    if (type === 'fiche-renseignements') {
+      const bien = slug(ctx.bienNom);
+      return 'fiche-renseignements' + (bien ? '-' + bien : '') + '.pdf';
+    }
     const typeSlug = { quittance: 'quittance', 'recu-partiel': 'recu-partiel', relance: 'relance', avenant: 'avenant', libre: 'courrier' }[type] || 'document';
     const per = ctx.periode ? `-${ctx.periode}` : '';
     return `${typeSlug}-${slug(ctx.locataireNom)}${per}.pdf`;

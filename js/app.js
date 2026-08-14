@@ -5009,7 +5009,9 @@
         </div>
         <div class="annonce-actions">
           <button class="btn btn-primary btn-sm" id="candidature-nouvelle">Nouvelle candidature</button>
+          <button class="btn btn-sm" id="candidature-fiche">Fiche de renseignements (PDF)</button>
         </div>
+        <p class="annonce-aide">La fiche est vierge, à remettre aux candidats : elle reprend l'adresse, le loyer, les charges et le dépôt de garantie du bien sélectionné.</p>
       </div>
 
       ${candidature ? `
@@ -5070,6 +5072,7 @@
       renderCandidatures(true);
     });
     byId('candidature-nouvelle').addEventListener('click', creerCandidature);
+    byId('candidature-fiche').addEventListener('click', telechargerFicheRenseignements);
 
     conteneur.querySelectorAll('[data-candidature-ouvrir]').forEach((b) => {
       b.addEventListener('click', () => {
@@ -5151,6 +5154,23 @@
     });
 
     zone.innerHTML = html;
+  }
+
+  // Fiche vierge du bien sélectionné : montants pris sur le bien, jamais figés
+  // dans le PDF. Le dépôt de garantie vaut un mois de loyer hors charges
+  // (plafond légal pour une location vide), comme dans le générateur d'annonce.
+  function telechargerFicheRenseignements() {
+    const bien = bienById(candidatureBienId);
+    if (!bien) return;
+    downloadPdf('fiche-renseignements', {
+      bienNom: bien.nom || '',
+      locationAdresse: bien.adresse || '',
+      loyer: bien.loyer != null ? bien.loyer : null,
+      charges: bien.charges != null ? bien.charges : null,
+      depotGarantie: bien.loyer != null ? bien.loyer : null,
+      sciNom: data.sci.nom || '',
+      ville: data.sci.ville || '',
+    });
   }
 
   function creerCandidature() {
@@ -5353,10 +5373,294 @@
 
   // ---------- Visites ----------
 
-  function renderVisites() {
+  let visiteBienId = '';
+  let visiteCouranteId = '';
+  let visiteSaveTimer = null;
+
+  function dateVisiteFR(iso) {
+    return iso ? new Date(`${iso}T00:00:00`).toLocaleDateString('fr-FR') : '';
+  }
+
+  function visitesDuBien(bienId) {
+    return data.visites
+      .filter((v) => v.bienId === bienId)
+      .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+  }
+
+  function visiteCourante() {
+    return data.visites.find((v) => v.id === visiteCouranteId) || null;
+  }
+
+  function planifierSauvegardeVisite() {
+    if (visiteSaveTimer) clearTimeout(visiteSaveTimer);
+    visiteSaveTimer = setTimeout(() => { visiteSaveTimer = null; save(); }, 800);
+  }
+
+  // Le planning suit les décisions prises dans l'écran Candidatures : un
+  // candidat retenu après coup est ajouté à la suite, un candidat refusé ou
+  // supprimé disparaît. L'ordre déjà établi à la main n'est pas touché.
+  function synchroniserCreneaux(visite) {
+    const retenues = data.candidatures.filter((c) => c.bienId === visite.bienId && c.statut === 'retenue');
+    const idsRetenus = retenues.map((c) => c.id);
+    const avant = (visite.creneaux || []).map((cr) => cr.candidatureId).join('|');
+
+    const conserves = (visite.creneaux || []).filter((cr) => idsRetenus.indexOf(cr.candidatureId) !== -1);
+    const dejaLa = conserves.map((cr) => cr.candidatureId);
+    const ajouts = idsRetenus
+      .filter((id) => dejaLa.indexOf(id) === -1)
+      .map((id) => ({ candidatureId: id, heure: '' }));
+
+    visite.creneaux = conserves.concat(ajouts);
+    return visite.creneaux.map((cr) => cr.candidatureId).join('|') !== avant;
+  }
+
+  // L'ordre du tableau fait foi : les heures ne sont qu'un miroir, recalculé à
+  // chaque modification, comme `ordre` pour les photos d'annonce.
+  function majHeuresCreneaux(visite) {
+    const heures = QfCandidature.calculerCreneaux(visite.heureDebut, visite.dureeCreneau, visite.creneaux.length);
+    let modifie = false;
+    visite.creneaux.forEach((cr, i) => {
+      const heure = heures[i] || '';
+      if (cr.heure !== heure) { cr.heure = heure; modifie = true; }
+    });
+    return modifie;
+  }
+
+  function lignesVisite(visite) {
+    return visite.creneaux.map((cr) => {
+      const candidature = data.candidatures.find((c) => c.id === cr.candidatureId);
+      return {
+        heure: cr.heure || '—',
+        nom: (candidature && candidature.nom) || 'Sans nom',
+        telephone: (candidature && candidature.telephone) || '',
+      };
+    });
+  }
+
+  function texteVisite(visite) {
+    const bien = bienById(visite.bienId);
+    const entete = `Visites — ${bien ? bien.nom : 'Bien supprimé'}${visite.date ? ' — ' + dateVisiteFR(visite.date) : ''}`;
+    const lignes = lignesVisite(visite)
+      .map((l) => `${l.heure} — ${l.nom}${l.telephone ? ' — ' + l.telephone : ''}`);
+    return [entete, ''].concat(lignes).join('\n');
+  }
+
+  function renderVisites(forcer) {
     const conteneur = byId('visites-contenu');
     if (!conteneur) return;
-    conteneur.innerHTML = '<div class="panel"><p>Écran en cours de construction.</p></div>';
+
+    // Même garde-fou que les écrans Publication et Candidatures : la
+    // synchronisation ne doit pas reconstruire le DOM pendant une frappe.
+    const actif = document.activeElement;
+    const enSaisie = !forcer && actif && conteneur.contains(actif)
+      && (actif.tagName === 'TEXTAREA'
+        || (actif.tagName === 'INPUT' && actif.type !== 'file' && actif.type !== 'button'));
+    if (enSaisie) return;
+
+    if (data.biens.length === 0) {
+      conteneur.innerHTML = '<div class="panel"><p>Aucun bien enregistré. Créez d\'abord un bien dans « Biens ».</p></div>';
+      return;
+    }
+
+    if (!bienById(visiteBienId)) visiteBienId = data.biens[0].id;
+
+    const seances = visitesDuBien(visiteBienId);
+    if (!seances.some((v) => v.id === visiteCouranteId)) {
+      visiteCouranteId = seances.length ? seances[0].id : '';
+    }
+
+    const visite = visiteCourante();
+    let modifie = false;
+    if (visite) {
+      modifie = synchroniserCreneaux(visite);
+      modifie = majHeuresCreneaux(visite) || modifie;
+      if (modifie) save();
+    }
+
+    const optionsBiens = data.biens
+      .map((b) => `<option value="${escapeHTML(b.id)}"${b.id === visiteBienId ? ' selected' : ''}>${escapeHTML(b.nom)}</option>`)
+      .join('');
+    const optionsSeances = seances
+      .map((v) => `<option value="${escapeHTML(v.id)}"${v.id === visiteCouranteId ? ' selected' : ''}>${escapeHTML(v.date ? dateVisiteFR(v.date) : 'Sans date')}</option>`)
+      .join('');
+
+    const retenues = data.candidatures.filter((c) => c.bienId === visiteBienId && c.statut === 'retenue');
+
+    conteneur.innerHTML = `
+      <div class="panel">
+        <h2>Séance de visites</h2>
+        <div class="grid-2">
+          <div class="field"><label>Bien</label><select id="visite-bien">${optionsBiens}</select></div>
+          <div class="field"><label>Séance</label>
+            ${seances.length
+              ? `<select id="visite-seance">${optionsSeances}</select>`
+              : '<p class="annonce-aide">Aucune séance pour ce bien.</p>'}
+          </div>
+        </div>
+        <div class="annonce-actions">
+          <button class="btn btn-primary btn-sm" id="visite-nouvelle">Nouvelle séance</button>
+          ${visite ? '<button class="btn btn-sm btn-danger" id="visite-supprimer">Supprimer la séance</button>' : ''}
+        </div>
+      </div>
+
+      ${visite ? `
+      <div class="panel">
+        <h2>Horaires</h2>
+        <div class="charges-form-grid">
+          <div class="field"><label>Date</label><input type="date" data-visite-champ="date" value="${escapeHTML(visite.date || '')}"></div>
+          <div class="field"><label>Heure de début</label><input type="time" data-visite-champ="heureDebut" value="${escapeHTML(visite.heureDebut || '')}"></div>
+          <div class="field"><label>Durée d'un créneau (min)</label><input type="number" min="5" step="5" data-visite-champ="dureeCreneau" value="${visite.dureeCreneau == null ? '' : visite.dureeCreneau}"></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Planning</h2>
+        <div id="visite-planning"></div>
+        <p class="annonce-aide">Les candidats retenus dans « Candidatures » sont placés à la suite. Les heures se recalculent d'après l'ordre du tableau.</p>
+      </div>
+
+      <div class="panel">
+        <h2>Liste à emporter</h2>
+        <div class="field"><textarea id="visite-texte" rows="${Math.max(4, visite.creneaux.length + 3)}" readonly>${escapeHTML(texteVisite(visite))}</textarea></div>
+        <div class="annonce-actions">
+          <button class="btn btn-primary btn-sm" id="visite-copier">Copier la liste</button>
+          <span id="visite-copie-retour" class="annonce-copie-retour"></span>
+        </div>
+      </div>
+      ` : `
+      <div class="panel">
+        <p>${retenues.length
+          ? 'Créez une séance pour placer les ' + retenues.length + ' candidat(s) retenu(s).'
+          : 'Aucun candidat retenu pour ce bien : retenez d\'abord des candidatures dans « Candidatures ».'}</p>
+      </div>`}
+    `;
+
+    brancherEcouteursVisite();
+    if (visite) afficherPlanningVisite();
+  }
+
+  function afficherPlanningVisite() {
+    const zone = byId('visite-planning');
+    const visite = visiteCourante();
+    if (!zone || !visite) return;
+
+    if (visite.creneaux.length === 0) {
+      zone.innerHTML = '<p class="annonce-aide">Aucun candidat retenu pour ce bien : le planning reste vide tant qu\'une candidature n\'est pas retenue.</p>';
+      return;
+    }
+
+    const lignes = lignesVisite(visite).map((l, i) => `<tr>
+      <td data-label="Heure">${escapeHTML(l.heure)}</td>
+      <td data-label="Candidat">${escapeHTML(l.nom)}</td>
+      <td data-label="Téléphone">${escapeHTML(l.telephone || '—')}</td>
+      <td class="actions-cell">
+        <button type="button" class="btn btn-sm" data-creneau-monter="${i}"${i === 0 ? ' disabled' : ''} title="Monter">↑</button>
+        <button type="button" class="btn btn-sm" data-creneau-descendre="${i}"${i === visite.creneaux.length - 1 ? ' disabled' : ''} title="Descendre">↓</button>
+      </td>
+    </tr>`).join('');
+
+    zone.innerHTML = `<div class="table-scroll">
+      <table class="table table-cartes">
+        <thead><tr><th>Heure</th><th>Candidat</th><th>Téléphone</th><th></th></tr></thead>
+        <tbody>${lignes}</tbody>
+      </table>
+    </div>`;
+
+    zone.querySelectorAll('[data-creneau-monter]').forEach((b) => {
+      b.addEventListener('click', () => deplacerCreneau(Number(b.dataset.creneauMonter), -1));
+    });
+    zone.querySelectorAll('[data-creneau-descendre]').forEach((b) => {
+      b.addEventListener('click', () => deplacerCreneau(Number(b.dataset.creneauDescendre), 1));
+    });
+  }
+
+  function brancherEcouteursVisite() {
+    const conteneur = byId('visites-contenu');
+
+    byId('visite-bien').addEventListener('change', (e) => {
+      visiteBienId = e.target.value;
+      visiteCouranteId = '';
+      renderVisites(true);
+    });
+    const selSeance = byId('visite-seance');
+    if (selSeance) selSeance.addEventListener('change', (e) => {
+      visiteCouranteId = e.target.value;
+      renderVisites(true);
+    });
+    byId('visite-nouvelle').addEventListener('click', creerSeanceVisite);
+    const btnSupprimer = byId('visite-supprimer');
+    if (btnSupprimer) btnSupprimer.addEventListener('click', supprimerSeanceVisite);
+
+    const btnCopier = byId('visite-copier');
+    if (btnCopier) btnCopier.addEventListener('click', async () => {
+      const retour = byId('visite-copie-retour');
+      const ok = await copierTexte(byId('visite-texte').value);
+      retour.textContent = ok ? 'Liste copiée.' : 'Copie impossible : sélectionnez le texte et copiez-le à la main.';
+      retour.className = 'annonce-copie-retour ' + (ok ? 'annonce-copie-ok' : 'annonce-copie-ko');
+      setTimeout(() => { retour.textContent = ''; }, 4000);
+    });
+
+    conteneur.addEventListener('input', (e) => {
+      const champ = e.target.dataset.visiteChamp;
+      if (!champ) return;
+      const visite = visiteCourante();
+      if (!visite) return;
+      visite[champ] = champ === 'dureeCreneau'
+        ? (e.target.value === '' ? null : Number(e.target.value))
+        : e.target.value;
+      majHeuresCreneaux(visite);
+      planifierSauvegardeVisite();
+      majAffichageVisite();
+    });
+  }
+
+  // Mise à jour ciblée pendant la saisie : le DOM n'est pas reconstruit, mais
+  // les heures et la liste à emporter doivent suivre la frappe.
+  function majAffichageVisite() {
+    const visite = visiteCourante();
+    if (!visite) return;
+    afficherPlanningVisite();
+    const texte = byId('visite-texte');
+    if (texte) texte.value = texteVisite(visite);
+  }
+
+  function creerSeanceVisite() {
+    const visite = {
+      id: Storage.uid(),
+      bienId: visiteBienId,
+      date: todayISO(),
+      heureDebut: '09:00',
+      dureeCreneau: 30,
+      creneaux: [],
+    };
+    synchroniserCreneaux(visite);
+    majHeuresCreneaux(visite);
+    data.visites.push(visite);
+    visiteCouranteId = visite.id;
+    save();
+    renderVisites(true);
+  }
+
+  function supprimerSeanceVisite() {
+    const visite = visiteCourante();
+    if (!visite) return;
+    if (!confirm('Supprimer cette séance de visites ?')) return;
+    data.visites = data.visites.filter((v) => v.id !== visite.id);
+    visiteCouranteId = '';
+    save();
+    renderVisites(true);
+  }
+
+  function deplacerCreneau(index, delta) {
+    const visite = visiteCourante();
+    if (!visite) return;
+    const cible = index + delta;
+    if (cible < 0 || cible >= visite.creneaux.length) return;
+    const [creneau] = visite.creneaux.splice(index, 1);
+    visite.creneaux.splice(cible, 0, creneau);
+    majHeuresCreneaux(visite);
+    save();
+    renderVisites(true);
   }
 
   // ---------- Import / Export ----------
