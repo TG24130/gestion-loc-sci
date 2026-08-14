@@ -5216,18 +5216,27 @@
   }
 
   async function cleanupCandidatureTestData() {
-    if (!confirm("Supprimer le bien, les candidatures, les pièces et les séances de visites de test ?")) return;
+    if (!confirm("Supprimer le bien de test, ses candidatures, ses pièces, ses annonces et ses séances de visites ?")) return;
     const aSupprimer = data.candidatures.filter((c) => c.bienId === CAND_TEST_BIEN_ID);
-    const pieces = aSupprimer.reduce((acc, c) => acc.concat(c.pieces || []), []);
+    // Les photos d'annonce comme les pièces de dossier vivent dans IndexedDB :
+    // sans cette collecte, le nettoyage laisserait des blobs orphelins que plus
+    // aucun écran ne référence.
+    const redactionsTest = data.annonceRedactions.filter((r) => r.bienId === CAND_TEST_BIEN_ID);
+    const pieces = aSupprimer
+      .reduce((acc, c) => acc.concat(c.pieces || []), [])
+      .concat(redactionsTest.reduce((acc, r) => acc.concat(r.photos || []), []));
 
+    data.annonceRedactions = data.annonceRedactions.filter((r) => r.bienId !== CAND_TEST_BIEN_ID);
     data.candidatures = data.candidatures.filter((c) => c.bienId !== CAND_TEST_BIEN_ID);
     data.visites = data.visites.filter((v) => v.bienId !== CAND_TEST_BIEN_ID);
     data.biens = data.biens.filter((b) => b.id !== CAND_TEST_BIEN_ID);
     if (candidatureBienId === CAND_TEST_BIEN_ID) { candidatureBienId = ''; candidatureCouranteId = ''; }
     if (visiteBienId === CAND_TEST_BIEN_ID) { visiteBienId = ''; visiteCouranteId = ''; }
+    if (annonceBienId === CAND_TEST_BIEN_ID) { annonceBienId = ''; annonceRedactionId = ''; }
     save();
     renderCandidatures(true);
     renderVisites(true);
+    renderAnnonces(true);
 
     for (const p of pieces) {
       try { await FilesDb.deleteFile(p.fileId); } catch (e) { console.error(e); }
