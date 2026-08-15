@@ -5,7 +5,7 @@
 // appareils a repartir du reseau. Sans cela, un telephone pouvait continuer a
 // servir une version ancienne indefiniment (constate sur iPhone : le tableau
 // de bord affichait encore 'Derniers documents' apres plusieurs deploiements).
-const CACHE_NAME = 'gls-cache-2026081409';
+const CACHE_NAME = 'gls-cache-2026081501';
 const CORE_ASSETS = ['./', './index.html', './manifest.json'];
 
 self.addEventListener('install', (event) => {

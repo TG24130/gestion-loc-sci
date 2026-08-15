@@ -162,6 +162,7 @@
   const ADMIN_DOC_CATEGORIES = {
     ag: 'AG',
     dpe: 'DPE',
+    ernt: 'ERNT',
     conformites: 'Conformités électrique, gaz et eau',
     daact: 'DAACT',
     kbis: 'Kbis',
