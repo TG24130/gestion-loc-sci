@@ -498,15 +498,21 @@
     const tbody = document.querySelector('#table-biens tbody');
     tbody.innerHTML = '';
     if (data.biens.length === 0) {
-      tbody.innerHTML = '<tr class="empty-row"><td colspan="5">Aucun bien enregistré. Ajoutez votre premier bien.</td></tr>';
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="6">Aucun bien enregistré. Ajoutez votre premier bien.</td></tr>';
       return;
     }
     data.biens.forEach((b) => {
+      const compteurs = [
+        b.compteurLinky ? `Linky : ${escapeHTML(b.compteurLinky)}` : '',
+        b.compteurEau ? `Eau : ${escapeHTML(b.compteurEau)}` : '',
+        b.compteurGaz ? `Gaz : ${escapeHTML(b.compteurGaz)}` : '',
+      ].filter(Boolean).join('<br>') || '—';
       tbody.innerHTML += `<tr>
         <td>${escapeHTML(b.nom)}</td>
         <td>${escapeHTML(b.adresse).replace(/\n/g, ', ')}</td>
         <td>${euros(b.loyer)}</td>
         <td>${euros(b.charges)}</td>
+        <td class="compteurs-cell">${compteurs}</td>
         <td class="actions-cell">
           <button class="btn btn-sm" data-edit-bien="${b.id}">Modifier</button>
           <button class="btn btn-sm" data-dup-bien="${b.id}">Dupliquer</button>
@@ -531,7 +537,15 @@
     const silent = !!(options && options.silent);
     const original = bienById(bienId);
     if (!original) return null;
-    const newBien = Object.assign({}, original, { id: Storage.uid(), nom: `${original.nom} (copie)` });
+    // Les numeros de compteurs sont propres au logement : on ne les recopie
+    // jamais sur le bien dupliqué, ils seraient faux.
+    const newBien = Object.assign({}, original, {
+      id: Storage.uid(),
+      nom: `${original.nom} (copie)`,
+      compteurLinky: '',
+      compteurEau: '',
+      compteurGaz: '',
+    });
     data.biens.push(newBien);
     const gabarit = data.bienGabarits.find((g) => g.bienId === bienId);
     if (gabarit) {
@@ -566,6 +580,13 @@
       <div class="field"><label>Groupe</label>
         <select id="m-bien-groupe">${GROUPES_BIENS.map((g) => `<option value="${g.id}">${escapeHTML(g.label)}</option>`).join('')}</select>
         <small class="annonce-aide">Sert d'onglet dans les écrans Publication, Candidatures et Visites.</small></div>
+      <div class="field"><label>N° compteur Linky (PDL / PRM électricité)</label>
+        <input type="text" id="m-bien-compteur-linky" placeholder="Optionnel">
+        <small class="annonce-aide">Ces trois numéros sont facultatifs : laissez vide si vous ne les avez pas encore.</small></div>
+      <div class="field"><label>N° compteur d'eau</label>
+        <input type="text" id="m-bien-compteur-eau" placeholder="Optionnel"></div>
+      <div class="field"><label>N° compteur de gaz (PCE)</label>
+        <input type="text" id="m-bien-compteur-gaz" placeholder="Optionnel"></div>
       <div class="field"><label>Périodicité du loyer</label>
         <select id="m-bien-periodicite">
           <option value="mensuelle">Mensuelle</option>
@@ -583,6 +604,9 @@
       byId('m-bien-periodicite').value = existing.periodicite || 'mensuelle';
       byId('m-bien-mois-depart').value = existing.moisDepart || 1;
       byId('m-bien-groupe').value = groupeDuBien(existing);
+      byId('m-bien-compteur-linky').value = existing.compteurLinky || '';
+      byId('m-bien-compteur-eau').value = existing.compteurEau || '';
+      byId('m-bien-compteur-gaz').value = existing.compteurGaz || '';
     }
     const majPeriodiciteBien = () => {
       byId('m-bien-mois-bloc').hidden = byId('m-bien-periodicite').value !== 'trimestrielle';
@@ -604,6 +628,11 @@
         periodicite: byId('m-bien-periodicite').value,
         moisDepart: parseInt(byId('m-bien-mois-depart').value, 10) || 1,
         groupe: byId('m-bien-groupe').value,
+        // Numeros de compteurs propres au bien : saisis une fois, jamais
+        // obligatoires (tous ne sont pas connus au moment de la creation).
+        compteurLinky: byId('m-bien-compteur-linky').value.trim(),
+        compteurEau: byId('m-bien-compteur-eau').value.trim(),
+        compteurGaz: byId('m-bien-compteur-gaz').value.trim(),
       };
       if (isEdit) {
         Object.assign(existing, record);
