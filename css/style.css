@@ -1408,3 +1408,70 @@ tr.ligne-impaye td{background:rgba(224,72,63,.05);}
      boutons agrandis se touchent. */
   .table-cartes td.actions-cell{gap:8px;flex-wrap:wrap;}
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Historique — envoi groupe de documents
+   ═══════════════════════════════════════════════════════════════════════════ */
+.hist-barre-envoi{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  flex-wrap:wrap;
+  gap:12px;
+  margin:0 0 14px;
+  /* Reste sous la main quand on coche en descendant une longue liste :
+     sinon le bouton « Partager » disparait des la deuxieme case. */
+  position:sticky;
+  top:8px;
+  z-index:5;
+  padding:12px 16px;
+  border-radius:var(--radius-sm);
+  background:var(--accent-soft);
+  font-size:13.5px;
+  font-weight:600;
+  color:var(--accent);
+}
+.hist-barre-envoi[hidden]{display:none;}
+
+.th-envoi{width:38px;}
+.td-envoi input{width:20px;height:20px;accent-color:var(--accent);}
+/* Le libelle « Joindre » n'a de sens qu'en presentation carte, ou la colonne
+   perd son en-tete : sur un tableau classique la case se suffit. */
+.hist-coche span{display:none;}
+.hist-coche{display:inline-flex;align-items:center;gap:8px;cursor:pointer;}
+
+@media (max-width:880px){
+  /* Sous la barre de titre flottante du telephone. */
+  .hist-barre-envoi{top:calc(66px + env(safe-area-inset-top));}
+  /* En carte, chaque ligne devient un bloc : la case a cocher se pose en
+     tete avec son libelle, et prend une vraie taille de cible tactile. */
+  .table-cartes .td-envoi{justify-content:flex-start;}
+  .table-cartes .td-envoi:empty{display:none;}
+  .hist-coche span{display:inline;font-size:13.5px;font-weight:600;color:var(--accent);}
+  .hist-coche{min-height:40px;}
+  .td-envoi input{width:24px;height:24px;}
+  .th-envoi{display:none;}
+}
+
+/* Boutons « Appeler » et « SMS » des plannings et des candidatures.
+   Ce sont des <a> et non des <button> : seul un lien declenche le passage a
+   l'application telephone ou messages sur iOS. Ils reprennent donc le style
+   de .btn, qui ne s'applique pas seul a un lien. */
+.btn-contact{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  text-decoration:none;
+  color:var(--accent);
+  border-color:var(--accent);
+  white-space:nowrap;
+}
+.btn-contact:hover{background:var(--accent-soft);}
+.cellule-contact{white-space:nowrap;}
+
+@media (max-width:880px){
+  /* En presentation carte, les deux boutons prennent la largeur restante :
+     on les vise sans regarder, telephone a l'oreille. */
+  .table-cartes .cellule-contact{gap:8px;}
+  .btn-contact{min-height:40px;padding:9px 16px;}
+}
