@@ -1701,12 +1701,12 @@
         ? `<button type="button" class="file-link" data-view-file="${c.fileId}">${escapeHTML(c.fileName || 'Voir')}</button>`
         : '<span class="file-empty">—</span>';
       return `<tr>
-        <td>${dateLabel}</td>
-        <td>${bien ? escapeHTML(bien.nom) : '<em>Bien supprimé</em>'}</td>
-        <td>${escapeHTML(c.libelle || '—')}</td>
-        <td><span class="badge ${isDevis ? 'badge-devis' : 'badge-facture'}">${isDevis ? 'Devis' : 'Facture'}</span></td>
-        <td>${euros(c.montant)}</td>
-        <td>${fileCell}</td>
+        <td data-label="Date">${dateLabel}</td>
+        <td data-label="Logement">${bien ? escapeHTML(bien.nom) : '<em>Bien supprimé</em>'}</td>
+        <td data-label="Libellé">${escapeHTML(c.libelle || '—')}</td>
+        <td data-label="Type"><span class="badge ${isDevis ? 'badge-devis' : 'badge-facture'}">${isDevis ? 'Devis' : 'Facture'}</span></td>
+        <td data-label="Montant">${euros(c.montant)}</td>
+        <td data-label="Justificatif">${fileCell}</td>
         <td class="actions-cell"><button type="button" class="btn btn-sm btn-danger" data-del-charge="${c.id}">Supprimer</button></td>
       </tr>`;
     }).join('');
@@ -4031,6 +4031,16 @@
     return { fait: els.filter((e) => !!e.vetuste).length, total: els.length };
   }
 
+  // Toute ouverture d'une redaction (creation ou reprise depuis l'historique)
+  // repart du debut du parcours. Sans cela, on heritait de l'etape et du
+  // numero de piece du precedent etat des lieux : ouvrir un brouillon pouvait
+  // afficher « Signature » d'entree, ou une piece qui n'existe pas dans ce
+  // bien-la.
+  function reinitialiserParcoursTerrain() {
+    edlEtape = 'compteurs';
+    edlPieceIndex = 0;
+  }
+
   function majTerrain() {
     const enCours = !!currentEdlRedaction;
     const pieces = edlPiecesCourantes();
@@ -4439,6 +4449,7 @@
     // travail en cours, sans le moindre avertissement — le pire scénario le
     // jour d'un état des lieux, avec le locataire en face.
     if (currentEdlRedaction && !confirm("Un état des lieux est en cours de saisie. En créer un nouveau effacera tout ce que vous venez de saisir. Pour corriger une erreur, annulez : tous les champs restent modifiables directement.")) return;
+    reinitialiserParcoursTerrain();
     const bienId = byId('edl-gabarit-bien').value;
     const locataireId = byId('edl-redac-locataire').value;
     const date = byId('edl-redac-date').value;
@@ -4811,9 +4822,9 @@
       const sensLabel = r.sens === 'sortant' ? 'Sortant' : 'Entrant';
       const sensBadge = r.sens === 'sortant' ? 'badge-devis' : 'badge-facture';
       return `<tr>
-        <td>${dateLabel}</td>
-        <td><span class="badge ${sensBadge}">${sensLabel}</span></td>
-        <td>${escapeHTML(r.libelle || (loc ? loc.nom : '—'))}</td>
+        <td data-label="Date">${dateLabel}</td>
+        <td data-label="Sens"><span class="badge ${sensBadge}">${sensLabel}</span></td>
+        <td data-label="Libellé">${escapeHTML(r.libelle || (loc ? loc.nom : '—'))}</td>
         <td class="actions-cell">
           <button type="button" class="btn btn-sm" data-pdf-edl-redac="${r.id}">Télécharger le PDF</button>
           <button type="button" class="btn btn-sm" data-edit-edl-redac="${r.id}">Modifier</button>
@@ -4833,6 +4844,7 @@
     const r = data.edlRedactions.find((x) => x.id === id);
     if (!r) return;
     currentEdlRedaction = JSON.parse(JSON.stringify(r));
+    reinitialiserParcoursTerrain();
     byId('edl-redac-locataire').value = r.locataireId;
     byId('edl-redac-date').value = r.date;
     byId('edl-redac-libelle').value = r.libelle || '';
