@@ -1,40 +1,111 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+   Direction visuelle « Rondeur » — claire le jour, nocturne la nuit.
+   Le theme suit le reglage du systeme (prefers-color-scheme) : un etat des
+   lieux se fait parfois en plein soleil, ou le fond clair reste plus lisible.
+
+   TOUT passe par ces variables. Aucune couleur ne doit etre ecrite en dur
+   ailleurs dans ce fichier, sauf dans deux zones volontairement isolees du
+   theme : les apercus de documents (.doc*) et l'editeur de texte riche
+   (.rte-editor), qui imitent du papier et alimentent les PDF.
+
+   ATTENTION : toute variable ajoutee ici doit l'etre AUSSI dans le bloc
+   sombre ci-dessous, sinon la valeur claire fuit sur fond sombre.
+   ═══════════════════════════════════════════════════════════════════════════ */
 :root{
-  --bg:#f4f6f9;
-  --sidebar-bg:#15213b;
-  --sidebar-text:#c4cde0;
-  --sidebar-text-active:#ffffff;
-  --accent:#2f6fed;
-  --accent-dark:#1f4fc2;
-  --text:#1c2434;
-  --text-muted:#66707f;
-  --border:#e2e6ee;
+  --bg:#eff3f2;
   --card-bg:#ffffff;
-  --danger:#e0483f;
-  --radius:10px;
-  --shadow:0 1px 3px rgba(20,30,60,.06), 0 1px 2px rgba(20,30,60,.08);
+  /* Fond creux : champs de saisie, zones inertes posees sur une carte. */
+  --surface-2:#f5f8f7;
+
+  --sidebar-bg:#ffffff;
+  --sidebar-text:#5a6c69;
+  --sidebar-text-active:#ffffff;
+  --sidebar-strong:#16211f;
+  --sidebar-label:#8a9c99;
+  --sidebar-hover:rgba(11,122,110,.09);
+  --sidebar-rule:#e2ebe9;
+
+  /* Assombri par rapport au turquoise des maquettes pour que le blanc pose
+     dessus tienne le rapport de contraste AA (5,2:1) sur du texte de 14 px. */
+  --accent:#0b7a6e;
+  --accent-dark:#085f56;
+  --accent-soft:rgba(11,122,110,.12);
+  --accent-grad:linear-gradient(145deg,#12907f,#0a6f64);
+  --accent-glow:0 4px 14px rgba(11,122,110,.26);
+  --on-accent:#ffffff;
+
+  --text:#1c2b29;
+  --text-muted:#687b78;
+  --border:#e2ebe9;
+  --danger:#c4453c;
+
+  --radius:20px;
+  --radius-sm:14px;
+  --radius-pill:999px;
+
+  --shadow:0 1px 2px rgba(20,45,42,.05), 0 8px 20px rgba(20,45,42,.045);
+  /* En clair la carte a besoin d'un contour ; en sombre c'est l'elevation
+     et le filet lumineux qui la detachent, la bordure grise sale le fond. */
+  --card-border:var(--border);
+
+  /* Etats semantiques : paiements, badges, vetuste, statuts de documents. */
+  --ok:#1f6b4e;      --ok-bg:#e3f1ea;
+  --warn:#8a5312;    --warn-bg:#faeeda;
+  --bad:#a8362d;     --bad-bg:#fbe9e7;
+  --neutral:#6b7674; --neutral-bg:#eef1f0;
 }
 
 @media (prefers-color-scheme: dark){
   :root{
-    --bg:#0f1420;
-    --sidebar-bg:#0a0e18;
-    --sidebar-text:#93a0bb;
-    --sidebar-text-active:#ffffff;
-    --accent:#4f83f0;
-    --accent-dark:#3c68d1;
-    --text:#e6e9f2;
-    --text-muted:#93a0bb;
-    --border:#232b3d;
-    --card-bg:#161d2c;
-    --danger:#ef5b52;
-    --shadow:0 1px 3px rgba(0,0,0,.4);
+    /* Noir legerement teinte vers le turquoise plutot qu'un gris neutre :
+       l'ecran parait compose plutot qu'eteint. */
+    --bg:#0a100f;
+    --card-bg:#16211f;
+    --surface-2:#111a19;
+
+    --sidebar-bg:#0b1312;
+    --sidebar-text:#93a9a5;
+    --sidebar-text-active:#03231e;
+    --sidebar-strong:#e9f2ef;
+    --sidebar-label:#6e8480;
+    --sidebar-hover:rgba(255,255,255,.055);
+    --sidebar-rule:rgba(255,255,255,.06);
+
+    --accent:#23c6ae;
+    --accent-dark:#12a992;
+    --accent-soft:rgba(35,198,174,.14);
+    --accent-grad:linear-gradient(145deg,#3fe3c6,#12a992);
+    --accent-glow:0 6px 22px rgba(35,198,174,.26);
+    /* Encre sombre sur le turquoise vif : du blanc y serait illisible. */
+    --on-accent:#03231e;
+
+    --text:#e9f2ef;
+    --text-muted:#839995;
+    --border:#1f2e2b;
+    --danger:#f2938b;
+
+    /* Le filet lumineux d'un pixel sur l'arete haute est ce qui distingue
+       une interface sombre soignee d'une interface claire simplement
+       inversee. Il remplace la bordure grise, qui salit le fond sombre. */
+    --shadow:inset 0 1px 0 rgba(255,255,255,.055), 0 1px 2px rgba(0,0,0,.5), 0 14px 30px rgba(0,0,0,.3);
+    --card-border:transparent;
+
+    --ok:#5fd9ae;      --ok-bg:#0f3129;
+    --warn:#f0b96a;    --warn-bg:#33260f;
+    --bad:#f2938b;     --bad-bg:#361a19;
+    --neutral:#93a9a5; --neutral-bg:#1a2523;
   }
 }
 
 *{box-sizing:border-box;}
 body{
   margin:0;
-  font-family:"Segoe UI", -apple-system, "Helvetica Neue", Arial, sans-serif;
+  /* SF Pro Rounded sur iOS et macOS (native, aucun fichier a charger), repli
+     progressif ailleurs. C'est elle qui porte la « rondeur » de la direction :
+     les apercus de documents et l'editeur riche imposent leur propre Georgia
+     et ne sont donc pas touches. */
+  font-family:ui-rounded, "SF Pro Rounded", "Varela Round", -apple-system,
+              "Segoe UI", system-ui, "Helvetica Neue", Arial, sans-serif;
   background:var(--bg);
   color:var(--text);
 }
@@ -53,6 +124,9 @@ body{
   display:flex;
   flex-direction:column;
   padding:20px 14px;
+  /* En clair la barre est blanche : sans ce filet elle se confondrait
+     avec le contenu, qui n'est que legerement teinte. */
+  border-right:1px solid var(--sidebar-rule);
 }
 .brand{
   display:flex;
@@ -63,16 +137,16 @@ body{
 .brand-mark{
   width:38px;height:38px;
   border-radius:9px;
-  background:linear-gradient(135deg,var(--accent),var(--accent-dark));
-  color:#fff;
+  background:var(--accent-grad);
+  color:var(--on-accent);
   display:flex;align-items:center;justify-content:center;
   font-weight:700;
   font-size:11.5px;
   letter-spacing:.2px;
 }
 .brand-text{display:flex;flex-direction:column;line-height:1.25;}
-.brand-text strong{color:#fff;font-size:14.5px;}
-.brand-text span{font-size:11px;color:#8b97b4;}
+.brand-text strong{color:var(--sidebar-strong);font-size:14.5px;}
+.brand-text span{font-size:11px;color:var(--sidebar-label);}
 
 .nav{display:flex;flex-direction:column;gap:2px;margin-top:6px;}
 .nav-btn{
@@ -81,18 +155,18 @@ body{
   border:none;
   color:var(--sidebar-text);
   padding:10px 12px;
-  border-radius:8px;
+  border-radius:var(--radius-sm);
   font-size:14px;
   cursor:pointer;
 }
-.nav-btn:hover{background:rgba(255,255,255,.06);color:#fff;}
-.nav-btn.active{background:var(--accent);color:#fff;font-weight:600;}
+.nav-btn:hover{background:var(--sidebar-hover);color:var(--text);}
+.nav-btn.active{background:var(--accent);color:var(--on-accent);font-weight:600;}
 .nav-group-label{
   margin:14px 12px 2px;
   font-size:11px;
   text-transform:uppercase;
   letter-spacing:.5px;
-  color:#7b87a3;
+  color:var(--sidebar-label);
 }
 .nav-group-toggle{
   display:flex;
@@ -109,7 +183,7 @@ body{
      apparaît alors centré, contrairement aux autres entrées du menu. */
   text-align:left;
 }
-.nav-group-toggle:hover{color:#c4cde0;}
+.nav-group-toggle:hover{color:var(--text);}
 .nav-group-arrow{
   width:0;height:0;
   border-left:4px solid transparent;
@@ -133,13 +207,13 @@ body{
   flex-direction:column;
   gap:4px;
   padding-top:16px;
-  border-top:1px solid rgba(255,255,255,.08);
+  border-top:1px solid var(--sidebar-rule);
 }
 .link-btn{
   background:none;border:none;color:var(--sidebar-text);
-  font-size:12.5px;text-align:left;padding:6px 8px;cursor:pointer;border-radius:6px;
+  font-size:12.5px;text-align:left;padding:6px 8px;cursor:pointer;border-radius:10px;
 }
-.link-btn:hover{background:rgba(255,255,255,.06);color:#fff;}
+.link-btn:hover{background:var(--sidebar-hover);color:var(--text);}
 
 /* Content */
 .content{
@@ -165,7 +239,7 @@ body{
 }
 .card{
   background:var(--card-bg);
-  border:1px solid var(--border);
+  border:1px solid var(--card-border);
   border-radius:var(--radius);
   padding:15px 16px;
   box-shadow:var(--shadow);
@@ -178,7 +252,7 @@ body{
 
 .panel{
   background:var(--card-bg);
-  border:1px solid var(--border);
+  border:1px solid var(--card-border);
   border-radius:var(--radius);
   padding:22px 24px;
   box-shadow:var(--shadow);
@@ -195,9 +269,9 @@ body{
   width:100%;
   padding:9px 11px;
   border:1px solid var(--border);
-  border-radius:7px;
+  border-radius:var(--radius-sm);
   font-size:14px;
-  background:var(--card-bg);
+  background:var(--surface-2);
   color:var(--text);
   font-family:inherit;
 }
@@ -208,7 +282,7 @@ body{
 
 .btn{
   padding:10px 16px;
-  border-radius:8px;
+  border-radius:var(--radius-sm);
   border:1px solid var(--border);
   background:var(--card-bg);
   color:var(--text);
@@ -218,10 +292,15 @@ body{
 }
 .btn:hover{border-color:var(--accent);}
 .btn:disabled{opacity:.5;cursor:not-allowed;}
-.btn-primary{background:var(--accent);border-color:var(--accent);color:#fff;}
+.btn-primary{
+  background:var(--accent-grad);
+  border-color:transparent;
+  color:var(--on-accent);
+  box-shadow:var(--accent-glow);
+}
 .btn-primary:hover{background:var(--accent-dark);}
 .btn-danger{color:var(--danger);}
-.btn-sm{padding:5px 10px;font-size:12.5px;border-radius:6px;}
+.btn-sm{padding:6px 12px;font-size:12.5px;border-radius:10px;}
 
 .quick-actions{display:flex;gap:12px;flex-wrap:wrap;}
 
@@ -247,12 +326,8 @@ body{
 .badge{
   display:inline-block;padding:3px 9px;border-radius:20px;font-size:11.5px;font-weight:600;
 }
-.badge-active{background:#e4f6ea;color:#1c8a4b;}
-.badge-inactive{background:#f1f1f4;color:#7a7f8c;}
-@media (prefers-color-scheme: dark){
-  .badge-active{background:#123422;color:#4fd487;}
-  .badge-inactive{background:#242c3d;color:#93a0bb;}
-}
+.badge-active{background:var(--ok-bg);color:var(--ok);}
+.badge-inactive{background:var(--neutral-bg);color:var(--neutral);}
 
 /* Preview panel */
 .preview-frame{
@@ -346,8 +421,8 @@ body{
 
 .charges-note{font-size:12px;color:var(--text-muted);margin:12px 0 0;}
 
-.badge-facture{background:#e3ecff;color:#2f4fb3;}
-.badge-devis{background:#fdefda;color:#a8631a;}
+.badge-facture{background:var(--accent-soft);color:var(--accent);}
+.badge-devis{background:var(--warn-bg);color:var(--warn);}
 @media (prefers-color-scheme: dark){
   .badge-facture{background:#1c2c50;color:#8fb0ff;}
   .badge-devis{background:#3a2a12;color:#f0ac5c;}
@@ -373,8 +448,8 @@ body{
 }
 .doc-status-card .doc-status-name{font-weight:600;font-size:13.5px;}
 .doc-status-row{display:flex;align-items:center;justify-content:space-between;font-size:12.5px;}
-.doc-status-ok{color:#1c8a4b;font-weight:600;}
-.doc-status-missing{color:#a8631a;font-weight:600;}
+.doc-status-ok{color:var(--ok);font-weight:600;}
+.doc-status-missing{color:var(--warn);font-weight:600;}
 @media (prefers-color-scheme: dark){
   .doc-status-ok{color:#4fd487;}
   .doc-status-missing{color:#f0ac5c;}
@@ -386,7 +461,7 @@ body{
   padding:8px 18px;font-size:13.5px;font-weight:600;cursor:pointer;
 }
 .toggle-btn + .toggle-btn{border-left:1px solid var(--border);}
-.toggle-btn.active{background:var(--accent);color:#fff;}
+.toggle-btn.active{background:var(--accent);color:var(--on-accent);}
 
 /* Onglets de groupe des écrans Publication, Candidatures et Visites */
 .groupe-onglets{
@@ -398,7 +473,7 @@ body{
   font-size:11px;font-weight:700;line-height:1;padding:3px 7px;border-radius:10px;
   background:var(--border);color:var(--text);
 }
-.toggle-btn.active .groupe-compte{background:rgba(255,255,255,.28);color:#fff;}
+.toggle-btn.active .groupe-compte{background:rgba(255,255,255,.28);color:var(--on-accent);}
 @media(max-width:560px){
   .groupe-onglets{width:100%;}
   .groupe-onglets .toggle-btn{flex:1;justify-content:center;padding:10px 12px;font-size:13px;}
@@ -416,7 +491,7 @@ body{
   color:var(--text);
 }
 .rte-toolbar button:hover{border-color:var(--accent);}
-.rte-toolbar button[data-active="true"]{background:var(--accent);color:#fff;border-color:var(--accent);}
+.rte-toolbar button[data-active="true"]{background:var(--accent);color:var(--on-accent);border-color:var(--accent);}
 .rte-toolbar .rte-btn-bold{font-weight:700;}
 .rte-toolbar .rte-btn-italic{font-style:italic;}
 .rte-toolbar .rte-btn-underline{text-decoration:underline;}
@@ -562,10 +637,40 @@ html.qf-locked .app{display:none;}
 .edl-redac-element:first-of-type{border-top:none;margin-top:0;padding-top:0;}
 .edl-redac-element-header{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap;}
 .edl-redac-element-name{font-weight:600;font-size:13.5px;}
-.edl-redac-element-vetuste{
-  padding:6px 10px;border:1px solid var(--border);border-radius:7px;font-size:12.5px;
-  background:var(--card-bg);color:var(--text);
+/* Vetuste : six pastilles a un seul appui, en remplacement du menu deroulant.
+   Trois colonnes : sur la largeur utile d'un iPhone (370 pt) chaque pastille
+   fait environ 118 pt de large et 46 de haut, bien au-dela des 44 pt
+   recommandes par Apple. Six colonnes auraient donne 57 pt, intouchables
+   avec un pouce, gants ou mains mouillees comprises. */
+.edl-vetuste-chips{
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:7px;
+  margin-bottom:10px;
 }
+.edl-vetuste-chip{
+  min-height:46px;
+  padding:6px 4px;
+  border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+  background:transparent;
+  color:var(--text-muted);
+  font-family:inherit;
+  font-size:13px;
+  font-weight:600;
+  line-height:1.15;
+  cursor:pointer;
+  transition:background .13s ease, color .13s ease, box-shadow .13s ease;
+}
+.edl-vetuste-chip:hover{color:var(--text);}
+/* L'etat choisi se lit a la couleur ET au cerne interieur : sur un ecran en
+   plein soleil, la seule teinte de fond ne suffit pas a distinguer la
+   pastille allumee. */
+.edl-vetuste-chip[aria-pressed="true"]{border-color:transparent;box-shadow:inset 0 0 0 1.5px currentColor;}
+.edl-vetuste-chip[data-ton="ok"][aria-pressed="true"]{background:var(--ok-bg);color:var(--ok);}
+.edl-vetuste-chip[data-ton="warn"][aria-pressed="true"]{background:var(--warn-bg);color:var(--warn);}
+.edl-vetuste-chip[data-ton="bad"][aria-pressed="true"]{background:var(--bad-bg);color:var(--bad);}
+.edl-vetuste-chip[data-ton="neutre"][aria-pressed="true"]{background:var(--neutral-bg);color:var(--neutral);}
 .edl-redac-element-note{
   width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:7px;font-size:13px;
   background:var(--card-bg);color:var(--text);margin-bottom:8px;resize:vertical;min-height:36px;font-family:inherit;
@@ -578,9 +683,33 @@ html.qf-locked .app{display:none;}
   background:rgba(0,0,0,.6);color:#fff;border:none;font-size:12px;line-height:1;cursor:pointer;
   display:flex;align-items:center;justify-content:center;padding:0;
 }
+/* La photo est l'acte central d'un etat des lieux : elle merite un vrai
+   bouton pleine largeur, pas un lien de 12 px. Hauteur alignee sur celle des
+   pastilles de vetuste juste au-dessus. */
 .edl-photo-add-label{
-  display:inline-block;font-size:12px;color:var(--accent);cursor:pointer;font-weight:600;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  min-height:46px;
+  padding:6px 14px;
+  border:1px solid var(--border);
+  border-radius:var(--radius-sm);
+  font-size:13.5px;
+  color:var(--text);
+  cursor:pointer;
+  font-weight:600;
 }
+.edl-photo-add-label:hover{border-color:var(--accent);color:var(--accent);}
+/* Une fois au moins une photo prise, le bouton passe en accentue : sur le
+   terrain on verifie d'un coup d'oeil ce qui a deja ete photographie. */
+.edl-photo-add-label.a-des-photos{
+  background:var(--accent-grad);
+  border-color:transparent;
+  color:var(--on-accent);
+  box-shadow:var(--accent-glow);
+}
+.edl-photo-thumb{border-radius:var(--radius-sm);}
 
 /* Compteurs : gabarit (liste simple) et relevé (rédaction) */
 .edl-meter-row{display:flex;gap:8px;align-items:center;margin-bottom:8px;}
@@ -638,9 +767,9 @@ img.edl-signature-canvas{object-fit:contain;cursor:default;border-style:solid;ba
 .edl-test-panel{border-style:dashed;background:transparent;box-shadow:none;padding:16px 24px;}
 
 /* Comparaison entrant/sortant (Phase 6) */
-#edl-redac-compare-note.edl-compare-warn{color:#b45309;}
+#edl-redac-compare-note.edl-compare-warn{color:var(--warn);}
 .edl-compare-line{font-size:12px;color:var(--text-muted);margin:-2px 0 8px;}
-.edl-compare-line.edl-compare-diff{color:#b45309;font-weight:600;}
+.edl-compare-line.edl-compare-diff{color:var(--warn);font-weight:600;}
 .edl-compare-conso{font-weight:400;}
 
 /* ---------- Mode mobile (calibré iPhone 16 Pro : viewport 402×874, encoches) ---------- */
@@ -770,9 +899,9 @@ html.qf-pin-locked .app{display:none;}
 .th-triable.tri-actif .tri-fleche{opacity:1;}
 
 /* Suivi mensuel des paiements (tableau de bord) : lecture visuelle immediate. */
-.paie-ok{background:#e4f6ea;color:#1c8a4b;}
-.paie-partiel{background:#fdf0dc;color:#b45309;}
-.paie-non{background:#fdeaea;color:#c0392b;}
+.paie-ok{background:var(--ok-bg);color:var(--ok);}
+.paie-partiel{background:var(--warn-bg);color:var(--warn);}
+.paie-non{background:var(--bad-bg);color:var(--bad);}
 tr.ligne-impaye td{background:rgba(224,72,63,.05);}
 @media (prefers-color-scheme: dark){
   .paie-ok{background:#123422;color:#4fd487;}

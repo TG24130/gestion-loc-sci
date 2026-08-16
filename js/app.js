@@ -206,15 +206,25 @@
     autre: { label: 'Autre', elements: [] },
   };
 
+  // `label` reste le libellé long : il part tel quel dans les PDF et dans la
+  // comparaison entrée/sortie, et ne doit donc pas changer.
+  // `court` et `ton` ne servent qu'aux pastilles de saisie sur le terrain :
+  // le libellé long ne tient pas dans une pastille de 118 points de large.
   const EDL_VETUSTE_OPTIONS = [
     { value: '', label: '— Vétusté —' },
-    { value: 'neuf', label: 'Neuf' },
-    { value: 'bon', label: 'Bon état' },
-    { value: 'usage', label: "État d'usage" },
-    { value: 'mauvais', label: 'Mauvais état' },
-    { value: 'hors-service', label: 'Hors service' },
-    { value: 'ns', label: 'NS (non significatif)' },
+    { value: 'neuf', label: 'Neuf', court: 'Neuf', ton: 'ok' },
+    { value: 'bon', label: 'Bon état', court: 'Bon état', ton: 'ok' },
+    { value: 'usage', label: "État d'usage", court: 'Usage', ton: 'warn' },
+    { value: 'mauvais', label: 'Mauvais état', court: 'Mauvais', ton: 'bad' },
+    { value: 'hors-service', label: 'Hors service', court: 'Hors service', ton: 'bad' },
+    { value: 'ns', label: 'NS (non significatif)', court: 'NS', ton: 'neutre' },
   ];
+
+  // Options réellement proposées à la saisie : l'entrée vide n'est qu'un
+  // libellé de remplacement pour l'ancien menu déroulant. Avec des pastilles,
+  // « aucune valeur » se lit à ce qu'aucune n'est allumée, et se rétablit en
+  // touchant à nouveau la pastille active.
+  const EDL_VETUSTE_CHOIX = EDL_VETUSTE_OPTIONS.filter((o) => o.value);
   let currentEdlRedaction = null;
   let currentEdlRedacSens = 'entrant';
   const EDL_METER_DEFAULTS = ['Électricité Heures Creuses', 'Électricité Heures Pleines', 'Eau', 'Gaz'];
@@ -3657,6 +3667,24 @@
       });
       container.appendChild(thumb);
     }
+    majBoutonPhoto(container, el.files.length);
+  }
+
+  // Le bouton « photo » annonce ce qu'il contient deja et s'accentue des la
+  // premiere prise. Il est le frere immediat de la galerie dans le balisage
+  // des elements, des compteurs et des cles : une seule fonction suffit.
+  function majBoutonPhoto(gallery, nombre) {
+    const label = gallery.parentElement
+      && gallery.parentElement.querySelector('.edl-photo-add-label');
+    if (!label) return;
+    const input = label.querySelector('input[type="file"]');
+    label.textContent = nombre === 0
+      ? '+ Ajouter une photo'
+      : `${nombre} photo${nombre > 1 ? 's' : ''} — en ajouter`;
+    label.classList.toggle('a-des-photos', nombre > 0);
+    // textContent a efface le champ de fichier : on le remet, c'est lui qui
+    // ouvre l'appareil photo au clic sur le label.
+    if (input) label.appendChild(input);
   }
 
   // Redimensionne une photo cote client avant stockage : une photo de telephone
@@ -3695,18 +3723,57 @@
     return opt && opt.value ? opt.label : '—';
   }
 
+  // ─── Vétusté : pastilles à un seul appui ───────────────────────────────
+  // Sur iOS un <select> ouvre une roue modale : ouvrir, faire tourner,
+  // valider — trois gestes. Une maison de huit pièces compte soixante-trois
+  // éléments, soit près de cent quatre-vingt-dix gestes pour la seule
+  // vétusté, debout, avec le locataire en face. Une pastille en demande un.
+  // La valeur écrite dans `cible.vetuste` est exactement celle que produisait
+  // le menu : ni les PDF, ni la comparaison entrée/sortie, ni la
+  // synchronisation ne voient la différence.
+  function chipsVetusteHTML(libelle) {
+    const chips = EDL_VETUSTE_CHOIX.map((o) => `
+        <button type="button" class="edl-vetuste-chip" data-vetuste="${o.value}"
+                data-ton="${o.ton}" aria-pressed="false">${escapeHTML(o.court)}</button>`).join('');
+    return `<div class="edl-vetuste-chips" role="group"
+                 aria-label="Vétusté de : ${escapeHTML(libelle)}">${chips}</div>`;
+  }
+
+  // `apresChangement` sert aux appelants qui affichent en plus un écart avec
+  // l'état des lieux d'entrée.
+  function brancherChipsVetuste(racine, cible, apresChangement) {
+    const box = racine.querySelector('.edl-vetuste-chips');
+    function peindre() {
+      box.querySelectorAll('.edl-vetuste-chip').forEach((chip) => {
+        chip.setAttribute('aria-pressed', String(chip.dataset.vetuste === cible.vetuste));
+      });
+      if (apresChangement) apresChangement();
+      // Prévient la vue « une pièce à la fois » que le décompte a bougé.
+      racine.dispatchEvent(new CustomEvent('edl-saisie-modifiee', { bubbles: true }));
+    }
+    box.addEventListener('click', (e) => {
+      const chip = e.target.closest('.edl-vetuste-chip');
+      if (!chip) return;
+      // Toucher la pastille allumée l'éteint : c'est le seul moyen de revenir
+      // à « non renseigné » après une erreur. L'ancien menu avait pour cela
+      // une entrée vide, dont les pastilles n'ont pas besoin.
+      cible.vetuste = chip.dataset.vetuste === cible.vetuste ? '' : chip.dataset.vetuste;
+      peindre();
+    });
+    peindre();
+  }
+
   function createEdlRedacElement(el) {
     const div = document.createElement('div');
     div.className = 'edl-redac-element';
-    const vetusteOptions = EDL_VETUSTE_OPTIONS.map((o) => `<option value="${o.value}">${escapeHTML(o.label)}</option>`).join('');
     const compareHTML = el.vetusteEntree !== undefined
       ? `<div class="edl-compare-line">État à l'entrée : <strong>${escapeHTML(edlVetusteLabel(el.vetusteEntree))}</strong></div>`
       : '';
     div.innerHTML = `
       <div class="edl-redac-element-header">
         <span class="edl-redac-element-name">${escapeHTML(el.nom)}</span>
-        <select class="edl-redac-element-vetuste">${vetusteOptions}</select>
       </div>
+      ${chipsVetusteHTML(el.nom)}
       ${compareHTML}
       <textarea class="edl-redac-element-note" rows="1" placeholder="Note (optionnel)"></textarea>
       <div class="edl-photo-gallery"></div>
@@ -3714,16 +3781,12 @@
         <input type="file" accept="image/*" capture="environment" multiple hidden>
       </label>
     `;
-    const vetusteSelect = div.querySelector('.edl-redac-element-vetuste');
     const compareLine = div.querySelector('.edl-compare-line');
-    function updateCompareHighlight() {
+    brancherChipsVetuste(div, el, () => {
       if (!compareLine) return;
       const diff = !!el.vetuste && el.vetusteEntree !== undefined && el.vetuste !== el.vetusteEntree;
       compareLine.classList.toggle('edl-compare-diff', diff);
-    }
-    vetusteSelect.value = el.vetuste || '';
-    updateCompareHighlight();
-    vetusteSelect.addEventListener('change', (e) => { el.vetuste = e.target.value; updateCompareHighlight(); });
+    });
 
     const noteInput = div.querySelector('.edl-redac-element-note');
     noteInput.value = el.note || '';
@@ -3870,7 +3933,6 @@
   function createEdlRedacCle(c) {
     const div = document.createElement('div');
     div.className = 'edl-redac-meter';
-    const vetusteOptions = EDL_VETUSTE_OPTIONS.map((o) => `<option value="${o.value}">${escapeHTML(o.label)}</option>`).join('');
     const compareHTML = c.nombreEntree !== undefined
       ? `<div class="edl-compare-line">À l'entrée : <strong>${escapeHTML(c.nombreEntree === '' ? '—' : String(c.nombreEntree))}</strong> — <strong>${escapeHTML(edlVetusteLabel(c.vetusteEntree))}</strong></div>`
       : '';
@@ -3878,8 +3940,8 @@
       <div class="edl-redac-meter-header">
         <span class="edl-redac-meter-name">${escapeHTML(c.nom)}</span>
         <input type="number" step="1" class="edl-redac-cle-nombre" placeholder="Nombre">
-        <select class="edl-redac-cle-vetuste">${vetusteOptions}</select>
       </div>
+      ${chipsVetusteHTML(c.nom)}
       ${compareHTML}
       <div class="edl-photo-gallery"></div>
       <label class="edl-photo-add-label">+ Ajouter une photo
@@ -3887,11 +3949,9 @@
       </label>
     `;
     const nombreInput = div.querySelector('.edl-redac-cle-nombre');
-    const vetusteSelect = div.querySelector('.edl-redac-cle-vetuste');
     nombreInput.value = c.nombre === '' || c.nombre == null ? '' : c.nombre;
     nombreInput.addEventListener('input', (e) => { c.nombre = e.target.value; });
-    vetusteSelect.value = c.vetuste || '';
-    vetusteSelect.addEventListener('change', (e) => { c.vetuste = e.target.value; });
+    brancherChipsVetuste(div, c);
 
     const gallery = div.querySelector('.edl-photo-gallery');
     renderEdlPhotoGallery(gallery, c);
