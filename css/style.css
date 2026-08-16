@@ -17,13 +17,17 @@
   /* Fond creux : champs de saisie, zones inertes posees sur une carte. */
   --surface-2:#f4f7fb;
 
-  --sidebar-bg:#ffffff;
+  /* Legerement plus soutenue que le fond du contenu, et non blanche : la
+     hierarchie se lit alors barre (le plus profond) < contenu < cartes
+     (blanches), ce qui rend le reperage gauche/droite immediat sans
+     recourir au bleu nuit d'origine. */
+  --sidebar-bg:#e8eef6;
   --sidebar-text:#5c687a;
   --sidebar-text-active:#ffffff;
   --sidebar-strong:#182231;
   --sidebar-label:#8b96a8;
   --sidebar-hover:rgba(70,115,159,.09);
-  --sidebar-rule:#e3e9f1;
+  --sidebar-rule:#d9e1ec;
 
   /* Bleu ardoise doux. Un bleu vraiment pastel ne peut pas porter du texte
      blanc : celui-ci est assombri juste ce qu'il faut pour tenir le rapport
