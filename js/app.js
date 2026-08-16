@@ -4845,6 +4845,7 @@
         <div class="annonce-actions">
           <button class="btn btn-primary btn-sm" id="annonce-nouvelle">Nouvelle rédaction</button>
           <button class="btn btn-sm" id="annonce-dupliquer"${redaction ? '' : ' disabled'}>Dupliquer</button>
+          <button class="btn btn-sm" id="annonce-dupliquer-biens"${redaction ? '' : ' disabled'}>Dupliquer vers d'autres biens</button>
           <button class="btn btn-sm btn-danger" id="annonce-supprimer"${redaction ? '' : ' disabled'}>Supprimer</button>
         </div>
       </div>
@@ -5124,6 +5125,8 @@
     byId('annonce-nouvelle').addEventListener('click', creerRedactionAnnonce);
     const btnDup = byId('annonce-dupliquer');
     if (btnDup) btnDup.addEventListener('click', dupliquerRedactionAnnonce);
+    const btnDupBiens = byId('annonce-dupliquer-biens');
+    if (btnDupBiens) btnDupBiens.addEventListener('click', ouvrirDuplicationAnnonceVersBiens);
     const btnSup = byId('annonce-supprimer');
     if (btnSup) btnSup.addEventListener('click', supprimerRedactionAnnonce);
 
@@ -5278,6 +5281,84 @@
     annonceRedactionId = copie.id;
     save();
     renderAnnonces(true);
+  }
+
+  // Dupliquer une annonce vers d'AUTRES biens. « Dupliquer » ne sait copier
+  // qu'au sein du même bien, et le sélecteur « Bien » ne déplace pas une
+  // rédaction : sans cela, préparer la même annonce pour des maisons
+  // identiques (MAISON 1 à 5) obligeait à tout retaper bien par bien.
+  //
+  // Les caractéristiques (surface, DPE, chauffage...) vivent sur le bien et
+  // non sur la rédaction : les copier aussi est indispensable, sinon l'annonce
+  // dupliquée s'afficherait sans diagnostic ni surface sur les biens cibles.
+  function ouvrirDuplicationAnnonceVersBiens() {
+    const source = redactionCourante();
+    const bienSource = bienById(annonceBienId);
+    if (!source || !bienSource) return;
+    const cibles = data.biens.filter((b) => b.id !== bienSource.id);
+    if (cibles.length === 0) { alert("Aucun autre bien enregistré : créez-les d'abord dans « Biens »."); return; }
+
+    const groupesHTML = GROUPES_BIENS.map((g) => {
+      const liste = cibles.filter((b) => groupeDuBien(b) === g.id);
+      if (liste.length === 0) return '';
+      return `<fieldset class="dup-groupe">
+        <legend>${escapeHTML(g.label)}</legend>
+        ${liste.map((b) => `<label class="dup-bien"><input type="checkbox" data-dup-cible="${escapeHTML(b.id)}"> ${escapeHTML(b.nom)}</label>`).join('')}
+      </fieldset>`;
+    }).join('');
+
+    openModal("Dupliquer vers d'autres biens", `
+      <p class="charges-note" style="margin-top:0;">La rédaction « ${escapeHTML((source.titre || '').trim() || 'Sans titre')} » sera copiée sur chaque bien coché, en brouillon. Le nom, l'adresse, le loyer de la fiche et les numéros de compteurs des biens cibles ne sont pas modifiés.</p>
+      ${groupesHTML}
+      <div class="field" style="margin-top:14px;">
+        <label class="dup-bien"><input type="checkbox" id="dup-avec-caracteristiques" checked> Copier aussi les caractéristiques de « ${escapeHTML(bienSource.nom)} » (surface, DPE, GES, chauffage, stationnement…)</label>
+      </div>
+      <button class="btn btn-primary" id="dup-valider">Dupliquer</button>
+    `);
+
+    byId('dup-valider').addEventListener('click', () => {
+      const ids = [...document.querySelectorAll('[data-dup-cible]:checked')].map((c) => c.dataset.dupCible);
+      if (ids.length === 0) { alert('Cochez au moins un bien de destination.'); return; }
+      const avecCaracteristiques = byId('dup-avec-caracteristiques').checked;
+      const noms = dupliquerAnnonceVersBiens(source, bienSource, ids, avecCaracteristiques);
+      closeModal();
+      alert(`Annonce dupliquée vers ${noms.length} bien(s) : ${noms.join(', ')}.\n\nChaque copie est un brouillon : ouvrez le bien concerné pour la relire (photos partagées avec l'annonce d'origine).`);
+    });
+  }
+
+  function dupliquerAnnonceVersBiens(source, bienSource, idsCibles, avecCaracteristiques) {
+    const maintenant = new Date().toISOString();
+    const noms = [];
+    idsCibles.forEach((bienId) => {
+      const cible = bienById(bienId);
+      if (!cible) return;
+      if (avecCaracteristiques) {
+        CHAMPS_BIEN.forEach((champ) => { cible[champ.cle] = bienSource[champ.cle]; });
+      }
+      // Le titre porte presque toujours le nom du bien source (« À louer
+      // MAISON 3 ») : on y substitue le nom de la cible plutôt que d'ajouter
+      // « (copie) », qui obligerait à corriger chaque annonce à la main.
+      const titre = (source.titre || '').trim();
+      const titreCible = titre && bienSource.nom && titre.indexOf(bienSource.nom) !== -1
+        ? titre.split(bienSource.nom).join(cible.nom || '')
+        : `${titre || 'Sans titre'} — ${cible.nom || ''}`.trim();
+      data.annonceRedactions.push(Object.assign({}, source, {
+        id: Storage.uid(),
+        bienId: cible.id,
+        titre: titreCible,
+        // Photos et détail des charges : copies de surface, les fichiers
+        // eux-mêmes restent partagés dans FilesDb (comme pour « Dupliquer »).
+        photos: (source.photos || []).map((p) => Object.assign({}, p)),
+        chargesDetail: (source.chargesDetail || []).map((c) => (c && typeof c === 'object' ? Object.assign({}, c) : c)),
+        statut: 'brouillon',
+        createdAt: maintenant,
+        updatedAt: maintenant,
+      }));
+      noms.push(cible.nom || 'Sans nom');
+    });
+    save();
+    renderAnnonces(true);
+    return noms;
   }
 
   function supprimerRedactionAnnonce() {
