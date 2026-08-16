@@ -12,38 +12,40 @@
    sombre ci-dessous, sinon la valeur claire fuit sur fond sombre.
    ═══════════════════════════════════════════════════════════════════════════ */
 :root{
-  --bg:#eff3f2;
+  --bg:#eef2f7;
   --card-bg:#ffffff;
   /* Fond creux : champs de saisie, zones inertes posees sur une carte. */
-  --surface-2:#f5f8f7;
+  --surface-2:#f4f7fb;
 
   --sidebar-bg:#ffffff;
-  --sidebar-text:#5a6c69;
+  --sidebar-text:#5c687a;
   --sidebar-text-active:#ffffff;
-  --sidebar-strong:#16211f;
-  --sidebar-label:#8a9c99;
-  --sidebar-hover:rgba(11,122,110,.09);
-  --sidebar-rule:#e2ebe9;
+  --sidebar-strong:#182231;
+  --sidebar-label:#8b96a8;
+  --sidebar-hover:rgba(70,115,159,.09);
+  --sidebar-rule:#e3e9f1;
 
-  /* Assombri par rapport au turquoise des maquettes pour que le blanc pose
-     dessus tienne le rapport de contraste AA (5,2:1) sur du texte de 14 px. */
-  --accent:#0b7a6e;
-  --accent-dark:#085f56;
-  --accent-soft:rgba(11,122,110,.12);
-  --accent-grad:linear-gradient(145deg,#12907f,#0a6f64);
-  --accent-glow:0 4px 14px rgba(11,122,110,.26);
+  /* Bleu ardoise doux. Un bleu vraiment pastel ne peut pas porter du texte
+     blanc : celui-ci est assombri juste ce qu'il faut pour tenir le rapport
+     de contraste AA (5,0:1) sur du 14 px. La douceur est portee par les
+     fonds teintes (--accent-soft) et par les neutres, eux aussi bleutes. */
+  --accent:#46739f;
+  --accent-dark:#375b7e;
+  --accent-soft:rgba(70,115,159,.12);
+  --accent-grad:linear-gradient(145deg,#5083b0,#3f6a93);
+  --accent-glow:0 4px 14px rgba(70,115,159,.24);
   --on-accent:#ffffff;
 
-  --text:#1c2b29;
-  --text-muted:#687b78;
-  --border:#e2ebe9;
+  --text:#1b2432;
+  --text-muted:#6a7688;
+  --border:#e3e9f1;
   --danger:#c4453c;
 
   --radius:20px;
   --radius-sm:14px;
   --radius-pill:999px;
 
-  --shadow:0 1px 2px rgba(20,45,42,.05), 0 8px 20px rgba(20,45,42,.045);
+  --shadow:0 1px 2px rgba(22,35,55,.05), 0 8px 20px rgba(22,35,55,.045);
   /* En clair la carte a besoin d'un contour ; en sombre c'est l'elevation
      et le filet lumineux qui la detachent, la bordure grise sale le fond. */
   --card-border:var(--border);
@@ -52,36 +54,39 @@
   --ok:#1f6b4e;      --ok-bg:#e3f1ea;
   --warn:#8a5312;    --warn-bg:#faeeda;
   --bad:#a8362d;     --bad-bg:#fbe9e7;
-  --neutral:#6b7674; --neutral-bg:#eef1f0;
+  --neutral:#6a7688; --neutral-bg:#edf0f5;
 }
 
 @media (prefers-color-scheme: dark){
   :root{
-    /* Noir legerement teinte vers le turquoise plutot qu'un gris neutre :
+    /* Noir legerement teinte vers le bleu plutot qu'un gris neutre :
        l'ecran parait compose plutot qu'eteint. */
-    --bg:#0a100f;
-    --card-bg:#16211f;
-    --surface-2:#111a19;
+    --bg:#0a0f16;
+    --card-bg:#151d28;
+    --surface-2:#101720;
 
-    --sidebar-bg:#0b1312;
-    --sidebar-text:#93a9a5;
-    --sidebar-text-active:#03231e;
-    --sidebar-strong:#e9f2ef;
-    --sidebar-label:#6e8480;
+    --sidebar-bg:#0b1119;
+    --sidebar-text:#94a3b8;
+    --sidebar-text-active:#0b1a2b;
+    --sidebar-strong:#e8edf4;
+    --sidebar-label:#6d7c90;
     --sidebar-hover:rgba(255,255,255,.055);
     --sidebar-rule:rgba(255,255,255,.06);
 
-    --accent:#23c6ae;
-    --accent-dark:#12a992;
-    --accent-soft:rgba(35,198,174,.14);
-    --accent-grad:linear-gradient(145deg,#3fe3c6,#12a992);
-    --accent-glow:0 6px 22px rgba(35,198,174,.26);
-    /* Encre sombre sur le turquoise vif : du blanc y serait illisible. */
-    --on-accent:#03231e;
+    /* Sur fond sombre, le bleu peut etre franchement pastel : c'est l'encre
+       posee dessus qui devient sombre, et le contraste reste excellent
+       (9,3:1 sur le fond, 8,0:1 pour le texte des boutons). */
+    --accent:#8fb8e8;
+    --accent-dark:#6f9cd4;
+    --accent-soft:rgba(143,184,232,.15);
+    --accent-grad:linear-gradient(145deg,#a6c8f0,#6f9cd4);
+    --accent-glow:0 6px 22px rgba(143,184,232,.22);
+    /* Encre sombre sur le bleu poudre : du blanc y serait illisible. */
+    --on-accent:#0b1a2b;
 
-    --text:#e9f2ef;
-    --text-muted:#839995;
-    --border:#1f2e2b;
+    --text:#e8edf4;
+    --text-muted:#8494a8;
+    --border:#1f2a38;
     --danger:#f2938b;
 
     /* Le filet lumineux d'un pixel sur l'arete haute est ce qui distingue
@@ -93,7 +98,7 @@
     --ok:#5fd9ae;      --ok-bg:#0f3129;
     --warn:#f0b96a;    --warn-bg:#33260f;
     --bad:#f2938b;     --bad-bg:#361a19;
-    --neutral:#93a9a5; --neutral-bg:#1a2523;
+    --neutral:#94a3b8; --neutral-bg:#19212c;
   }
 }
 
