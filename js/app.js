@@ -913,6 +913,9 @@
       periodeLabel: d.periodeLabel || '—',
       montant: d.montant != null ? euros(d.montant) : '—',
       montantValeur: d.montant != null ? Number(d.montant) : null,
+      // Seuls ces documents sont reconstruits a la volee depuis leur contexte,
+      // donc joignables a un partage groupe.
+      docId: d.id,
       actions: `<button class="btn btn-sm" data-view-doc="${d.id}">Télécharger le PDF</button>
           <button class="btn btn-sm btn-danger" data-del-doc="${d.id}">Supprimer</button>`,
     }));
@@ -1007,13 +1010,16 @@
 
     if (filtrees.length === 0) {
       tbody.innerHTML = toutes.length === 0
-        ? '<tr class="empty-row"><td colspan="6">Aucun document dans l\'historique.</td></tr>'
-        : '<tr class="empty-row"><td colspan="6">Aucun document ne correspond à ces filtres.</td></tr>';
+        ? '<tr class="empty-row"><td colspan="7">Aucun document dans l\'historique.</td></tr>'
+        : '<tr class="empty-row"><td colspan="7">Aucun document ne correspond à ces filtres.</td></tr>';
       return;
     }
     const sorted = trierHistorique(filtrees);
     sorted.forEach((l) => {
       tbody.innerHTML += `<tr>
+        <td class="td-envoi">${l.docId
+          ? `<label class="hist-coche"><input type="checkbox" class="hist-sel" value="${l.docId}"><span>Joindre</span></label>`
+          : ''}</td>
         <td data-label="Date">${l.dateLabel}</td>
         <td data-label="Type">${escapeHTML(l.type)}</td>
         <td data-label="Locataire">${escapeHTML(l.locataireNom)}</td>
@@ -1022,6 +1028,8 @@
         <td class="actions-cell">${l.actions}</td>
       </tr>`;
     });
+    tbody.querySelectorAll('.hist-sel').forEach((c) => c.addEventListener('change', majBarreEnvoiHistorique));
+    majBarreEnvoiHistorique();
     tbody.querySelectorAll('[data-view-file]').forEach((btn) => btn.addEventListener('click', () => openStoredFile(btn.dataset.viewFile, btn.title)));
     tbody.querySelectorAll('[data-del-edl]').forEach((btn) => btn.addEventListener('click', () => deleteEdl(btn.dataset.delEdl)));
     tbody.querySelectorAll('[data-view-doc]').forEach((btn) => btn.addEventListener('click', () => {
@@ -1035,6 +1043,90 @@
       }
     }));
   }
+
+  // ─── Envoi groupe de documents depuis l'historique ─────────────────────
+  // « Un locataire me demande ses trois dernieres quittances » : on coche, on
+  // partage, la feuille iOS s'ouvre avec les trois PDF en pieces jointes.
+  // Sans cela il fallait trois telechargements — dont chacun fait quitter
+  // l'application sur iOS — puis un rattachement manuel depuis Fichiers.
+  function documentsCoches() {
+    return [...document.querySelectorAll('#table-historique .hist-sel:checked')]
+      .map((c) => data.documents.find((d) => d.id === c.value))
+      .filter(Boolean);
+  }
+
+  function majBarreEnvoiHistorique() {
+    const barre = byId('hist-barre-envoi');
+    if (!barre) return;
+    const n = document.querySelectorAll('#table-historique .hist-sel:checked').length;
+    barre.hidden = n === 0;
+    const compte = byId('hist-selection-compte');
+    if (compte) compte.textContent = `${n} document${n > 1 ? 's' : ''} sélectionné${n > 1 ? 's' : ''}`;
+    const tout = byId('hist-tout-cocher');
+    const total = document.querySelectorAll('#table-historique .hist-sel').length;
+    if (tout) {
+      tout.checked = total > 0 && n === total;
+      tout.indeterminate = n > 0 && n < total;
+    }
+  }
+
+  async function partagerDocumentsCoches(btn) {
+    const docs = documentsCoches();
+    if (!docs.length) return;
+    const libelle = btn ? btn.textContent : null;
+    if (btn) { btn.disabled = true; btn.textContent = 'Préparation...'; }
+    try {
+      const fichiers = [];
+      for (const d of docs) {
+        if (!d.ctx) continue;
+        const { doc, nomFichier } = buildPdf(d.type, d.ctx);
+        fichiers.push(new File([doc.output('blob')], nomFichier, { type: 'application/pdf' }));
+      }
+      if (!fichiers.length) { alert("Ces documents ne peuvent pas être reconstruits."); return; }
+
+      if (canShareFiles(fichiers)) {
+        const noms = [...new Set(docs.map((d) => d.locataireNom).filter(Boolean))];
+        await navigator.share({
+          files: fichiers,
+          title: fichiers.length > 1 ? `${fichiers.length} documents` : fichiers[0].name,
+          text: noms.length === 1 ? `Documents — ${noms[0]}` : 'Documents',
+        });
+        return;
+      }
+
+      // Repli : pas de partage natif (ordinateur de bureau, navigateur ancien).
+      // On telecharge, l'utilisateur joint lui-meme.
+      fichiers.forEach((f) => {
+        const url = URL.createObjectURL(f);
+        const a = document.createElement('a');
+        a.href = url; a.download = f.name;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 30000);
+      });
+      alert(`${fichiers.length} document(s) téléchargé(s). Ce navigateur ne permet pas de les joindre automatiquement : ajoutez-les à votre message depuis vos téléchargements.`);
+    } catch (e) {
+      if (e && e.name === 'AbortError') return;
+      console.error(e);
+      alert("Le partage n'a pas abouti.");
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = libelle; }
+    }
+  }
+
+  (function brancherEnvoiHistorique() {
+    const partager = byId('btn-hist-partager');
+    if (partager) partager.addEventListener('click', () => partagerDocumentsCoches(partager));
+    const deselect = byId('btn-hist-deselect');
+    if (deselect) deselect.addEventListener('click', () => {
+      document.querySelectorAll('#table-historique .hist-sel').forEach((c) => { c.checked = false; });
+      majBarreEnvoiHistorique();
+    });
+    const tout = byId('hist-tout-cocher');
+    if (tout) tout.addEventListener('change', () => {
+      document.querySelectorAll('#table-historique .hist-sel').forEach((c) => { c.checked = tout.checked; });
+      majBarreEnvoiHistorique();
+    });
+  })();
 
   function downloadPdf(type, ctx) {
     // La signature est toujours reprise depuis "Ma SCI" au moment du telechargement
@@ -4678,12 +4770,43 @@
     return currentEdlRedaction;
   }
 
-  function canShareFile(file) {
+  // ─── Appeler / envoyer un SMS en un appui ──────────────────────────────
+  // Les numeros sont saisis a la main (« 06 00 00 00 01 ») : les espaces et
+  // les points empechent iOS de reconnaitre le lien, il faut donc les retirer.
+  // Le « + » d'un indicatif international est conserve.
+  function numeroCompose(num) {
+    return String(num || '').replace(/[^\d+]/g, '');
+  }
+
+  function lienAppel(num) {
+    return 'tel:' + numeroCompose(num);
+  }
+
+  // iOS attend « sms:numero&body=… », Android « sms:numero?body=… ».
+  // La forme « ?& » est celle que les deux acceptent.
+  function lienSms(num, texte) {
+    return 'sms:' + numeroCompose(num) + '?&body=' + encodeURIComponent(texte || '');
+  }
+
+  // Deux boutons prets a poser dans une cellule de tableau. Rendus seulement
+  // si un numero existe : un lien « tel: » vide ouvre l'application telephone
+  // sur un ecran vierge, ce qui est pire que pas de bouton du tout.
+  function boutonsContactHTML(num, texteSms) {
+    if (!numeroCompose(num)) return '';
+    return `<a class="btn btn-sm btn-contact" href="${escapeHTML(lienAppel(num))}">Appeler</a>
+      <a class="btn btn-sm btn-contact" href="${escapeHTML(lienSms(num, texteSms))}">SMS</a>`;
+  }
+
+  function canShareFiles(files) {
     try {
-      return !!(navigator.canShare && navigator.share && navigator.canShare({ files: [file] }));
+      return !!(navigator.canShare && navigator.share && navigator.canShare({ files }));
     } catch (e) {
       return false;
     }
+  }
+
+  function canShareFile(file) {
+    return canShareFiles([file]);
   }
 
   function openEdlEmailModal(r, ctx, blob) {
@@ -5938,9 +6061,11 @@
         <td data-label="Ratio">${ind.ratioLoyer === null ? '—' : ind.ratioLoyer.toFixed(2)}</td>
         <td data-label="Reste à vivre" class="${bloquant ? 'candidature-alerte' : ''}">${ind.resteAVivre === null ? '—' : euros(ind.resteAVivre)}</td>
         <td data-label="Pièces">${(c.pieces || []).length}</td>
+        <td data-label="Contact" class="cellule-contact">${boutonsContactHTML(c.telephone,
+          `Bonjour${c.nom ? ' ' + c.nom : ''}, je vous contacte au sujet de votre candidature.`) || '—'}</td>
         <td class="actions-cell"><button class="btn btn-sm" data-candidature-ouvrir="${escapeHTML(c.id)}">Ouvrir</button></td>
       </tr>`;
-    }).join('') : '<tr class="empty-row"><td colspan="6">Aucune candidature pour ce bien.</td></tr>';
+    }).join('') : '<tr class="empty-row"><td colspan="7">Aucune candidature pour ce bien.</td></tr>';
 
     conteneur.innerHTML = `
       ${ongletsGroupesHTML()}
@@ -5957,7 +6082,7 @@
         </div>
         <div class="table-scroll">
           <table class="table table-cartes">
-            <thead><tr><th>Nom</th><th>Statut</th><th>Ratio</th><th>Reste à vivre</th><th>Pièces</th><th></th></tr></thead>
+            <thead><tr><th>Nom</th><th>Statut</th><th>Ratio</th><th>Reste à vivre</th><th>Pièces</th><th>Contact</th><th></th></tr></thead>
             <tbody>${lignes}</tbody>
           </table>
         </div>
@@ -6613,19 +6738,28 @@
       return;
     }
 
-    const lignes = lignesVisite(visite).map((l, i) => `<tr>
+    const bienVisite = bienById(visiteBienId);
+    const nomBien = bienVisite ? bienVisite.nom : 'le logement';
+    const lignes = lignesVisite(visite).map((l, i) => {
+      // Message pret a partir : le cas d'usage est un candidat en retard,
+      // qu'on veut joindre sans rien retaper.
+      const sms = `Bonjour${l.nom ? ' ' + l.nom : ''}, nous avions rendez-vous à ${l.heure} `
+        + `pour la visite de ${nomBien}. Êtes-vous en route ?`;
+      return `<tr>
       <td data-label="Heure">${escapeHTML(l.heure)}</td>
       <td data-label="Candidat">${escapeHTML(l.nom)}</td>
       <td data-label="Téléphone">${escapeHTML(l.telephone || '—')}</td>
+      <td data-label="Contact" class="cellule-contact">${boutonsContactHTML(l.telephone, sms) || '—'}</td>
       <td class="actions-cell">
         <button type="button" class="btn btn-sm" data-creneau-monter="${i}"${i === 0 ? ' disabled' : ''} title="Monter">↑</button>
         <button type="button" class="btn btn-sm" data-creneau-descendre="${i}"${i === visite.creneaux.length - 1 ? ' disabled' : ''} title="Descendre">↓</button>
       </td>
-    </tr>`).join('');
+    </tr>`;
+    }).join('');
 
     zone.innerHTML = `<div class="table-scroll">
       <table class="table table-cartes">
-        <thead><tr><th>Heure</th><th>Candidat</th><th>Téléphone</th><th></th></tr></thead>
+        <thead><tr><th>Heure</th><th>Candidat</th><th>Téléphone</th><th>Contact</th><th></th></tr></thead>
         <tbody>${lignes}</tbody>
       </table>
     </div>`;

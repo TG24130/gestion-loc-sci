@@ -10,7 +10,7 @@
      depuis l'ecran d'accueil affiche un bandeau qui jure avec le fond. -->
 <meta name="theme-color" content="#eff3f2" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0a100f" media="(prefers-color-scheme: dark)">
-<link rel="manifest" href="manifest.json?v=2026081607">
+<link rel="manifest" href="manifest.json?v=2026081608">
 <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -18,10 +18,10 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Gestion Loc SCI">
 <meta name="mobile-web-app-capable" content="yes">
-<link rel="stylesheet" href="css/style.css?v=2026081607">
-<script type="module" src="js/firebaseAuth.js?v=2026081607"></script>
-<script type="module" src="js/firestoreSync.js?v=2026081607"></script>
-<script type="module" src="js/firebaseStorageSync.js?v=2026081607"></script>
+<link rel="stylesheet" href="css/style.css?v=2026081608">
+<script type="module" src="js/firebaseAuth.js?v=2026081608"></script>
+<script type="module" src="js/firestoreSync.js?v=2026081608"></script>
+<script type="module" src="js/firebaseStorageSync.js?v=2026081608"></script>
 </head>
 <body>
 
@@ -787,8 +787,25 @@
           Cliquez sur un en-tête de colonne (Date, Type, Locataire, Montant) pour trier.
           <span id="hist-compte"></span>
         </p>
+
+        <!--
+          Envoi groupe : cocher plusieurs documents puis les partager en une
+          fois. Le cas courant est « un locataire me demande ses trois
+          dernieres quittances » ; il fallait auparavant les telecharger une
+          par une, chaque telechargement faisant quitter l'application sur
+          iOS, puis les rattacher a la main depuis l'app Fichiers.
+        -->
+        <div class="hist-barre-envoi" id="hist-barre-envoi" hidden>
+          <span id="hist-selection-compte">0 document sélectionné</span>
+          <div class="preview-actions" style="margin:0;">
+            <button type="button" class="btn btn-primary btn-sm" id="btn-hist-partager">Partager la sélection</button>
+            <button type="button" class="btn btn-sm" id="btn-hist-deselect">Tout décocher</button>
+          </div>
+        </div>
+
         <table class="table table-cartes" id="table-historique">
           <thead><tr>
+            <th class="th-envoi"><input type="checkbox" id="hist-tout-cocher" aria-label="Tout cocher"></th>
             <th class="th-triable" data-tri="date">Date</th>
             <th class="th-triable" data-tri="type">Type</th>
             <th class="th-triable" data-tri="locataire">Locataire</th>
@@ -1350,15 +1367,15 @@
 
 <script src="js/vendor/jspdf.umd.min.js"></script>
 <script src="js/vendor/jszip.min.js"></script>
-<script src="js/numberToWords.js?v=2026081607"></script>
-<script src="js/storage.js?v=2026081607"></script>
-<script src="js/filesDb.js?v=2026081607"></script>
-<script src="js/documents.js?v=2026081607"></script>
-<script src="js/pdfBuilder.js?v=2026081607"></script>
-<script src="js/richTextPdf.js?v=2026081607"></script>
-<script src="js/edlPdf.js?v=2026081607"></script>
-<script src="js/annonce.js?v=2026081607"></script>
-<script src="js/candidature.js?v=2026081607"></script>
-<script src="js/app.js?v=2026081607"></script>
+<script src="js/numberToWords.js?v=2026081608"></script>
+<script src="js/storage.js?v=2026081608"></script>
+<script src="js/filesDb.js?v=2026081608"></script>
+<script src="js/documents.js?v=2026081608"></script>
+<script src="js/pdfBuilder.js?v=2026081608"></script>
+<script src="js/richTextPdf.js?v=2026081608"></script>
+<script src="js/edlPdf.js?v=2026081608"></script>
+<script src="js/annonce.js?v=2026081608"></script>
+<script src="js/candidature.js?v=2026081608"></script>
+<script src="js/app.js?v=2026081608"></script>
 </body>
 </html>
