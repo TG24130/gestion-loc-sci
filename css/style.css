@@ -1380,3 +1380,31 @@ tr.ligne-impaye td{background:rgba(224,72,63,.05);}
 @media (prefers-reduced-motion: reduce){
   .edl-auto-save{transition:none;transform:translate(-50%, 0);}
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Cibles tactiles — telephone
+   Apple recommande 44 points de cote. Les boutons compacts (.btn-sm) et les
+   pastilles d'ajout (.field-chip) descendaient a 22-29 px : viser juste
+   demandait de s'appliquer, ce qui est exactement ce qu'on ne peut pas faire
+   debout dans un logement, une main sur le telephone.
+   Au-dela de 880 px, elles gardent leur compacite d'origine.
+   ═══════════════════════════════════════════════════════════════════════════ */
+@media (max-width:880px){
+  .btn-sm{
+    min-height:40px;
+    padding:9px 14px;
+    font-size:13.5px;
+  }
+  .field-chip{
+    min-height:40px;
+    padding:8px 14px;
+    font-size:13px;
+  }
+  .field-chips{gap:8px;}
+  /* Entrant / Sortant : le choix le plus lourd de consequences d'un etat des
+     lieux, et le plus petit bouton de l'ecran jusqu'ici. */
+  .toggle-btn{min-height:44px;padding:11px 18px;}
+  /* Les cellules d'action des tableaux en cartes gagnent de l'air, sinon les
+     boutons agrandis se touchent. */
+  .table-cartes td.actions-cell{gap:8px;flex-wrap:wrap;}
+}

@@ -82,12 +82,56 @@ const EdlPdf = (function () {
     return { w: w * scale, h: h * scale };
   }
 
+  // Les photos sont dessinées dans une grille de 165 × 90 points (voir
+  // drawPhotoGrid). Y embarquer les 1600 px stockés revient à mettre dans le
+  // fichier environ vingt-cinq fois plus de pixels que la page n'en affiche.
+  // Mesuré : un état des lieux de deux pièces avec 42 photos produisait un
+  // PDF de 12,4 Mo ; une maison de huit pièces en aurait produit plus de 40,
+  // ce qu'un iPhone ne génère pas de façon fiable — et que l'on ne partage
+  // pas facilement par courriel.
+  //
+  // 900 px de côté laissent l'équivalent de 390 dpi à l'impression sur une
+  // vignette de 165 points, et de quoi zoomer confortablement à l'écran.
+  // Les photos d'origine restent intactes dans le stockage : seule la copie
+  // embarquée dans le PDF est réduite.
+  const PDF_PHOTO_MAX = 900;
+
+  // Réduit directement depuis le blob : createImageBitmap décode nativement,
+  // sans passer par une chaîne base64 de l'image pleine taille. Seule la
+  // vignette réduite est encodée, ce qui rend la génération plus rapide
+  // qu'avant la réduction, et non l'inverse.
+  async function reduireDepuisBlob(blob) {
+    if (typeof createImageBitmap !== 'function') return null;
+    let bmp = null;
+    try {
+      bmp = await createImageBitmap(blob);
+      if (Math.max(bmp.width, bmp.height) <= PDF_PHOTO_MAX) return null;
+      const f = PDF_PHOTO_MAX / Math.max(bmp.width, bmp.height);
+      const c = document.createElement('canvas');
+      c.width = Math.max(1, Math.round(bmp.width * f));
+      c.height = Math.max(1, Math.round(bmp.height * f));
+      c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+      return { dataUrl: c.toDataURL('image/jpeg', 0.82), w: c.width, h: c.height };
+    } catch (e) {
+      // Format exotique ou mémoire insuffisante : on retombe sur la photo
+      // d'origine plutôt que de la perdre.
+      return null;
+    } finally {
+      if (bmp && bmp.close) bmp.close();
+    }
+  }
+
   async function loadPhotos(fileEntries) {
     const out = [];
     for (const f of (fileEntries || [])) {
       try {
         const blob = await FilesDb.getFile(f.fileId);
         if (!blob) continue;
+        const reduite = await reduireDepuisBlob(blob);
+        if (reduite) {
+          out.push({ dataUrl: reduite.dataUrl, format: 'JPEG', width: reduite.w, height: reduite.h });
+          continue;
+        }
         const dataUrl = await blobToDataURL(blob);
         const dims = await imageDims(dataUrl);
         const format = /^data:image\/png/i.test(dataUrl) ? 'PNG' : 'JPEG';
