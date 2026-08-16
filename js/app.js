@@ -4740,8 +4740,15 @@
     return data.reglagesAnnonce;
   }
 
+  // Triées de la plus récente à la plus ancienne : sans cela, l'écran ouvrait
+  // la première rédaction créée pour le bien. Une annonce fraîchement
+  // dupliquée restait donc invisible derrière un vieux brouillon vide au titre
+  // identique (« À louer MAISON 1 »), ce qui donnait l'impression que seul le
+  // titre avait été copié.
   function redactionsDuBien(bienId) {
-    return data.annonceRedactions.filter((r) => r.bienId === bienId);
+    return data.annonceRedactions
+      .filter((r) => r.bienId === bienId)
+      .sort((a, b) => String(b.updatedAt || b.createdAt || '').localeCompare(String(a.updatedAt || a.createdAt || '')));
   }
 
   function redactionCourante() {
