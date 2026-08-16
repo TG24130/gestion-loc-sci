@@ -1070,6 +1070,16 @@
     }
   }
 
+  function telechargerFichiers(fichiers) {
+    fichiers.forEach((f) => {
+      const url = URL.createObjectURL(f);
+      const a = document.createElement('a');
+      a.href = url; a.download = f.name;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
+    });
+  }
+
   function partagerDocumentsCoches(btn) {
     return partagerDocuments(documentsCoches(), btn);
   }
@@ -1079,13 +1089,40 @@
     const libelle = btn ? btn.textContent : null;
     if (btn) { btn.disabled = true; btn.textContent = 'Préparation...'; }
     try {
+      // Deux documents peuvent produire le meme nom de fichier : PdfBuilder ne
+      // suffixe par la periode que si ctx.periode existe, ce qui n'est pas le
+      // cas des courriers libres ni de certains documents anciens. Or un
+      // partage de plusieurs fichiers homonymes n'en delivre qu'un seul cote
+      // iOS — le locataire recoit une quittance sur trois, et personne ne s'en
+      // apercoit. Les noms sont donc rendus uniques a l'interieur du lot.
+      const pris = new Set();
+      function nomUnique(nom) {
+        if (!pris.has(nom)) { pris.add(nom); return nom; }
+        const point = nom.lastIndexOf('.');
+        const base = point === -1 ? nom : nom.slice(0, point);
+        const ext = point === -1 ? '' : nom.slice(point);
+        let i = 2;
+        while (pris.has(`${base}-${i}${ext}`)) i++;
+        const unique = `${base}-${i}${ext}`;
+        pris.add(unique);
+        return unique;
+      }
+
       const fichiers = [];
       for (const d of docs) {
         if (!d.ctx) continue;
         const { doc, nomFichier } = buildPdf(d.type, d.ctx);
-        fichiers.push(new File([doc.output('blob')], nomFichier, { type: 'application/pdf' }));
+        fichiers.push(new File([doc.output('blob')], nomUnique(nomFichier), { type: 'application/pdf' }));
       }
       if (!fichiers.length) { alert("Ces documents ne peuvent pas être reconstruits."); return; }
+
+      // Filet de securite : si la plateforme refuse le lot complet, mieux vaut
+      // le dire que de laisser partir un seul fichier sans prevenir.
+      if (fichiers.length > 1 && navigator.canShare && !navigator.canShare({ files: fichiers })) {
+        alert(`Cet appareil ne permet pas de partager ${fichiers.length} fichiers d'un coup. Ils vont être téléchargés : joignez-les à votre message depuis vos téléchargements.`);
+        telechargerFichiers(fichiers);
+        return;
+      }
 
       if (canShareFiles(fichiers)) {
         const noms = [...new Set(docs.map((d) => d.locataireNom).filter(Boolean))];
@@ -1099,13 +1136,7 @@
 
       // Repli : pas de partage natif (ordinateur de bureau, navigateur ancien).
       // On telecharge, l'utilisateur joint lui-meme.
-      fichiers.forEach((f) => {
-        const url = URL.createObjectURL(f);
-        const a = document.createElement('a');
-        a.href = url; a.download = f.name;
-        document.body.appendChild(a); a.click(); a.remove();
-        setTimeout(() => URL.revokeObjectURL(url), 30000);
-      });
+      telechargerFichiers(fichiers);
       alert(`${fichiers.length} document(s) téléchargé(s). Ce navigateur ne permet pas de les joindre automatiquement : ajoutez-les à votre message depuis vos téléchargements.`);
     } catch (e) {
       if (e && e.name === 'AbortError') return;
