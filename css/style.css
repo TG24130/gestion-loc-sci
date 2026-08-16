@@ -1475,3 +1475,24 @@ tr.ligne-impaye td{background:rgba(224,72,63,.05);}
   .table-cartes .cellule-contact{gap:8px;}
   .btn-contact{min-height:40px;padding:9px 16px;}
 }
+
+/* Encart de raccourci : une invite et son bouton, cote a cote sur grand
+   ecran, empiles sur telephone ou la largeur ne permet pas les deux. */
+.panel-raccourci{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:16px;
+  flex-wrap:wrap;
+}
+.panel-raccourci strong{font-size:15px;}
+.panel-raccourci .btn{flex-shrink:0;}
+
+@media (max-width:880px){
+  .panel-raccourci{align-items:stretch;flex-direction:column;gap:12px;}
+  .panel-raccourci .btn{width:100%;min-height:46px;}
+}
+
+/* Fenetre « Envoyer des quittances » : les nombres sont des cibles, pas du
+   texte — ils doivent rester confortables au pouce. */
+#eq-combien .toggle-btn{min-width:56px;text-align:center;}
