@@ -1083,3 +1083,252 @@ tr.ligne-impaye td{background:rgba(224,72,63,.05);}
   font-size:13.5px;padding:4px 0;cursor:pointer;
 }
 .dup-bien input[type="checkbox"]{width:16px;height:16px;margin:0;cursor:pointer;}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Barre d'onglets — telephone uniquement
+   Cinq rubriques sous le pouce, l'etat des lieux au centre en bouton
+   accentue. Au-dela de 880 px la barre laterale reprend la navigation et
+   cette barre disparait entierement.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.tabbar{display:none;}
+
+@media (max-width:880px){
+  .tabbar{
+    position:fixed;
+    left:0;right:0;bottom:0;
+    z-index:35;
+    display:flex;
+    align-items:flex-start;
+    padding:8px 6px 0;
+    /* 34 pt de barre d'accueil sur les iPhone a encoche, 0 ailleurs. */
+    height:calc(58px + env(safe-area-inset-bottom));
+    background:color-mix(in srgb, var(--card-bg) 86%, transparent);
+    backdrop-filter:blur(22px) saturate(180%);
+    -webkit-backdrop-filter:blur(22px) saturate(180%);
+    box-shadow:inset 0 1px 0 var(--sidebar-rule), 0 -1px 0 var(--border);
+  }
+  /* Les navigateurs sans color-mix() retombent sur un fond opaque plutot que
+     sur du transparent, qui laisserait le contenu defiler sous les libelles. */
+  @supports not (background: color-mix(in srgb, red 50%, transparent)){
+    .tabbar{background:var(--card-bg);}
+  }
+
+  .tab{
+    flex:1;
+    min-width:0;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:4px;
+    padding:5px 2px 0;
+    border:none;
+    background:none;
+    font-family:inherit;
+    font-size:10px;
+    font-weight:600;
+    line-height:1.15;
+    text-align:center;
+    color:var(--text-muted);
+    cursor:pointer;
+  }
+  .tab-ic{
+    width:26px;height:26px;
+    display:flex;align-items:center;justify-content:center;
+    color:inherit;
+  }
+  .tab-ic svg{width:23px;height:23px;display:block;}
+  .tab.on{color:var(--accent);}
+
+  /* Onglet central : seul usage a 100 % mobile, il merite d'etre atteint sans
+     viser. Le cercle deborde vers le haut, hors du flux des autres onglets. */
+  .tab-mid .tab-ic{
+    width:52px;height:52px;
+    margin-top:-14px;
+    border-radius:18px;
+    background:var(--accent-grad);
+    color:var(--on-accent);
+    box-shadow:var(--accent-glow);
+  }
+  .tab-mid .tab-ic svg{width:26px;height:26px;}
+  .tab-mid.on{color:var(--accent);}
+
+  /* La barre flotte au-dessus du contenu : sans cette reserve, le dernier
+     bouton de chaque vue restait inatteignable sous les onglets. */
+  .content{
+    padding-bottom:calc(82px + env(safe-area-inset-bottom));
+  }
+
+  /* Mode terrain : pendant la redaction d'un etat des lieux, l'ecran entier
+     sert au releve. Le bandeau d'etapes en haut de la vue suffit a se situer,
+     et la navigation entre rubriques n'a aucun sens a ce moment-la. */
+  html.edl-terrain .tabbar{display:none;}
+  html.edl-terrain .content{padding-bottom:calc(24px + env(safe-area-inset-bottom));}
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Mode terrain — telephone uniquement
+   Sur ordinateur, rien de ce qui suit ne s'applique : la saisie garde sa
+   forme actuelle, toutes les sections visibles en meme temps. Le JS pose des
+   attributs et des classes ; c'est ce bloc seul qui les rend visibles.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.edl-terrain-haut{display:none;}
+.edl-etapes{display:none;}
+.edl-terrain-bas{display:none;}
+.edl-tout-bon{display:none;}
+
+@media (max-width:880px){
+  html.edl-terrain .edl-terrain-haut{
+    position:fixed;
+    /* Sous le bouton de menu, fixe a 14 px du haut et haut de 42 px. */
+    top:calc(60px + env(safe-area-inset-top));
+    left:0;right:0;
+    z-index:34;
+    display:block;
+    padding:8px 16px 0;
+    /* Opaque, et non translucide : le contenu qui defile dessous restait
+       lisible au travers, et sur un ecran en plein soleil deux textes
+       superposes deviennent illisibles. */
+    background:var(--card-bg);
+    box-shadow:0 1px 0 var(--border), 0 6px 16px rgba(0,0,0,.18);
+  }
+  html.edl-terrain .edl-etapes{display:flex;gap:6px;}
+  .edl-etape{
+    flex:1;
+    min-width:0;
+    padding:8px 2px;
+    border:none;
+    border-radius:12px;
+    background:var(--surface-2);
+    color:var(--text-muted);
+    font-family:inherit;
+    font-size:11px;
+    font-weight:700;
+    line-height:1.15;
+    cursor:pointer;
+  }
+  .edl-etape.faite{background:var(--ok-bg);color:var(--ok);}
+  .edl-etape.en-cours{background:var(--accent-grad);color:var(--on-accent);box-shadow:var(--accent-glow);}
+
+  .edl-piece-courante{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    padding:9px 0 8px;
+  }
+  .edl-piece-courante[hidden]{display:none;}
+  .edl-piece-nom strong{display:block;font-size:19px;font-weight:700;letter-spacing:-.015em;line-height:1.15;}
+  .edl-piece-nom span{display:block;font-size:12px;color:var(--text-muted);margin-top:1px;}
+  .edl-piece-compte{
+    flex-shrink:0;
+    padding:5px 11px;
+    border-radius:var(--radius-pill);
+    background:var(--surface-2);
+    color:var(--text-muted);
+    font-size:13px;
+    font-weight:700;
+    font-variant-numeric:tabular-nums;
+  }
+  .edl-piece-compte.complete{background:var(--ok-bg);color:var(--ok);}
+  .edl-piece-jauge{height:3px;margin:0 -16px;background:var(--surface-2);}
+  .edl-piece-jauge i{display:block;height:100%;width:0;background:var(--accent-grad);transition:width .2s ease;}
+  /* Le bandeau flotte : sans cette reserve il recouvre le haut de la saisie. */
+  html.edl-terrain .content{padding-top:calc(132px + env(safe-area-inset-top));}
+  html.edl-terrain:not([data-edl-etape="pieces"]) .content{padding-top:calc(118px + env(safe-area-inset-top));}
+
+  /* Une seule etape a l'ecran. */
+  html.edl-terrain[data-edl-etape="compteurs"] .edl-bloc:not([data-edl-bloc="compteurs"]),
+  html.edl-terrain[data-edl-etape="pieces"]    .edl-bloc:not([data-edl-bloc="pieces"]),
+  html.edl-terrain[data-edl-etape="cles"]      .edl-bloc:not([data-edl-bloc="cles"]),
+  html.edl-terrain[data-edl-etape="signature"] .edl-bloc:not([data-edl-bloc="signature"]){
+    display:none;
+  }
+
+  /* Une seule piece a l'ecran, et son titre porte la progression. */
+  html.edl-terrain #edl-redac-rooms .edl-redac-room:not(.piece-courante){display:none;}
+  /* Les titres de section font doublon avec le bandeau fixe. */
+  html.edl-terrain #edl-redac-rooms-title,
+  html.edl-terrain #edl-redac-meters-title,
+  html.edl-terrain #edl-redac-cles-title{display:none;}
+
+  html.edl-terrain .edl-tout-bon{
+    display:block;
+    width:100%;
+    min-height:48px;
+    margin-bottom:14px;
+    padding:12px;
+    border:1px dashed var(--border);
+    border-radius:var(--radius);
+    background:var(--accent-soft);
+    color:var(--accent);
+    font-family:inherit;
+    font-size:13.5px;
+    font-weight:700;
+    cursor:pointer;
+  }
+
+  /* Navigation au pouce : la ou la main tient deja le telephone. */
+  html.edl-terrain .edl-terrain-bas{
+    position:fixed;
+    left:0;right:0;bottom:0;
+    z-index:36;
+    display:flex;
+    gap:9px;
+    padding:11px 13px calc(11px + env(safe-area-inset-bottom));
+    background:color-mix(in srgb, var(--card-bg) 90%, transparent);
+    backdrop-filter:blur(22px) saturate(180%);
+    -webkit-backdrop-filter:blur(22px) saturate(180%);
+    box-shadow:inset 0 1px 0 var(--sidebar-rule), 0 -1px 0 var(--border);
+  }
+  @supports not (background: color-mix(in srgb, red 50%, transparent)){
+    html.edl-terrain .edl-terrain-bas{background:var(--card-bg);}
+  }
+  .edl-nav-piece{
+    min-height:52px;
+    padding:0 17px;
+    border:1px solid var(--border);
+    border-radius:17px;
+    background:transparent;
+    color:var(--text-muted);
+    font-family:inherit;
+    font-size:15px;
+    font-weight:700;
+    cursor:pointer;
+  }
+  .edl-nav-piece:disabled{opacity:.4;cursor:not-allowed;}
+  .edl-nav-principale{
+    flex:1;
+    min-width:0;
+    background:var(--accent-grad);
+    border-color:transparent;
+    color:var(--on-accent);
+    box-shadow:var(--accent-glow);
+    /* Un nom de piece long ne doit pas casser la hauteur du bouton. */
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  .edl-nav-principale:disabled{background:var(--surface-2);color:var(--text-muted);box-shadow:none;}
+
+  /* Reserve pour la barre basse, qui recouvre sinon le dernier element. */
+  html.edl-terrain .content{padding-bottom:calc(92px + env(safe-area-inset-bottom));}
+}
+
+@media (max-width:880px){
+  /* En mode terrain, l'ecran entier sert au releve : trois blocs de texte
+     occupaient le tiers superieur sans rien apporter debout dans un
+     logement. Ils restent lisibles sur ordinateur et hors saisie. */
+  html.edl-terrain #edl-correction-hint,
+  html.edl-terrain #edl-config-hint,
+  html.edl-terrain .edl-test-panel,
+  /* « Rediger un etat des lieux / Configurez les pieces de chaque bien »
+     decrit la configuration, pas le releve en cours. */
+  html.edl-terrain #view-edl-redaction > .view-header{display:none;}
+
+  /* Le nom de la piece est deja porte par le titre de section, avec sa
+     progression : le repeter sur la carte gaspille une ligne. */
+  html.edl-terrain .edl-redac-room > .edl-redac-room-title:first-child{display:none;}
+
+  /* Panneau 5 : sur telephone la carte n'apporte qu'une marge en moins. */
+  html.edl-terrain .edl-bloc{margin-top:0;}
+}

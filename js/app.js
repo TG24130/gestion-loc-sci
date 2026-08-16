@@ -314,6 +314,51 @@
     if (view === 'annonces-publication') renderAnnonces();
     if (view === 'annonces-candidatures') renderCandidatures();
     if (view === 'annonces-visites') renderVisites();
+    majOngletActif(view);
+    // Rafraichit aussi le drapeau « mode terrain » : quitter l'etat des lieux
+    // en cours de redaction doit rendre la barre d'onglets.
+    updateEdlSaisieMode();
+  }
+
+  // ---------- Barre d'onglets (telephone) ----------
+  // Cinq rubriques, celles reellement ouvertes en mobilite. Les autres restent
+  // accessibles par le menu lateral, atteint par le bouton en haut a gauche.
+  //
+  // « Charges » n'a pas de vue propre : toutes les categories partagent
+  // #view-charges. L'onglet rouvre donc la derniere categorie consultee, et a
+  // defaut la premiere du menu — dont l'ordre est celui d'index.html.
+  let derniereVueCharges = null;
+
+  function vueChargesParDefaut() {
+    if (derniereVueCharges) return derniereVueCharges;
+    const premier = document.querySelector('.nav-btn[data-view^="charges-"]');
+    return premier ? premier.dataset.view : 'charges-tontes';
+  }
+
+  function majOngletActif(view) {
+    if (view.indexOf('charges-') === 0) derniereVueCharges = view;
+    document.querySelectorAll('#tabbar .tab').forEach((tab) => {
+      const actif = tab.hasAttribute('data-tab-charges')
+        ? view.indexOf('charges-') === 0
+        : tab.dataset.tabView === view;
+      tab.classList.toggle('on', actif);
+      if (actif) tab.setAttribute('aria-current', 'page');
+      else tab.removeAttribute('aria-current');
+    });
+  }
+
+  const tabbar = byId('tabbar');
+  if (tabbar) {
+    tabbar.addEventListener('click', (e) => {
+      const tab = e.target.closest('.tab');
+      if (!tab) return;
+      showView(tab.dataset.tabView || vueChargesParDefaut());
+      window.scrollTo(0, 0);
+    });
+    // La vue de depart est posee dans index.html (class="view active") sans
+    // passer par showView : sans cet appel, aucun onglet n'est allume tant
+    // qu'on n'a pas navigue une premiere fois.
+    majOngletActif(currentView);
   }
 
   document.querySelectorAll('[data-action="quick-quittance"]').forEach((b) => b.addEventListener('click', () => showView('generer')));
@@ -3824,6 +3869,10 @@
     const vue = byId('view-edl-redaction');
     const enCours = !!currentEdlRedaction;
     vue.classList.toggle('edl-saisie-en-cours', enCours);
+    // Pendant la saisie sur le terrain, la barre d'onglets s'efface : l'écran
+    // entier sert au relevé, et le bandeau d'étapes suffit à se situer. Le
+    // drapeau est porté par <html> car la barre est en dehors de la vue.
+    document.documentElement.classList.toggle('edl-terrain', enCours && currentView === 'edl-redaction');
     if (!enCours) vue.classList.remove('edl-config-visible');
     byId('edl-config-hint').hidden = !enCours;
     byId('edl-correction-hint').hidden = !enCours;
@@ -3852,6 +3901,7 @@
       room.elements.forEach((el) => roomEl.appendChild(createEdlRedacElement(el)));
       container.appendChild(roomEl);
     });
+    majTerrain();
   }
 
   function createEdlRedacMeter(m) {
@@ -3929,6 +3979,199 @@
     }
     currentEdlRedaction.compteurs.forEach((m) => container.appendChild(createEdlRedacMeter(m)));
   }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // Mode terrain — telephone uniquement
+  //
+  // Sur ordinateur, la saisie garde sa forme actuelle : tout est visible en
+  // meme temps. Sur telephone elle devient un parcours en quatre etapes, et
+  // les pieces defilent une par une. Sans cela une maison de huit pieces
+  // produit pres de 8 800 px de defilement continu, soit une dizaine
+  // d'ecrans sans le moindre repere pour savoir ou l'on en est.
+  //
+  // Tout le masquage se fait en CSS, sous media query : le code ci-dessous
+  // ne fait que poser des attributs et des classes, sans effet sur le rendu
+  // d'un grand ecran.
+  // ═══════════════════════════════════════════════════════════════════════
+  const EDL_ETAPES = ['compteurs', 'pieces', 'cles', 'signature'];
+  const EDL_ETAPE_SUIVANTE_LIBELLE = {
+    compteurs: 'Compteurs', pieces: 'Pièces', cles: 'Clés', signature: 'Signature',
+  };
+  let edlEtape = 'compteurs';
+  let edlPieceIndex = 0;
+
+  function edlPiecesCourantes() {
+    return (currentEdlRedaction && currentEdlRedaction.pieces) || [];
+  }
+
+  // Avancement d'une etape : sert au bandeau (etape terminee) et au compteur
+  // affiche a droite du nom de la piece.
+  function edlAvancementEtape(etape) {
+    const r = currentEdlRedaction;
+    if (!r) return { fait: 0, total: 0 };
+    if (etape === 'compteurs') {
+      const m = r.compteurs || [];
+      return { fait: m.filter((x) => x.index !== '' && x.index != null).length, total: m.length };
+    }
+    if (etape === 'pieces') {
+      const els = edlPiecesCourantes().reduce((acc, p) => acc.concat(p.elements || []), []);
+      return { fait: els.filter((e) => !!e.vetuste).length, total: els.length };
+    }
+    if (etape === 'cles') {
+      const c = r.cles || [];
+      return { fait: c.filter((x) => x.nombre !== '' && x.nombre != null).length, total: c.length };
+    }
+    return { fait: r.signatureLocataire ? 1 : 0, total: 1 };
+  }
+
+  function edlAvancementPiece(index) {
+    const piece = edlPiecesCourantes()[index];
+    if (!piece) return { fait: 0, total: 0 };
+    const els = piece.elements || [];
+    return { fait: els.filter((e) => !!e.vetuste).length, total: els.length };
+  }
+
+  function majTerrain() {
+    const enCours = !!currentEdlRedaction;
+    const pieces = edlPiecesCourantes();
+    // Une piece a pu disparaitre entre deux rendus (gabarit modifie).
+    if (edlPieceIndex > pieces.length - 1) edlPieceIndex = Math.max(0, pieces.length - 1);
+
+    document.documentElement.dataset.edlEtape = enCours ? edlEtape : '';
+
+    // Bandeau d'etapes : etat courant et etapes deja completees.
+    document.querySelectorAll('#edl-etapes .edl-etape').forEach((btn) => {
+      const cle = btn.dataset.edlEtape;
+      const av = edlAvancementEtape(cle);
+      const courante = cle === edlEtape;
+      btn.classList.toggle('en-cours', courante);
+      btn.classList.toggle('faite', !courante && av.total > 0 && av.fait === av.total);
+      btn.setAttribute('aria-selected', String(courante));
+    });
+
+    // Bandeau fixe : nom de la piece en cours, rang, decompte et jauge.
+    // Il reste visible pendant tout le defilement de la piece, ce qui evite
+    // de perdre le fil au milieu d'une longue liste d'elements.
+    const piece = pieces[edlPieceIndex];
+    const surPieces = edlEtape === 'pieces' && !!piece;
+    const ligne = byId('edl-piece-courante');
+    if (ligne) ligne.hidden = !surPieces;
+    if (surPieces) {
+      const av = edlAvancementPiece(edlPieceIndex);
+      byId('edl-piece-nom').textContent = piece.nom;
+      byId('edl-piece-rang').textContent = `pièce ${edlPieceIndex + 1} sur ${pieces.length}`;
+      byId('edl-piece-compte').textContent = `${av.fait} / ${av.total}`;
+      byId('edl-piece-compte').classList.toggle('complete', av.total > 0 && av.fait === av.total);
+    }
+    const jauge = byId('edl-piece-jauge');
+    if (jauge) {
+      const av = edlAvancementEtape(edlEtape);
+      jauge.style.width = av.total ? Math.round((av.fait / av.total) * 100) + '%' : '0%';
+    }
+
+    // Une seule piece visible a la fois (le CSS ne masque les autres que sous
+    // 880 px et pendant une redaction).
+    const rendus = document.querySelectorAll('#edl-redac-rooms .edl-redac-room');
+    rendus.forEach((el, i) => el.classList.toggle('piece-courante', i === edlPieceIndex));
+
+    const toutBon = byId('btn-edl-tout-bon');
+    if (toutBon) toutBon.hidden = !enCours;
+
+    majBarreTerrain(pieces);
+  }
+
+  function majBarreTerrain(pieces) {
+    const precedent = byId('btn-edl-precedent');
+    const suivant = byId('btn-edl-suivant');
+    if (!precedent || !suivant) return;
+    const iEtape = EDL_ETAPES.indexOf(edlEtape);
+
+    if (edlEtape === 'pieces' && pieces.length) {
+      precedent.disabled = iEtape === 0 && edlPieceIndex === 0;
+      const derniere = edlPieceIndex >= pieces.length - 1;
+      suivant.textContent = derniere
+        ? 'Terminer les pièces — Clés'
+        : `Pièce suivante — ${pieces[edlPieceIndex + 1].nom}`;
+      return;
+    }
+    precedent.disabled = iEtape === 0;
+    suivant.disabled = iEtape === EDL_ETAPES.length - 1;
+    suivant.textContent = suivant.disabled
+      ? 'Dernière étape'
+      : `Suivant — ${EDL_ETAPE_SUIVANTE_LIBELLE[EDL_ETAPES[iEtape + 1]]}`;
+  }
+
+  // Rejoue le rendu de la piece courante apres un changement de selection,
+  // puis remonte en haut : sur le terrain on enchaine les pieces, et rester
+  // au milieu de la precedente desoriente.
+  function allerEtape(etape, indexPiece) {
+    edlEtape = etape;
+    if (typeof indexPiece === 'number') edlPieceIndex = indexPiece;
+    majTerrain();
+    const haut = byId('edl-etapes');
+    if (haut) haut.scrollIntoView({ block: 'start', behavior: 'auto' });
+  }
+
+  function terrainSuivant() {
+    const pieces = edlPiecesCourantes();
+    if (edlEtape === 'pieces' && edlPieceIndex < pieces.length - 1) {
+      allerEtape('pieces', edlPieceIndex + 1);
+      return;
+    }
+    const i = EDL_ETAPES.indexOf(edlEtape);
+    if (i < EDL_ETAPES.length - 1) allerEtape(EDL_ETAPES[i + 1], 0);
+  }
+
+  function terrainPrecedent() {
+    if (edlEtape === 'pieces' && edlPieceIndex > 0) {
+      allerEtape('pieces', edlPieceIndex - 1);
+      return;
+    }
+    const i = EDL_ETAPES.indexOf(edlEtape);
+    if (i <= 0) return;
+    const cible = EDL_ETAPES[i - 1];
+    // En revenant sur les pieces, on reprend a la derniere, pas a la premiere.
+    allerEtape(cible, cible === 'pieces' ? Math.max(0, edlPiecesCourantes().length - 1) : 0);
+  }
+
+  // app.js est charge en fin de <body> : le DOM est complet, on branche
+  // directement, comme le reste du fichier.
+  (function brancherTerrain() {
+    const bandeau = byId('edl-etapes');
+    if (bandeau) {
+      bandeau.addEventListener('click', (e) => {
+        const btn = e.target.closest('.edl-etape');
+        if (btn) allerEtape(btn.dataset.edlEtape, 0);
+      });
+    }
+    const suivant = byId('btn-edl-suivant');
+    const precedent = byId('btn-edl-precedent');
+    if (suivant) suivant.addEventListener('click', terrainSuivant);
+    if (precedent) precedent.addEventListener('click', terrainPrecedent);
+
+    // « Tout marquer Bon etat » : sur un logement en bon etat, l'essentiel de
+    // la saisie consiste a repeter le meme choix. On le pose d'un coup, il
+    // reste a corriger les quelques elements qui different.
+    const toutBon = byId('btn-edl-tout-bon');
+    if (toutBon) {
+      toutBon.addEventListener('click', () => {
+        const piece = edlPiecesCourantes()[edlPieceIndex];
+        if (!piece) return;
+        const restants = (piece.elements || []).filter((el) => !el.vetuste);
+        if (!restants.length) {
+          alert('Tous les éléments de cette pièce sont déjà renseignés.');
+          return;
+        }
+        if (!confirm(`Marquer « Bon état » les ${restants.length} élément(s) non renseigné(s) de « ${piece.nom} » ?`)) return;
+        restants.forEach((el) => { el.vetuste = 'bon'; });
+        renderEdlRedacRooms();
+      });
+    }
+
+    // Le decompte doit suivre chaque appui sur une pastille de vetuste.
+    const vue = byId('view-edl-redaction');
+    if (vue) vue.addEventListener('edl-saisie-modifiee', majTerrain);
+  })();
 
   function createEdlRedacCle(c) {
     const div = document.createElement('div');

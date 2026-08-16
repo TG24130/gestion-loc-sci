@@ -5,8 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Gestion Loc SCI</title>
 <meta name="description" content="Gestion locative de SCI : quittances, baux, charges, documents et crédits.">
-<meta name="theme-color" content="#2f6fed">
-<link rel="manifest" href="manifest.json?v=2026081604">
+<!-- Teinte de la barre Safari et de la barre systeme, par theme : sans les
+     deux declarations, iOS garde la couleur unique et l'application lancee
+     depuis l'ecran d'accueil affiche un bandeau qui jure avec le fond. -->
+<meta name="theme-color" content="#eff3f2" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0a100f" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="manifest.json?v=2026081605">
 <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -14,10 +18,10 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Gestion Loc SCI">
 <meta name="mobile-web-app-capable" content="yes">
-<link rel="stylesheet" href="css/style.css?v=2026081604">
-<script type="module" src="js/firebaseAuth.js?v=2026081604"></script>
-<script type="module" src="js/firestoreSync.js?v=2026081604"></script>
-<script type="module" src="js/firebaseStorageSync.js?v=2026081604"></script>
+<link rel="stylesheet" href="css/style.css?v=2026081605">
+<script type="module" src="js/firebaseAuth.js?v=2026081605"></script>
+<script type="module" src="js/firestoreSync.js?v=2026081605"></script>
+<script type="module" src="js/firebaseStorageSync.js?v=2026081605"></script>
 </head>
 <body>
 
@@ -551,15 +555,23 @@
         </p>
 
         <!-- Ordre de saisie voulu sur le terrain : 1) compteurs, 2) pièces, 3) clés. -->
-        <h3 class="edl-redac-room-title" id="edl-redac-meters-title" hidden>1. Relevé des compteurs (index, consommation, photos)</h3>
-        <div id="edl-redac-meters"></div>
+        <div class="edl-bloc" data-edl-bloc="compteurs">
+          <h3 class="edl-redac-room-title" id="edl-redac-meters-title" hidden>1. Relevé des compteurs (index, consommation, photos)</h3>
+          <div id="edl-redac-meters"></div>
+        </div>
 
-        <h3 class="edl-redac-room-title" id="edl-redac-rooms-title" hidden>2. État des pièces (vétusté, photos)</h3>
-        <div id="edl-redac-rooms"></div>
+        <div class="edl-bloc" data-edl-bloc="pieces">
+          <h3 class="edl-redac-room-title" id="edl-redac-rooms-title" hidden>2. État des pièces (vétusté, photos)</h3>
+          <button type="button" class="edl-tout-bon" id="btn-edl-tout-bon" hidden>Tout marquer « Bon état » dans cette pièce</button>
+          <div id="edl-redac-rooms"></div>
+        </div>
 
-        <h3 class="edl-redac-room-title" id="edl-redac-cles-title" hidden>3. Clés et badges (nombre, photos)</h3>
-        <div id="edl-redac-cles"></div>
+        <div class="edl-bloc" data-edl-bloc="cles">
+          <h3 class="edl-redac-room-title" id="edl-redac-cles-title" hidden>3. Clés et badges (nombre, photos)</h3>
+          <div id="edl-redac-cles"></div>
+        </div>
 
+        <div class="edl-bloc" data-edl-bloc="signature">
         <div id="edl-sortant-bloc" hidden>
           <h3 class="edl-redac-room-title">4. Sortie du locataire (état des lieux sortant)</h3>
           <div class="field">
@@ -609,6 +621,8 @@
             </div>
           </div>
         </div>
+
+        </div><!-- /.edl-bloc signature -->
 
         <div class="preview-actions" id="edl-redac-actions" hidden>
           <button class="btn btn-primary" id="btn-edl-redac-save">Enregistrer le brouillon</button>
@@ -1234,6 +1248,75 @@
     </section>
 
   </main>
+
+  <!--
+    Barre d'onglets, telephone uniquement (masquee au-dela de 880 px, ou la
+    barre laterale reste la navigation). Elle porte les cinq rubriques
+    reellement ouvertes en mobilite ; les trente-quatre autres restent
+    accessibles par le menu, atteint ici par « Tout ».
+
+    L'etat des lieux occupe le centre en bouton accentue : c'est le seul
+    usage a 100 % mobile, et celui qu'on lance debout, d'une main.
+  -->
+  <!--
+    Mode terrain : bandeau d'etapes et piece en cours, fixes en haut d'ecran.
+    Places ici, en dehors du panneau de saisie : celui-ci porte overflow-x sur
+    telephone, ce qui en ferait le conteneur de reference et empecherait tout
+    positionnement colle par rapport a la fenetre.
+  -->
+  <div class="edl-terrain-haut" id="edl-terrain-haut">
+    <div class="edl-etapes" id="edl-etapes" role="tablist" aria-label="Étapes de l'état des lieux">
+      <button type="button" class="edl-etape" data-edl-etape="compteurs" role="tab">Compteurs</button>
+      <button type="button" class="edl-etape" data-edl-etape="pieces" role="tab">Pièces</button>
+      <button type="button" class="edl-etape" data-edl-etape="cles" role="tab">Clés</button>
+      <button type="button" class="edl-etape" data-edl-etape="signature" role="tab">Signature</button>
+    </div>
+    <div class="edl-piece-courante" id="edl-piece-courante" hidden>
+      <div class="edl-piece-nom">
+        <strong id="edl-piece-nom"></strong>
+        <span id="edl-piece-rang"></span>
+      </div>
+      <span class="edl-piece-compte" id="edl-piece-compte"></span>
+    </div>
+    <div class="edl-piece-jauge"><i id="edl-piece-jauge"></i></div>
+  </div>
+
+  <!--
+    Mode terrain : navigation d'une piece a l'autre, au pouce, en bas d'ecran.
+    Masquee tant qu'aucune redaction n'est en cours et sur ordinateur.
+  -->
+  <div class="edl-terrain-bas" id="edl-terrain-bas">
+    <button type="button" class="edl-nav-piece" id="btn-edl-precedent" aria-label="Précédent">◀</button>
+    <button type="button" class="edl-nav-piece edl-nav-principale" id="btn-edl-suivant">Suivant</button>
+  </div>
+
+  <nav class="tabbar" id="tabbar" aria-label="Navigation principale">
+    <button type="button" class="tab" data-tab-view="dashboard">
+      <span class="tab-ic" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="3"/><path d="M2 10h20"/></svg>
+      </span>Paiements
+    </button>
+    <button type="button" class="tab" data-tab-view="generer">
+      <span class="tab-ic" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h8l4 4v16H6z"/><path d="M14 2v5h5"/><path d="M9 13h6M9 17h4"/></svg>
+      </span>Quittance
+    </button>
+    <button type="button" class="tab tab-mid" data-tab-view="edl-redaction">
+      <span class="tab-ic" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3H6a2 2 0 00-2 2v14a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2h-3"/><rect x="9" y="2" width="6" height="4" rx="1"/><path d="M8.5 12.5l2.2 2.2 4.6-4.6"/></svg>
+      </span>État lieux
+    </button>
+    <button type="button" class="tab" data-tab-charges>
+      <span class="tab-ic" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20V9l8-6 8 6v11"/><path d="M9 20v-6h6v6"/></svg>
+      </span>Charges
+    </button>
+    <button type="button" class="tab" data-tab-view="annonces-candidatures">
+      <span class="tab-ic" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.4"/><path d="M2.6 20a6.6 6.6 0 0112.8 0"/><path d="M17 9h5M19.5 6.5v5"/></svg>
+      </span>Candidats
+    </button>
+  </nav>
 </div>
 
 <!-- Modal for Bien/Locataire forms -->
@@ -1264,15 +1347,15 @@
 
 <script src="js/vendor/jspdf.umd.min.js"></script>
 <script src="js/vendor/jszip.min.js"></script>
-<script src="js/numberToWords.js?v=2026081604"></script>
-<script src="js/storage.js?v=2026081604"></script>
-<script src="js/filesDb.js?v=2026081604"></script>
-<script src="js/documents.js?v=2026081604"></script>
-<script src="js/pdfBuilder.js?v=2026081604"></script>
-<script src="js/richTextPdf.js?v=2026081604"></script>
-<script src="js/edlPdf.js?v=2026081604"></script>
-<script src="js/annonce.js?v=2026081604"></script>
-<script src="js/candidature.js?v=2026081604"></script>
-<script src="js/app.js?v=2026081604"></script>
+<script src="js/numberToWords.js?v=2026081605"></script>
+<script src="js/storage.js?v=2026081605"></script>
+<script src="js/filesDb.js?v=2026081605"></script>
+<script src="js/documents.js?v=2026081605"></script>
+<script src="js/pdfBuilder.js?v=2026081605"></script>
+<script src="js/richTextPdf.js?v=2026081605"></script>
+<script src="js/edlPdf.js?v=2026081605"></script>
+<script src="js/annonce.js?v=2026081605"></script>
+<script src="js/candidature.js?v=2026081605"></script>
+<script src="js/app.js?v=2026081605"></script>
 </body>
 </html>
