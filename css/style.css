@@ -1346,3 +1346,37 @@ tr.ligne-impaye td{background:rgba(224,72,63,.05);}
   /* Panneau 5 : sur telephone la carte n'apporte qu'une marge en moins. */
   html.edl-terrain .edl-bloc{margin-top:0;}
 }
+
+/* Confirmation d'un enregistrement automatique du brouillon d'etat des lieux.
+   Discrete et ephemere : elle rassure sans interrompre la saisie, la ou une
+   boite de dialogue obligerait a un appui de plus a chaque changement de
+   piece. */
+.edl-auto-save{
+  position:fixed;
+  left:50%;
+  bottom:calc(84px + env(safe-area-inset-bottom));
+  transform:translate(-50%, 8px);
+  z-index:60;
+  padding:9px 16px;
+  border-radius:var(--radius-pill);
+  background:var(--ok-bg);
+  color:var(--ok);
+  font-size:13px;
+  font-weight:700;
+  box-shadow:var(--shadow);
+  opacity:0;
+  transition:opacity .22s ease, transform .22s ease;
+  pointer-events:none;
+}
+.edl-auto-save[hidden]{display:none;}
+.edl-auto-save.visible{opacity:1;transform:translate(-50%, 0);}
+
+/* Sur ordinateur il n'y a pas de barre basse : la pastille se pose au-dessus
+   du bord de fenetre. */
+@media (min-width:881px){
+  .edl-auto-save{bottom:24px;}
+}
+
+@media (prefers-reduced-motion: reduce){
+  .edl-auto-save{transition:none;transform:translate(-50%, 0);}
+}

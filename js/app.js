@@ -4105,6 +4105,11 @@
   // puis remonte en haut : sur le terrain on enchaine les pieces, et rester
   // au milieu de la precedente desoriente.
   function allerEtape(etape, indexPiece) {
+    // Le passage d'une piece ou d'une etape a l'autre est le moment naturel
+    // pour securiser ce qui vient d'etre saisi : c'est une frontiere nette
+    // dans le releve, et elle revient assez souvent pour que rien de
+    // consequent ne soit jamais en attente.
+    enregistrerBrouillonEdlAuto(false);
     edlEtape = etape;
     if (typeof indexPiece === 'number') edlPieceIndex = indexPiece;
     majTerrain();
@@ -4133,6 +4138,50 @@
     // En revenant sur les pieces, on reprend a la derniere, pas a la premiere.
     allerEtape(cible, cible === 'pieces' ? Math.max(0, edlPiecesCourantes().length - 1) : 0);
   }
+
+  // ─── Securite : enregistrement automatique du brouillon ────────────────
+  // Un etat des lieux se remplit debout, parfois pendant une heure. Jusqu'ici
+  // la saisie ne partait ni sur le disque ni dans le cloud tant qu'on n'avait
+  // pas touche « Enregistrer le brouillon » : un appel entrant, une batterie
+  // a plat ou un onglet ferme faisait tout perdre.
+  let minuteurToastEdl = null;
+
+  function signalerEnregistrementEdl() {
+    const el = byId('edl-auto-save');
+    if (!el) return;
+    el.hidden = false;
+    // Le passage a la classe doit suivre le retrait de [hidden] pour que la
+    // transition d'opacite se joue au lieu d'apparaitre d'un coup.
+    requestAnimationFrame(() => el.classList.add('visible'));
+    clearTimeout(minuteurToastEdl);
+    minuteurToastEdl = setTimeout(() => {
+      el.classList.remove('visible');
+      setTimeout(() => { el.hidden = true; }, 260);
+    }, 1800);
+  }
+
+  // `silencieux` sert aux enregistrements declenches par la mise en arriere-
+  // plan : l'ecran n'est plus visible, afficher une confirmation n'a pas de
+  // sens, et rafraichir l'historique serait du travail perdu.
+  function enregistrerBrouillonEdlAuto(silencieux) {
+    if (!currentEdlRedaction) return;
+    // Rien de neuf depuis le dernier enregistrement : on evite une ecriture
+    // locale et un envoi cloud inutiles.
+    if (!hasUnsavedWork && currentEdlRedaction.id) return;
+    if (!persistCurrentEdlRedaction()) return;
+    if (silencieux) return;
+    renderEdlRedacHistory();
+    signalerEnregistrementEdl();
+  }
+
+  // iOS ne declenche pas beforeunload de facon fiable quand on quitte
+  // l'application ou qu'on verrouille l'ecran ; visibilitychange, si. Les
+  // deux sont poses, le garde-fou de persistCurrentEdlRedaction rendant un
+  // double appel sans effet.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') enregistrerBrouillonEdlAuto(true);
+  });
+  window.addEventListener('pagehide', () => enregistrerBrouillonEdlAuto(true));
 
   // app.js est charge en fin de <body> : le DOM est complet, on branche
   // directement, comme le reste du fichier.
@@ -4164,13 +4213,28 @@
         }
         if (!confirm(`Marquer « Bon état » les ${restants.length} élément(s) non renseigné(s) de « ${piece.nom} » ?`)) return;
         restants.forEach((el) => { el.vetuste = 'bon'; });
+        hasUnsavedWork = true;
         renderEdlRedacRooms();
+        enregistrerBrouillonEdlAuto(false);
       });
     }
 
     // Le decompte doit suivre chaque appui sur une pastille de vetuste.
     const vue = byId('view-edl-redaction');
     if (vue) vue.addEventListener('edl-saisie-modifiee', majTerrain);
+
+    // Marque le brouillon comme modifie des la premiere saisie. Sans cela
+    // hasUnsavedWork restait a false apres un premier enregistrement : on
+    // pouvait remplir soixante elements puis fermer l'onglet sans que
+    // l'avertissement de fermeture ne se declenche, ni que rien ne soit
+    // enregistre. Pose sur les blocs de saisie seuls, pas sur les panneaux
+    // de configuration du bien qui ont leur propre enregistrement.
+    const marquerSale = () => { if (currentEdlRedaction) hasUnsavedWork = true; };
+    document.querySelectorAll('.edl-bloc').forEach((bloc) => {
+      bloc.addEventListener('input', marquerSale);
+      bloc.addEventListener('change', marquerSale);
+      bloc.addEventListener('edl-saisie-modifiee', marquerSale);
+    });
   })();
 
   function createEdlRedacCle(c) {
@@ -4271,6 +4335,11 @@
     edlSigCtx.lineTo(p.x, p.y);
     edlSigCtx.stroke();
     edlSigHasStroke = true;
+    // Un trait sur un <canvas> ne declenche ni « input » ni « change » : sans
+    // cette ligne, une signature posee juste avant de verrouiller l'ecran
+    // n'aurait pas ete vue comme un changement, et l'enregistrement
+    // automatique l'aurait ignoree.
+    hasUnsavedWork = true;
   }
   function edlSigEnd() { edlSigDrawing = false; }
 
