@@ -927,3 +927,18 @@ tr.ligne-impaye td{background:rgba(224,72,63,.05);}
   padding:5px 8px;border:1px solid var(--border);border-radius:6px;
   background:var(--card-bg);color:var(--text);font-family:inherit;font-size:12.5px;
 }
+
+/* E-book du locataire */
+.ebook-bloc{
+  border:1px solid var(--border);border-radius:8px;
+  padding:12px 14px;margin-bottom:12px;
+}
+.ebook-bloc-titre{
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  font-size:14px;cursor:pointer;
+}
+.ebook-bloc-titre input[type="checkbox"]{width:16px;height:16px;cursor:pointer;}
+.ebook-bloc-titre .charges-note{margin:0;}
+.ebook-bloc .table{margin-top:10px;}
+.ebook-bloc .charges-note{margin-top:6px;}
+.ebook-bloc input[type="checkbox"]:disabled{cursor:not-allowed;opacity:.5;}

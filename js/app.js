@@ -286,6 +286,7 @@
     document.querySelectorAll('.nav-btn').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
     document.querySelectorAll('.view').forEach((v) => v.classList.toggle('active', v.id === sectionId));
     if (view === 'dashboard') renderDashboard();
+    if (view === 'ebook') renderEbookView();
     if (view === 'locataires') renderLocataires();
     if (view === 'anciens-locataires') renderAnciensLocatairesView();
     if (view === 'biens') renderBiens();
@@ -306,6 +307,7 @@
   }
 
   document.querySelectorAll('[data-action="quick-quittance"]').forEach((b) => b.addEventListener('click', () => showView('generer')));
+  document.querySelectorAll('[data-action="quick-ebook"]').forEach((b) => b.addEventListener('click', () => showView('ebook')));
   document.querySelectorAll('[data-action="quick-edl"]').forEach((b) => b.addEventListener('click', () => showView('edl-redaction')));
   document.querySelectorAll('[data-action="quick-redaction-bail"]').forEach((b) => b.addEventListener('click', () => showView('redaction-bail')));
   document.querySelectorAll('[data-action="quick-locataire"], [data-action="new-locataire"]').forEach((b) => b.addEventListener('click', () => openLocataireModal()));
@@ -2375,6 +2377,361 @@
     byId('docsadmin-libelle').value = '';
     byId('docsadmin-fichier').value = '';
     renderDocsAdminTable();
+  });
+
+  // ---------- E-book du locataire ----------
+  // Dossier d'accueil d'un nouvel arrivant : on rapproche le locataire de son
+  // bien (adresse, groupe, compteurs), on coche les documents à lui remettre,
+  // puis on prépare l'email de bienvenue. L'envoi reste manuel : un navigateur
+  // ne peut pas pré-remplir les pièces jointes d'un client de messagerie, on
+  // fournit donc le texte d'un côté et une archive .zip de l'autre.
+  const EBOOK_RUBRIQUES = [
+    { id: 'bail', label: 'Bail', source: 'bail', dossier: 'bail' },
+    { id: 'ernt', label: 'ERNT', source: 'admin', categorie: 'ernt', dossier: 'ernt' },
+    {
+      id: 'dpe', label: 'DPE', source: 'admin', categorie: 'dpe', dossier: 'dpe', parGroupe: true,
+      aide: "Choisissez le DPE du bien réellement loué : maison 229a, ou maisons 1 à 5 (DPE SCI rue Alfred ou rue ADM). Le pré-cochage se fait d'après le libellé du document et le groupe du bien : vérifiez-le.",
+    },
+    { id: 'reglement', label: 'Règlement intérieur', source: 'admin', categorie: 'reglement', dossier: 'reglement-interieur' },
+    { id: 'rib', label: 'RIB', source: 'admin', categorie: 'rib', dossier: 'rib' },
+    {
+      id: 'notices', label: 'Notices (télécommande, manette CAME…)', labelEmail: 'Notice', source: 'admin', categorie: 'notices', dossier: 'notices', toutDecoche: true,
+      aide: 'Cochez les notices utiles à ce locataire : notice de la télécommande, notice de la manette CAME, etc.',
+    },
+    { id: 'reparations', label: 'Qui répare et qui entretient', source: 'admin', categorie: 'reparations', dossier: 'qui-repare-qui-entretient' },
+    { id: 'plans', label: 'Plan des maisons et places de parking', source: 'admin', categorie: 'plans', dossier: 'plans' },
+  ];
+
+  // Les DPE diffèrent selon le groupe du bien. On ne devine pas à la place de
+  // l'utilisateur : on pré-coche ceux dont le libellé contient un mot-clé du
+  // groupe, et la liste complète reste affichée pour corriger à la main.
+  const EBOOK_DPE_MOTS_CLES = {
+    'maison-229a': ['229'],
+    'maisons-1-5': ['alfred', 'adm'],
+  };
+
+  let ebookLocataireId = null;
+  let ebookSelection = new Set(); // clés « rubriqueId::recordId », plus 'compteurs'
+  let ebookCorpsModifie = false;
+
+  function ebookNormalise(str) {
+    return String(str || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  }
+
+  function ebookRecords(rubrique, locataire) {
+    const tri = (a, b) => (b.date || '').localeCompare(a.date || '');
+    if (rubrique.source === 'bail') {
+      if (!locataire) return [];
+      return data.baux.filter((b) => b.locataireId === locataire.id).sort(tri);
+    }
+    return data.documentsAdmin.filter((d) => d.categorie === rubrique.categorie).sort(tri);
+  }
+
+  function ebookCompteurs(bien) {
+    if (!bien) return [];
+    return [
+      { label: 'Compteur électrique (Linky)', numero: bien.compteurLinky },
+      { label: 'Compteur eau', numero: bien.compteurEau },
+      { label: 'Compteur gaz', numero: bien.compteurGaz },
+    ].filter((c) => c.numero);
+  }
+
+  function ebookSelectionParDefaut(locataire, bien) {
+    const sel = new Set();
+    if (!locataire) return sel;
+    sel.add('compteurs');
+    EBOOK_RUBRIQUES.forEach((rub) => {
+      const records = ebookRecords(rub, locataire);
+      if (records.length === 0) return;
+      if (rub.toutDecoche) return;
+      if (rub.parGroupe) {
+        const mots = EBOOK_DPE_MOTS_CLES[(bien && bien.groupe) || ''] || [];
+        records.forEach((r) => {
+          const libelle = ebookNormalise(r.libelle);
+          if (mots.some((m) => libelle.indexOf(m) !== -1)) sel.add(rub.id + '::' + r.id);
+        });
+        return;
+      }
+      sel.add(rub.id + '::' + records[0].id); // le plus récent
+    });
+    return sel;
+  }
+
+  function ebookDocumentsSelectionnes(locataire) {
+    const out = [];
+    if (!locataire) return out;
+    EBOOK_RUBRIQUES.forEach((rub) => {
+      ebookRecords(rub, locataire).forEach((r) => {
+        if (ebookSelection.has(rub.id + '::' + r.id)) out.push({ rubrique: rub, record: r });
+      });
+    });
+    return out;
+  }
+
+  function renderEbookView() {
+    const select = byId('ebook-locataire');
+    if (data.locataires.length === 0) {
+      select.innerHTML = '<option value="">Aucun locataire — ajoutez-en un</option>';
+      ebookLocataireId = null;
+    } else {
+      const precedent = ebookLocataireId;
+      select.innerHTML = data.locataires
+        .slice()
+        .sort((a, b) => String(a.nom || '').localeCompare(String(b.nom || ''), 'fr'))
+        .map((l) => `<option value="${l.id}">${escapeHTML(l.nom)}</option>`)
+        .join('');
+      if (precedent && locataireById(precedent)) select.value = precedent;
+      ebookLocataireId = select.value;
+    }
+    ebookChangerLocataire();
+  }
+
+  function ebookChangerLocataire() {
+    const locataire = locataireById(ebookLocataireId);
+    const bien = locataire ? bienById(locataire.bienId) : null;
+    ebookSelection = ebookSelectionParDefaut(locataire, bien);
+    ebookCorpsModifie = false;
+    renderEbookRapprochement(locataire, bien);
+    renderEbookRubriques(locataire, bien);
+    remplirEbookEmail();
+  }
+
+  function renderEbookRapprochement(locataire, bien) {
+    const zone = byId('ebook-rapprochement');
+    if (!locataire) {
+      zone.innerHTML = '<p class="charges-note">Sélectionnez un locataire pour composer son e-book.</p>';
+      return;
+    }
+    const groupe = bien ? GROUPES_BIENS.find((g) => g.id === bien.groupe) : null;
+    const compteurs = ebookCompteurs(bien);
+    const emails = [locataire.email1, locataire.email2].filter(Boolean).join(', ');
+    zone.innerHTML = `
+      <table class="table">
+        <tbody>
+          <tr><th style="width:230px;">Locataire</th><td>${escapeHTML(locataire.nom)}</td></tr>
+          <tr><th>Email(s)</th><td>${emails ? escapeHTML(emails) : '<span class="file-empty">Aucun email sur la fiche du locataire</span>'}</td></tr>
+          <tr><th>Bien loué</th><td>${bien ? escapeHTML(bien.nom) : '<span class="file-empty">Aucun bien rattaché — complétez la fiche du locataire</span>'}</td></tr>
+          <tr><th>Adresse</th><td>${bien ? nl2brLocal(bien.adresse) : '—'}</td></tr>
+          <tr><th>Groupe</th><td>${groupe ? escapeHTML(groupe.label) : (bien ? escapeHTML(GROUPES_BIENS[0].label) + ' (par défaut)' : '—')}</td></tr>
+          <tr><th>Date d'entrée</th><td>${locataire.dateEntree ? new Date(`${locataire.dateEntree}T00:00:00`).toLocaleDateString('fr-FR') : '—'}</td></tr>
+          <tr><th>Compteurs du bien</th><td>${compteurs.length ? compteurs.map((c) => escapeHTML(`${c.label} : ${c.numero}`)).join('<br>') : '<span class="file-empty">Aucun numéro saisi sur ce bien (fiche du bien, écran « Biens »)</span>'}</td></tr>
+        </tbody>
+      </table>`;
+  }
+
+  function renderEbookRubriques(locataire, bien) {
+    const zone = byId('ebook-rubriques');
+    const note = byId('ebook-selection-note');
+    if (!locataire) { zone.innerHTML = ''; note.textContent = ''; return; }
+
+    const compteurs = ebookCompteurs(bien);
+    const blocs = [`
+      <div class="ebook-bloc">
+        <label class="ebook-bloc-titre">
+          <input type="checkbox" data-ebook-groupe="compteurs" ${ebookSelection.has('compteurs') ? 'checked' : ''} ${compteurs.length ? '' : 'disabled'}>
+          <strong>Numéros de compteurs du bien</strong>
+        </label>
+        <p class="charges-note">${compteurs.length
+          ? "Repris dans le texte de l'email (ce n'est pas une pièce jointe) : " + escapeHTML(compteurs.map((c) => `${c.label} ${c.numero}`).join(' · '))
+          : 'Aucun numéro saisi sur ce bien : complétez sa fiche dans « Biens » pour les faire figurer.'}</p>
+      </div>`];
+
+    EBOOK_RUBRIQUES.forEach((rub) => {
+      const records = ebookRecords(rub, locataire);
+      const coches = records.filter((r) => ebookSelection.has(`${rub.id}::${r.id}`)).length;
+      const lignes = records.map((r) => {
+        const cle = `${rub.id}::${r.id}`;
+        const dateLabel = r.date ? new Date(`${r.date}T00:00:00`).toLocaleDateString('fr-FR') : '—';
+        return `<tr>
+          <td style="width:36px;"><input type="checkbox" data-ebook-doc="${cle}" ${ebookSelection.has(cle) ? 'checked' : ''}></td>
+          <td style="width:110px;">${dateLabel}</td>
+          <td>${escapeHTML(r.libelle || '(sans libellé)')}</td>
+          <td>${fileLinksHTML(r)}</td>
+        </tr>`;
+      }).join('');
+      const vide = rub.source === 'admin'
+        ? `Aucun document dans « ${escapeHTML(ADMIN_DOC_CATEGORIES[rub.categorie] || rub.label)} » (Documents administratifs).`
+        : 'Aucun bail enregistré pour ce locataire (Documents locataires › Bail).';
+      blocs.push(`
+        <div class="ebook-bloc">
+          <label class="ebook-bloc-titre">
+            <input type="checkbox" data-ebook-groupe="${rub.id}" ${records.length && coches === records.length ? 'checked' : ''} ${records.length ? '' : 'disabled'}>
+            <strong>${escapeHTML(rub.label)}</strong>
+            <span class="charges-note">${coches} / ${records.length} sélectionné(s)</span>
+          </label>
+          ${rub.aide ? `<p class="charges-note">${escapeHTML(rub.aide)}</p>` : ''}
+          ${records.length ? `<table class="table"><tbody>${lignes}</tbody></table>` : `<p class="charges-note">${vide}</p>`}
+        </div>`);
+    });
+    zone.innerHTML = blocs.join('');
+
+    const rerendre = () => {
+      renderEbookRubriques(locataire, bien);
+      majEbookCorps();
+    };
+    zone.querySelectorAll('[data-ebook-doc]').forEach((cb) => cb.addEventListener('change', () => {
+      if (cb.checked) ebookSelection.add(cb.dataset.ebookDoc); else ebookSelection.delete(cb.dataset.ebookDoc);
+      rerendre();
+    }));
+    zone.querySelectorAll('[data-ebook-groupe]').forEach((cb) => cb.addEventListener('change', () => {
+      const id = cb.dataset.ebookGroupe;
+      if (id === 'compteurs') {
+        if (cb.checked) ebookSelection.add('compteurs'); else ebookSelection.delete('compteurs');
+      } else {
+        const rub = EBOOK_RUBRIQUES.find((r) => r.id === id);
+        ebookRecords(rub, locataire).forEach((r) => {
+          const cle = `${id}::${r.id}`;
+          if (cb.checked) ebookSelection.add(cle); else ebookSelection.delete(cle);
+        });
+      }
+      rerendre();
+    }));
+    zone.querySelectorAll('[data-view-file]').forEach((btn) => btn.addEventListener('click', () => openStoredFile(btn.dataset.viewFile, btn.title)));
+
+    const docs = ebookDocumentsSelectionnes(locataire);
+    const nbFichiers = docs.reduce((total, d) => total + filesOf(d.record).length, 0);
+    note.textContent = `${docs.length} document(s) coché(s), soit ${nbFichiers} fichier(s) à joindre.`;
+  }
+
+  function ebookCorpsEmail(locataire, bien) {
+    if (!locataire) return '';
+    const lignes = [];
+    lignes.push(`Bonjour ${locataire.nom},`);
+    lignes.push('');
+    lignes.push(`Nous vous souhaitons la bienvenue${bien ? ` dans votre logement « ${bien.nom} »` : ''} et une bonne installation au sein de la résidence.`);
+    lignes.push('');
+
+    const docs = ebookDocumentsSelectionnes(locataire);
+    if (docs.length) {
+      lignes.push("Vous trouverez ci-joint l'e-book de votre logement, qui réunit les documents utiles au quotidien :");
+      docs.forEach(({ rubrique, record }) => {
+        const detail = record.libelle ? ` — ${record.libelle}` : '';
+        lignes.push(`- ${rubrique.labelEmail || rubrique.label}${detail}`);
+      });
+      lignes.push('');
+    }
+
+    const compteurs = ebookCompteurs(bien);
+    if (ebookSelection.has('compteurs') && compteurs.length) {
+      lignes.push('Numéros de vos compteurs, à conserver pour vos démarches auprès des fournisseurs :');
+      compteurs.forEach((c) => lignes.push(`- ${c.label} : ${c.numero}`));
+      lignes.push('');
+    }
+
+    lignes.push('Nous vous invitons à conserver ces documents et à en prendre connaissance, en particulier le règlement intérieur ainsi que le document « Qui répare et qui entretient », qui précise la répartition des interventions entre le locataire et la SCI.');
+    lignes.push('');
+    lignes.push('Pour toute question ou toute demande d\'intervention, vous pouvez nous répondre à cette adresse.');
+    lignes.push('');
+    lignes.push('Nous vous souhaitons une excellente installation.');
+    lignes.push('');
+    lignes.push('Bien cordialement,');
+    lignes.push('');
+    if (data.sci.gerant) lignes.push(data.sci.gerant);
+    if (data.sci.nom) lignes.push(data.sci.nom);
+    const contact = [data.sci.tel, data.sci.email].filter(Boolean).join(' — ');
+    if (contact) lignes.push(contact);
+    return lignes.join('\n');
+  }
+
+  function remplirEbookEmail() {
+    const locataire = locataireById(ebookLocataireId);
+    const bien = locataire ? bienById(locataire.bienId) : null;
+    byId('ebook-destinataires').value = locataire ? [locataire.email1, locataire.email2].filter(Boolean).join(', ') : '';
+    byId('ebook-objet').value = locataire
+      ? `Bienvenue dans votre logement${bien ? ` — ${bien.nom}` : ''} : vos documents utiles`
+      : '';
+    byId('ebook-corps').value = ebookCorpsEmail(locataire, bien);
+    ebookCorpsModifie = false;
+  }
+
+  // Le message est régénéré quand la sélection change, sauf si l'utilisateur l'a
+  // retouché à la main : on ne veut pas effacer son texte sur une simple case
+  // cochée. Le bouton « Régénérer » sert alors à repartir du modèle.
+  function majEbookCorps() {
+    if (ebookCorpsModifie) return;
+    const locataire = locataireById(ebookLocataireId);
+    const bien = locataire ? bienById(locataire.bienId) : null;
+    byId('ebook-corps').value = ebookCorpsEmail(locataire, bien);
+  }
+
+  byId('ebook-locataire').addEventListener('change', function () {
+    ebookLocataireId = this.value;
+    ebookChangerLocataire();
+  });
+  byId('ebook-corps').addEventListener('input', () => { ebookCorpsModifie = true; });
+  byId('btn-ebook-regen').addEventListener('click', () => {
+    ebookCorpsModifie = false;
+    remplirEbookEmail();
+  });
+
+  byId('btn-ebook-copier').addEventListener('click', async () => {
+    const texte = byId('ebook-corps').value;
+    if (!texte.trim()) { alert('Aucun message à copier.'); return; }
+    try {
+      await navigator.clipboard.writeText(texte);
+      alert('Message copié dans le presse-papiers.');
+    } catch (e) {
+      const zone = byId('ebook-corps');
+      zone.focus();
+      zone.select();
+      alert('Copie automatique refusée par le navigateur : le message est sélectionné, faites Ctrl+C.');
+    }
+  });
+
+  byId('btn-ebook-mail').addEventListener('click', () => {
+    const dest = byId('ebook-destinataires').value.trim();
+    const objet = byId('ebook-objet').value;
+    const corps = byId('ebook-corps').value;
+    if (!corps.trim()) { alert('Sélectionnez un locataire pour préparer le message.'); return; }
+    window.location.href = `mailto:${encodeURIComponent(dest)}?subject=${encodeURIComponent(objet)}&body=${encodeURIComponent(corps)}`;
+  });
+
+  byId('btn-ebook-zip').addEventListener('click', async () => {
+    const btn = byId('btn-ebook-zip');
+    const locataire = locataireById(ebookLocataireId);
+    if (!locataire) { alert('Sélectionnez un locataire.'); return; }
+    const docs = ebookDocumentsSelectionnes(locataire);
+    if (docs.length === 0) { alert('Cochez au moins un document à joindre.'); return; }
+    const texteOriginal = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "Préparation de l'archive...";
+    try {
+      const zip = new JSZip();
+      let ajoutes = 0;
+      let manquants = 0;
+      for (const { rubrique, record } of docs) {
+        const files = filesOf(record);
+        for (let i = 0; i < files.length; i++) {
+          const f = files[i];
+          const blob = await FilesDb.getFile(f.fileId);
+          if (!blob) { manquants++; continue; }
+          const suffixe = files.length > 1 ? `-page${i + 1}` : '';
+          zip.file(`${rubrique.dossier}/${record.date || 'sans-date'}${suffixe}-${f.fileName || f.fileId}`, blob);
+          ajoutes++;
+        }
+      }
+      if (ajoutes === 0) {
+        alert("Aucun fichier n'a pu être récupéré : les documents cochés n'ont plus de fichier disponible.");
+        return;
+      }
+      zip.file('message-de-bienvenue.txt', byId('ebook-corps').value);
+      const blob = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `ebook-${slugify(locataire.nom)}-${todayISO()}.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+      if (manquants > 0) {
+        alert(`${manquants} fichier(s) n'ont pas pu être récupérés et ne sont pas dans l'archive.`);
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Une erreur est survenue lors de la préparation des pièces jointes.");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = texteOriginal;
+    }
   });
 
   // ---------- Crédits ----------

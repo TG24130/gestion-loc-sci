@@ -6,7 +6,7 @@
 <title>Gestion Loc SCI</title>
 <meta name="description" content="Gestion locative de SCI : quittances, baux, charges, documents et crédits.">
 <meta name="theme-color" content="#2f6fed">
-<link rel="manifest" href="manifest.json?v=2026081601">
+<link rel="manifest" href="manifest.json?v=2026081602">
 <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -14,10 +14,10 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Gestion Loc SCI">
 <meta name="mobile-web-app-capable" content="yes">
-<link rel="stylesheet" href="css/style.css?v=2026081601">
-<script type="module" src="js/firebaseAuth.js?v=2026081601"></script>
-<script type="module" src="js/firestoreSync.js?v=2026081601"></script>
-<script type="module" src="js/firebaseStorageSync.js?v=2026081601"></script>
+<link rel="stylesheet" href="css/style.css?v=2026081602">
+<script type="module" src="js/firebaseAuth.js?v=2026081602"></script>
+<script type="module" src="js/firestoreSync.js?v=2026081602"></script>
+<script type="module" src="js/firebaseStorageSync.js?v=2026081602"></script>
 </head>
 <body>
 
@@ -66,6 +66,7 @@
     </div>
     <nav class="nav">
       <button class="nav-btn active" data-view="dashboard">Tableau de bord</button>
+      <button class="nav-btn" data-view="ebook">E-book du locataire</button>
       <button class="nav-btn" data-view="generer">Générer un document</button>
       <button class="nav-btn" data-view="redaction-bail">Rédaction du bail</button>
       <button class="nav-btn" data-view="edl-redaction">Rédiger un état des lieux</button>
@@ -183,6 +184,7 @@
         <h2>Actions rapides</h2>
         <div class="quick-actions">
           <button class="btn btn-primary" data-action="quick-quittance">+ Nouvelle quittance</button>
+          <button class="btn" data-action="quick-ebook">📘 E-book du locataire</button>
           <button class="btn" data-action="quick-redaction-bail">+ Rédiger un bail</button>
           <button class="btn" data-action="quick-edl">+ Rédiger un état des lieux</button>
           <button class="btn" data-action="quick-locataire">+ Ajouter un locataire</button>
@@ -200,6 +202,52 @@
           <thead><tr><th>Locataire</th><th>Bien</th><th>Montant attendu</th><th>Statut</th><th></th></tr></thead>
           <tbody></tbody>
         </table>
+      </div>
+    </section>
+
+    <!-- E-BOOK DU LOCATAIRE -->
+    <section id="view-ebook" class="view">
+      <header class="view-header">
+        <h1>E-book du locataire</h1>
+        <p>Réunir les documents d'accueil d'un locataire et préparer l'email de bienvenue</p>
+      </header>
+
+      <div class="panel">
+        <h2>1. Locataire et bien concernés</h2>
+        <div class="field" style="max-width:420px;">
+          <label for="ebook-locataire">Locataire</label>
+          <select id="ebook-locataire"></select>
+        </div>
+        <div id="ebook-rapprochement"></div>
+      </div>
+
+      <div class="panel">
+        <h2>2. Documents à joindre</h2>
+        <p class="charges-note" id="ebook-selection-note"></p>
+        <div id="ebook-rubriques"></div>
+      </div>
+
+      <div class="panel">
+        <h2>3. Email de bienvenue à envoyer</h2>
+        <div class="field">
+          <label for="ebook-destinataires">Destinataire(s)</label>
+          <input type="text" id="ebook-destinataires" placeholder="adresse@exemple.fr">
+        </div>
+        <div class="field">
+          <label for="ebook-objet">Objet</label>
+          <input type="text" id="ebook-objet">
+        </div>
+        <div class="field">
+          <label for="ebook-corps">Message</label>
+          <textarea id="ebook-corps" rows="20"></textarea>
+        </div>
+        <div class="quick-actions">
+          <button class="btn btn-primary" id="btn-ebook-zip">Télécharger les pièces jointes (.zip)</button>
+          <button class="btn" id="btn-ebook-copier">Copier le message</button>
+          <button class="btn" id="btn-ebook-mail">Ouvrir dans ma messagerie</button>
+          <button class="btn" id="btn-ebook-regen">Régénérer le message</button>
+        </div>
+        <p class="charges-note">Depuis un navigateur, un email ne peut pas être pré-rempli avec ses pièces jointes : téléchargez d'abord le .zip (ou ouvrez les fichiers un par un ci-dessus), puis joignez-les dans votre messagerie.</p>
       </div>
     </section>
 
@@ -1216,15 +1264,15 @@
 
 <script src="js/vendor/jspdf.umd.min.js"></script>
 <script src="js/vendor/jszip.min.js"></script>
-<script src="js/numberToWords.js?v=2026081601"></script>
-<script src="js/storage.js?v=2026081601"></script>
-<script src="js/filesDb.js?v=2026081601"></script>
-<script src="js/documents.js?v=2026081601"></script>
-<script src="js/pdfBuilder.js?v=2026081601"></script>
-<script src="js/richTextPdf.js?v=2026081601"></script>
-<script src="js/edlPdf.js?v=2026081601"></script>
-<script src="js/annonce.js?v=2026081601"></script>
-<script src="js/candidature.js?v=2026081601"></script>
-<script src="js/app.js?v=2026081601"></script>
+<script src="js/numberToWords.js?v=2026081602"></script>
+<script src="js/storage.js?v=2026081602"></script>
+<script src="js/filesDb.js?v=2026081602"></script>
+<script src="js/documents.js?v=2026081602"></script>
+<script src="js/pdfBuilder.js?v=2026081602"></script>
+<script src="js/richTextPdf.js?v=2026081602"></script>
+<script src="js/edlPdf.js?v=2026081602"></script>
+<script src="js/annonce.js?v=2026081602"></script>
+<script src="js/candidature.js?v=2026081602"></script>
+<script src="js/app.js?v=2026081602"></script>
 </body>
 </html>
