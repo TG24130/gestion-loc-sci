@@ -10,7 +10,7 @@
      depuis l'ecran d'accueil affiche un bandeau qui jure avec le fond. -->
 <meta name="theme-color" content="#eff3f2" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0a100f" media="(prefers-color-scheme: dark)">
-<link rel="manifest" href="manifest.json?v=2026081608">
+<link rel="manifest" href="manifest.json?v=2026081609">
 <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -18,10 +18,10 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Gestion Loc SCI">
 <meta name="mobile-web-app-capable" content="yes">
-<link rel="stylesheet" href="css/style.css?v=2026081608">
-<script type="module" src="js/firebaseAuth.js?v=2026081608"></script>
-<script type="module" src="js/firestoreSync.js?v=2026081608"></script>
-<script type="module" src="js/firebaseStorageSync.js?v=2026081608"></script>
+<link rel="stylesheet" href="css/style.css?v=2026081609">
+<script type="module" src="js/firebaseAuth.js?v=2026081609"></script>
+<script type="module" src="js/firestoreSync.js?v=2026081609"></script>
+<script type="module" src="js/firebaseStorageSync.js?v=2026081609"></script>
 </head>
 <body>
 
@@ -188,6 +188,7 @@
         <h2>Actions rapides</h2>
         <div class="quick-actions">
           <button class="btn btn-primary" data-action="quick-quittance">+ Nouvelle quittance</button>
+          <button class="btn" data-action="envoi-quittances">Envoyer des quittances</button>
           <button class="btn" data-action="quick-ebook">📘 E-book du locataire</button>
           <button class="btn" data-action="quick-redaction-bail">+ Rédiger un bail</button>
           <button class="btn" data-action="quick-edl">+ Rédiger un état des lieux</button>
@@ -261,6 +262,20 @@
         <h1>Générer un document</h1>
         <p>Quittance, reçu partiel, relance ou courrier libre</p>
       </header>
+
+      <!--
+        Raccourci pour la demande la plus frequente : renvoyer a un locataire
+        ses dernieres quittances, deja generees. Place avant le formulaire de
+        creation, car il ne s'agit pas de produire un document mais d'en
+        retrouver.
+      -->
+      <div class="panel panel-raccourci">
+        <div>
+          <strong>Un locataire vous redemande ses quittances ?</strong>
+          <p class="charges-note" style="margin:4px 0 0;">Choisissez le nom, vérifiez les mois, partagez. Rien à regénérer.</p>
+        </div>
+        <button class="btn btn-primary" data-action="envoi-quittances">Envoyer des quittances</button>
+      </div>
 
       <div class="grid-2">
         <div class="panel">
@@ -1367,15 +1382,15 @@
 
 <script src="js/vendor/jspdf.umd.min.js"></script>
 <script src="js/vendor/jszip.min.js"></script>
-<script src="js/numberToWords.js?v=2026081608"></script>
-<script src="js/storage.js?v=2026081608"></script>
-<script src="js/filesDb.js?v=2026081608"></script>
-<script src="js/documents.js?v=2026081608"></script>
-<script src="js/pdfBuilder.js?v=2026081608"></script>
-<script src="js/richTextPdf.js?v=2026081608"></script>
-<script src="js/edlPdf.js?v=2026081608"></script>
-<script src="js/annonce.js?v=2026081608"></script>
-<script src="js/candidature.js?v=2026081608"></script>
-<script src="js/app.js?v=2026081608"></script>
+<script src="js/numberToWords.js?v=2026081609"></script>
+<script src="js/storage.js?v=2026081609"></script>
+<script src="js/filesDb.js?v=2026081609"></script>
+<script src="js/documents.js?v=2026081609"></script>
+<script src="js/pdfBuilder.js?v=2026081609"></script>
+<script src="js/richTextPdf.js?v=2026081609"></script>
+<script src="js/edlPdf.js?v=2026081609"></script>
+<script src="js/annonce.js?v=2026081609"></script>
+<script src="js/candidature.js?v=2026081609"></script>
+<script src="js/app.js?v=2026081609"></script>
 </body>
 </html>

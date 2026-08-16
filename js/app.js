@@ -1070,8 +1070,11 @@
     }
   }
 
-  async function partagerDocumentsCoches(btn) {
-    const docs = documentsCoches();
+  function partagerDocumentsCoches(btn) {
+    return partagerDocuments(documentsCoches(), btn);
+  }
+
+  async function partagerDocuments(docs, btn) {
     if (!docs.length) return;
     const libelle = btn ? btn.textContent : null;
     if (btn) { btn.disabled = true; btn.textContent = 'Préparation...'; }
@@ -1127,6 +1130,103 @@
       majBarreEnvoiHistorique();
     });
   })();
+
+  // ─── Raccourci : envoyer les dernieres quittances d'un locataire ───────
+  // Demande recurrente d'un locataire (« mes trois dernieres quittances »).
+  // Passer par l'historique suppose de filtrer, reconnaitre les bons mois et
+  // cocher : trois occasions de se tromper. Ici on choisit un nom, on voit
+  // les mois retenus, on partage.
+  function quittancesDe(locataireNom, combien) {
+    return data.documents
+      .filter((d) => d.type === 'quittance' && d.locataireNom === locataireNom && d.ctx)
+      .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+      .slice(0, combien);
+  }
+
+  function locatairesAvecQuittances() {
+    const noms = [];
+    data.documents.forEach((d) => {
+      if (d.type === 'quittance' && d.ctx && d.locataireNom && noms.indexOf(d.locataireNom) === -1) {
+        noms.push(d.locataireNom);
+      }
+    });
+    return noms;
+  }
+
+  // periodeLabel s'ecrit « 1er mai 2026 au 31 mai 2026 » : parfait sur le
+  // document, illisible en liste de trois sur un telephone. On recompose un
+  // libelle court a partir de la periode brute (« 2026-05 »).
+  function moisCourt(doc) {
+    if (!doc.periode) return doc.periodeLabel || doc.dateLabel || '—';
+    const [y, m] = String(doc.periode).split('-').map(Number);
+    if (!y || !m) return doc.periodeLabel || '—';
+    const nom = new Date(y, m - 1, 1).toLocaleDateString('fr-FR', { month: 'long' });
+    return `${nom} ${y}`;
+  }
+
+  let envoiQuittancesCombien = 3;
+
+  function ouvrirEnvoiQuittances() {
+    const noms = locatairesAvecQuittances();
+    if (!noms.length) {
+      alert("Aucune quittance n'a encore été générée : il n'y a rien à envoyer.");
+      return;
+    }
+    openModal('Envoyer des quittances', `
+      <div class="field">
+        <label for="eq-locataire">Locataire</label>
+        <select id="eq-locataire">${noms.map((n) => `<option value="${escapeHTML(n)}">${escapeHTML(n)}</option>`).join('')}</select>
+      </div>
+      <div class="field">
+        <label>Combien de quittances, à partir de la plus récente</label>
+        <div class="toggle-group" id="eq-combien">
+          ${[1, 3, 6, 12].map((n) => `<button type="button" class="toggle-btn${n === envoiQuittancesCombien ? ' active' : ''}" data-eq-combien="${n}">${n}</button>`).join('')}
+        </div>
+      </div>
+      <p class="charges-note" id="eq-apercu"></p>
+      <div class="preview-actions">
+        <button type="button" class="btn btn-primary" id="btn-eq-partager">Partager</button>
+      </div>
+    `);
+
+    const majApercu = () => {
+      const nom = byId('eq-locataire').value;
+      const docs = quittancesDe(nom, envoiQuittancesCombien);
+      const apercu = byId('eq-apercu');
+      const bouton = byId('btn-eq-partager');
+      if (!docs.length) {
+        apercu.textContent = 'Aucune quittance pour ce locataire.';
+        bouton.disabled = true;
+        return;
+      }
+      bouton.disabled = false;
+      // Afficher les mois retenus : c'est la seule verification possible
+      // avant d'envoyer un document a un tiers.
+      const periodes = docs.map(moisCourt).join(' · ');
+      const manque = envoiQuittancesCombien - docs.length;
+      apercu.textContent = `${docs.length} quittance${docs.length > 1 ? 's' : ''} : ${periodes}.`
+        + (manque > 0 ? ` (seulement ${docs.length} disponible${docs.length > 1 ? 's' : ''} sur ${envoiQuittancesCombien} demandées)` : '');
+    };
+
+    byId('eq-locataire').addEventListener('change', majApercu);
+    byId('eq-combien').addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-eq-combien]');
+      if (!btn) return;
+      envoiQuittancesCombien = Number(btn.dataset.eqCombien);
+      byId('eq-combien').querySelectorAll('.toggle-btn')
+        .forEach((b) => b.classList.toggle('active', b === btn));
+      majApercu();
+    });
+    byId('btn-eq-partager').addEventListener('click', async (e) => {
+      const docs = quittancesDe(byId('eq-locataire').value, envoiQuittancesCombien);
+      await partagerDocuments(docs, e.currentTarget);
+      closeModal();
+    });
+    majApercu();
+  }
+
+  document.querySelectorAll('[data-action="envoi-quittances"]')
+    .forEach((b) => b.addEventListener('click', ouvrirEnvoiQuittances));
 
   function downloadPdf(type, ctx) {
     // La signature est toujours reprise depuis "Ma SCI" au moment du telechargement
