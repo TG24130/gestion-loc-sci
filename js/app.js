@@ -173,6 +173,9 @@
     rib: 'RIB',
     assurances: 'Assurances',
     cartepro: 'Num carte Impar',
+    reparations: 'Qui répare et qui entretient',
+    plans: 'Plan maison et places de parking',
+    reglement: 'Règlement intérieur',
   };
   let currentDocsAdminCategory = null;
 
