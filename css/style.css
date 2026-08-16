@@ -663,6 +663,20 @@ html.qf-locked .app{display:none;}
   transition:background .13s ease, color .13s ease, box-shadow .13s ease;
 }
 .edl-vetuste-chip:hover{color:var(--text);}
+
+/* Sur grand ecran, les six etats tiennent sur une ligne a taille raisonnable.
+   Etires sur toute la largeur d'un panneau, ils faisaient 334 px chacun :
+   correct au pouce, disproportionne a la souris. */
+@media (min-width:881px){
+  .edl-vetuste-chips{
+    grid-template-columns:repeat(6, minmax(0,124px));
+    justify-content:start;
+    gap:6px;
+  }
+  .edl-vetuste-chip{min-height:38px;font-size:12.5px;}
+  /* Le bouton photo n'a pas besoin de la pleine largeur non plus. */
+  .edl-photo-add-label{width:fit-content;min-height:38px;font-size:12.5px;}
+}
 /* L'etat choisi se lit a la couleur ET au cerne interieur : sur un ecran en
    plein soleil, la seule teinte de fond ne suffit pas a distinguer la
    pastille allumee. */
