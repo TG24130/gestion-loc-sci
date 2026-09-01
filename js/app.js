@@ -382,7 +382,18 @@
       .filter((d) => d.periode === ym && (d.type === 'quittance' || d.type === 'recu-partiel'))
       .reduce((sum, d) => sum + (Number(d.montant) || 0), 0);
     byId('stat-mois').textContent = euros(moisTotal);
-    byId('stat-docs').textContent = data.documents.length;
+    // Documents emis CE MOIS-CI, et non le cumul depuis toujours : le suivi
+    // utile est ce qui a ete traite dans le mois. Les fiches anciennes n'ont
+    // pas toujours de createdAt, d'ou le repli sur dateLabel (jj/mm/aaaa).
+    const moisDEmission = (d) => {
+      if (d.createdAt) {
+        const t = new Date(d.createdAt);
+        return t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0');
+      }
+      const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(String(d.dateLabel || ''));
+      return m ? m[3] + '-' + m[2] : '';
+    };
+    byId('stat-docs').textContent = data.documents.filter((d) => moisDEmission(d) === ym).length;
     // 5e carte : la date du jour, au format « Lundi 10 août ».
     const aujourdHui = new Date().toLocaleDateString('fr-FR',
       { weekday: 'long', day: 'numeric', month: 'long' });
