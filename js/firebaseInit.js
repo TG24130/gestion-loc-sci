@@ -36,16 +36,16 @@ const TEST_CONFIG = {
 // vraies données, même par erreur. Seul le site déployé parle à la production.
 // (Leçon de l'incident du 05/08/2026 : la migration avait été mise au point
 // directement contre le projet de production.)
-function isDevHost(hostname) {
-  return hostname === 'localhost'
-    || hostname === '127.0.0.1'
-    || hostname === ''                       // fichier ouvert en local (file://)
-    || /^192\.168\./.test(hostname)          // réseau local (test depuis le téléphone)
-    || /^10\./.test(hostname)
-    || /^172\.(1[6-9]|2\d|3[01])\./.test(hostname);
-}
-
-export const IS_TEST_ENV = isDevHost(location.hostname);
+// Liste BLANCHE (pas noire) : la production est un hôte ET un chemin uniques
+// et connus, donc tout ce qui est imprévu (IP mDNS, tunnel ngrok/Cloudflare,
+// prévisualisation...) part par défaut en TEST plutôt qu'en production —
+// jamais l'inverse. Le chemin compte aussi : tg24130.github.io héberge
+// plusieurs apps du même compte (dont MySafer), une éventuelle recette
+// déployée sous un autre chemin de ce même hôte ne doit pas parler à la prod.
+export const IS_TEST_ENV = !(
+  location.hostname === 'tg24130.github.io'
+  && location.pathname.startsWith('/gestion-loc-sci/')
+);
 const firebaseConfig = IS_TEST_ENV ? TEST_CONFIG : PROD_CONFIG;
 
 export const firebaseApp = initializeApp(firebaseConfig);

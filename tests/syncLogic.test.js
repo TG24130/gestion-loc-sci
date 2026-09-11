@@ -72,6 +72,7 @@ function loadSyncModule(server, owner) {
 
   const sandbox = {
     console,
+    TextEncoder,
     window: {},
     firebaseApp: {},
     initializeFirestore: () => ({}),
@@ -85,6 +86,12 @@ function loadSyncModule(server, owner) {
         set: (ref, value) => ops.push({ type: 'set', id: ref.id, value }),
         delete: (ref) => ops.push({ type: 'delete', id: ref.id }),
         commit: async () => {
+          // server.failNextCommits : simule un échec réseau/permission sur le
+          // prochain commit (tests 16-17) — décrémenté à chaque appel.
+          if (server.failNextCommits > 0) {
+            server.failNextCommits--;
+            throw new Error('commit simulé en échec (test)');
+          }
           ops.forEach((op) => {
             if (op.type === 'set') { server.store.set(op.id, op.value); server.writeCount++; }
             else { server.store.delete(op.id); server.deleteCount++; }
@@ -273,17 +280,28 @@ async function run() {
     PC.stop();
   }
 
-  console.log('\n== 4. Tant que le serveur n\'a pas répondu, aucune suppression ==');
+  console.log('\n== 4. Tant que le serveur n\'a pas répondu, rien n\'est ni supprimé ni écrit ==');
   {
+    // Avant confirmation, shadow est encore vide : une écriture immédiate ne
+    // se compare à rien et écraserait sans le savoir une fiche distante dont
+    // l'id coïnciderait avec une fiche locale périmée (voir tests 14-15).
+    // QfSync.save() met donc en attente SANS RIEN écrire tant que le serveur
+    // n'a pas répondu ; le rejeu (additif) n'a lieu qu'à la confirmation.
     const server = createFakeServer();
     // Le serveur contient déjà une fiche créée ailleurs.
     server.store.set('rec-documents-dX', { c: 'documents', i: 0, j: JSON.stringify({ id: 'dX' }) });
 
     const PC = loadSyncModule(server, 'PC');
     // start() n'est PAS appelé : l'appareil n'a jamais vu l'état du serveur.
-    await PC.save('uid1', baseData());
+    // Pas de await ici : la promesse ne se règle qu'au rejeu (flushPending),
+    // qui n'aura jamais lieu puisque start() n'est pas appelé — l'attendre
+    // bloquerait le test indéfiniment. C'est exactement le point testé :
+    // rien n'est écrit tant que personne n'écoute le serveur.
+    PC.save('uid1', baseData()).catch(() => {});
     check('la fiche distante inconnue n\'est pas supprimée', server.store.has('rec-documents-dX'));
-    check('les fiches locales sont quand même envoyées', server.store.has('rec-biens-b1'));
+    check('rien n\'est écrit tant qu\'aucune confirmation n\'est arrivée',
+      !server.store.has('rec-biens-b1'), 'writeCount = ' + server.writeCount);
+    check('la sauvegarde est mise en attente', PC._state().sauvegardeEnAttente === true);
   }
 
   console.log('\n== 5. Nettoyage des résidus des anciens schémas ==');
@@ -462,6 +480,332 @@ async function run() {
     check('la confirmation serveur (metadonnee seule) est bien recue',
       PC._state().serveurRepondu === true,
       'etat = ' + JSON.stringify(PC._state()) + ' — il manque { includeMetadataChanges: true } sur onSnapshot');
+    PC.stop();
+  }
+
+  console.log('\n== 13. Pas d\'écrasement (ni suppression) avant confirmation serveur ==');
+  {
+    // Scenario reel : icone PWA supprimee puis reinstallee sur le telephone
+    // (IndexedDB local vide), reseau 4G faible -> save() peut etre appele
+    // AVANT que le serveur ait confirme son etat. Le vrai "meta" (nom de SCI,
+    // modele de bail...) et les fiches deja en production ne doivent etre ni
+    // ecrases ni supprimes par la version locale vide, y compris APRES la
+    // confirmation serveur (la sauvegarde en attente est rejouee a ce moment
+    // -- elle doit fusionner l'instantane distant, pas le remplacer).
+    const server = createFakeServer();
+    server.store.set('meta', {
+      c: '_meta', i: 0,
+      j: JSON.stringify({ schemaVersion: 1, sci: { nom: 'SCI GP2IE' }, bailModele: '<p>Vrai modele</p>', syncMeta: {} }),
+    });
+    server.store.set('rec-biens-b1', { c: 'biens', i: 0, j: JSON.stringify({ id: 'b1', nom: 'Maison 1' }) });
+    server.store.set('rec-locataires-l1', { c: 'locataires', i: 0, j: JSON.stringify({ id: 'l1', nom: 'Dupont' }) });
+
+    const PC = loadSyncModule(server, 'PC');
+    // Callback realiste, comme onRemoteData dans app.js : fusionne
+    // l'instantane distant dans le MEME objet que celui passe a save().
+    const local = { schemaVersion: 1, sci: {}, bailModele: '', reglagesAnnonce: {}, syncMeta: {} };
+    PC.start('uid1', (remote) => { if (remote) Object.assign(local, remote); });
+    check('avant confirmation, le garde-fou est bien actif', PC._state().serveurRepondu === false);
+
+    // Pas de await : la promesse ne se règle qu'au rejeu (après confirmation,
+    // quelques lignes plus bas) — l'attendre ici bloquerait le test.
+    PC.save('uid1', local).catch(() => {});
+
+    const metaAfter = JSON.parse(server.store.get('meta').j);
+    eq('le vrai "meta" du cloud n\'a pas été écrasé avant confirmation', metaAfter.sci.nom, 'SCI GP2IE');
+    check('la sauvegarde locale (vide) est mise en attente', PC._state().sauvegardeEnAttente === true);
+
+    deliverServerConfirmation(server, 'PC');
+    check('la sauvegarde en attente est rejouée après confirmation', PC._state().sauvegardeEnAttente === false);
+
+    const metaFinal = JSON.parse(server.store.get('meta').j);
+    eq('"meta" toujours correct après le rejeu de la sauvegarde en attente', metaFinal.sci.nom, 'SCI GP2IE');
+    check('aucune fiche supprimée pendant tout le scénario',
+      server.deleteCount === 0, 'deleteCount = ' + server.deleteCount);
+    check('les fiches existantes sont toujours là',
+      server.store.has('rec-biens-b1') && server.store.has('rec-locataires-l1'));
+    eq('la donnée locale a bien été fusionnée avec le distant (bailModele)',
+      local.bailModele, '<p>Vrai modele</p>');
+    PC.stop();
+  }
+
+  console.log('\n== 14. Un callback qui NE fusionne PAS ne doit ni supprimer NI écraser (filet de sécurité) ==');
+  {
+    // Cas degrade : si l'appelant ne fusionne pas l'instantane distant dans
+    // `data` (bug futur, callback partiel, saisie en cours qui fait sortir
+    // onRemoteData tot chez app.js...), le rejeu de la sauvegarde en attente
+    // ne doit NI supprimer NI ECRASER un document deja connu du serveur --
+    // seul un save() normal, avec des donnees a jour, y est autorise. Piege
+    // deja rencontre une fois : allowDeletes:false protegeait les
+    // suppressions mais pas les ECRITURES (meta, ou ici le loyer d'un bien).
+    const server = createFakeServer();
+    server.store.set('meta', {
+      c: '_meta', i: 0, j: JSON.stringify({ sci: { nom: 'SCI GP2IE' }, bailModele: '<p>Vrai modele</p>' }),
+    });
+    server.store.set('rec-biens-b1', { c: 'biens', i: 0, j: JSON.stringify({ id: 'b1', loyer: 900 }) });
+
+    const PC = loadSyncModule(server, 'PC');
+    PC.start('uid1', () => {}); // callback qui ne fait rien : pas de fusion
+    // Donnee locale PERIMEE (avant reinstallation/reconnexion), pas fusionnee
+    // avec le distant : meme id "b1" que le serveur, mais loyer different.
+    const local = { sci: {}, bailModele: '', biens: [{ id: 'b1', loyer: 500 }] };
+
+    PC.save('uid1', local).catch(() => {}); // pas de await, voir test 13
+    deliverServerConfirmation(server, 'PC');
+
+    check('aucune suppression malgré un callback qui ne fusionne rien',
+      server.deleteCount === 0, 'deleteCount = ' + server.deleteCount);
+    const metaFinal = JSON.parse(server.store.get('meta').j);
+    eq('"meta" du cloud non écrasé malgré l\'absence de fusion', metaFinal.sci.nom, 'SCI GP2IE');
+    const bienFinal = JSON.parse(server.store.get('rec-biens-b1').j);
+    eq('la fiche distante (loyer réel) n\'a pas été écrasée par la version locale périmée',
+      bienFinal.loyer, 900);
+    PC.stop();
+  }
+
+  console.log('\n== 15. Une exception dans le callback distant n\'empêche pas le rejeu de la sauvegarde en attente ==');
+  {
+    // Une erreur de rendu cote app.js (onRemoteData) ne doit pas laisser
+    // pendingSave bloque indefiniment, ni empecher la confirmation serveur
+    // d'etre correctement prise en compte pour les appels suivants.
+    const server = createFakeServer();
+    server.store.set('meta', { c: '_meta', i: 0, j: JSON.stringify({ sci: { nom: 'SCI GP2IE' } }) });
+
+    const PC = loadSyncModule(server, 'PC');
+    PC.start('uid1', () => { throw new Error('boum (bug de rendu simulé)'); });
+    const local = { sci: {} };
+
+    PC.save('uid1', local).catch(() => {}); // pas de await, voir test 13
+    deliverServerConfirmation(server, 'PC');
+
+    check('la sauvegarde en attente est bien rejouée malgré l\'exception',
+      PC._state().sauvegardeEnAttente === false);
+    const metaFinal = JSON.parse(server.store.get('meta').j);
+    eq('"meta" toujours correct malgré l\'exception dans le callback', metaFinal.sci.nom, 'SCI GP2IE');
+    PC.stop();
+  }
+
+  console.log('\n== 16. Une fiche créée hors ligne (avant toute confirmation) n\'est pas perdue à la fusion ==');
+  {
+    // Bug reel trouve en revue : mergeWithDefaults REMPLACE chaque tableau en
+    // bloc par sa version distante. Sans repechage (infos.jamaisPublie), une
+    // fiche creee hors ligne (etat des lieux redige sans reseau, cas d'usage
+    // revendique du projet) disparaissait a la toute premiere fusion, avant
+    // meme que la sauvegarde en attente n'ait pu la publier.
+    const server = createFakeServer();
+    server.store.set('meta', { c: '_meta', i: 0, j: JSON.stringify({ sci: { nom: 'SCI GP2IE' } }) });
+    server.store.set('rec-biens-b1', { c: 'biens', i: 0, j: JSON.stringify({ id: 'b1', nom: 'Maison 1' }) });
+
+    const PC = loadSyncModule(server, 'PC');
+    const local = { sci: {}, biens: [], documents: [] };
+    // Mini onRemoteData realiste (meme logique que js/app.js:onRemoteData) :
+    // fusionne, mais repeche les fiches locales "jamais publiees".
+    PC.start('uid1', (remote, infos) => {
+      if (!remote) return true;
+      const fusionne = Object.assign({}, remote);
+      ['biens', 'documents'].forEach((k) => {
+        const distants = Array.isArray(fusionne[k]) ? fusionne[k] : [];
+        const idsDistants = new Set(distants.map((r) => r.id));
+        const inedites = (local[k] || [])
+          .filter((r) => r && r.id && !idsDistants.has(r.id) && infos.jamaisPublie(k, r));
+        fusionne[k] = distants.concat(inedites);
+      });
+      Object.assign(local, fusionne);
+      return true;
+    });
+
+    // Création locale AVANT toute confirmation serveur.
+    local.documents.push({ id: 'q42', type: 'quittance', montant: 500 });
+    PC.save('uid1', local).catch(() => {}); // pas de await, voir test 13
+    check('la création est mise en attente', PC._state().sauvegardeEnAttente === true);
+
+    deliverServerConfirmation(server, 'PC');
+    // Le rejeu passe désormais par la file de sérialisation (queued()), un
+    // .then() de plus qu'un appel direct : laisser cette micro-tâche filer.
+    await new Promise((r) => setTimeout(r, 0));
+
+    check('q42 a bien été publiée dans le cloud', server.store.has('rec-documents-q42'));
+    check('q42 est toujours dans les données locales après fusion',
+      local.documents.some((d) => d.id === 'q42'));
+    check('rec-biens-b1 (distant) est bien arrivé dans les données locales',
+      local.biens.some((b) => b.id === 'b1'));
+    PC.stop();
+  }
+
+  console.log('\n== 17. Un instantané écarté (saisie en cours) empêche toute suppression au save() suivant ==');
+  {
+    // Bug reel trouve en revue : shadow/shadowFromServer sont mis a jour
+    // MEME quand onRemoteChange n'applique pas l'instantane (saisie en
+    // cours). Le save() normal qui suit comparait alors un `data` local pas
+    // fusionne a ce nouveau shadow, et prenait des fiches distantes connues
+    // pour des suppressions.
+    const server = createFakeServer();
+    server.store.set('meta', { c: '_meta', i: 0, j: JSON.stringify({ sci: { nom: 'SCI GP2IE' } }) });
+    server.store.set('rec-documents-dB', { c: 'documents', i: 0, j: JSON.stringify({ id: 'dB' }) });
+
+    const PC = loadSyncModule(server, 'PC');
+    let premierAppel = true;
+    const local = { sci: { nom: 'SCI GP2IE' }, documents: [] }; // ne connaît pas dB
+    PC.start('uid1', (remote) => {
+      if (premierAppel) { premierAppel = false; return false; } // "saisie en cours" : écarté
+      if (remote) Object.assign(local, remote);
+      return true;
+    });
+    deliverServerConfirmation(server, 'PC'); // écarté par le callback
+
+    check('le serveur a bien répondu (shadow à jour, mais dB pas encore fusionné)',
+      PC._state().serveurRepondu === true && PC._state().documentsConnusDeLApp === 0);
+
+    // La "saisie" se termine : un save() normal part, avec des données
+    // locales qui ne connaissent toujours pas dB.
+    await PC.save('uid1', local);
+
+    check('dB n\'a PAS été supprimé malgré l\'instantané écarté',
+      server.store.has('rec-documents-dB'), 'deleteCount = ' + server.deleteCount);
+    PC.stop();
+  }
+
+  console.log('\n== 18. Un échec de commitOps lors du rejeu est retenté (pas de perte silencieuse) ==');
+  {
+    const server = createFakeServer();
+    server.store.set('meta', { c: '_meta', i: 0, j: JSON.stringify({ sci: { nom: 'SCI GP2IE' } }) });
+
+    const PC = loadSyncModule(server, 'PC');
+    let erreurRecue = null;
+    PC.start('uid1', () => true);
+    PC.setErrorHandler((e) => { erreurRecue = e; });
+
+    const local = { sci: {}, documents: [{ id: 'q99', montant: 100 }] };
+    PC.save('uid1', local).catch(() => {});
+
+    server.failNextCommits = 1; // le rejeu (flushPending) va échouer une fois
+    deliverServerConfirmation(server, 'PC');
+    // Laisse toutes les micro-tâches du rejeu (échoué) se dérouler — un
+    // macro-tâche (setTimeout) garantit qu'elles sont TOUTES vidées, quelle
+    // que soit la profondeur de la chaîne save -> commitOps -> batch.commit.
+    await new Promise((r) => setTimeout(r, 0));
+
+    check('q99 n\'est pas encore publiée (le premier essai a échoué)',
+      !server.store.has('rec-documents-q99'));
+    check('l\'échec a été signalé via setErrorHandler', !!erreurRecue);
+    check('la sauvegarde est remise en file (pas perdue)', PC._state().sauvegardeEnAttente === true);
+
+    // Le prochain instantané confirmé redéclenche le rejeu, cette fois sans échec simulé.
+    deliverServerConfirmation(server, 'PC');
+    await new Promise((r) => setTimeout(r, 0));
+
+    check('q99 finit par être publiée au rejeu suivant', server.store.has('rec-documents-q99'));
+    PC.stop();
+  }
+
+  console.log('\n== 19. Une fiche trop volumineuse n\'empêche pas la synchronisation des autres ==');
+  {
+    const server = createFakeServer();
+    const PC = loadSyncModule(server, 'PC');
+    PC.start('uid1', () => true);
+    deliverServerConfirmation(server, 'PC');
+
+    const grosTexte = 'x'.repeat(1000000); // ~1 Mo, dépasse MAX_RECORD_BYTES
+    const data = baseData();
+    data.bailRedactions = [{ id: 'br1', contenu: grosTexte }];
+    data.documents.push({ id: 'q1', type: 'quittance', montant: 500 });
+
+    let message = null;
+    try { await PC.save('uid1', data); } catch (e) { message = e.message; }
+
+    check('une erreur nommée est bien levée', !!message && /volumineuse/.test(message));
+    check('la fiche saine (q1) a quand même été publiée', server.store.has('rec-documents-q1'));
+    check('la fiche trop grosse n\'a PAS été publiée', !server.store.has('rec-bailRedactions-br1'));
+    PC.stop();
+  }
+
+  console.log('\n== 20. Deux évènements start() pour le même compte ne perdent pas une sauvegarde en attente ==');
+  {
+    const server = createFakeServer();
+    server.store.set('meta', { c: '_meta', i: 0, j: JSON.stringify({ sci: { nom: 'SCI GP2IE' } }) });
+
+    const PC = loadSyncModule(server, 'PC');
+    PC.start('uid1', () => true);
+    const local = { sci: {}, documents: [{ id: 'q7', montant: 100 }] };
+    PC.save('uid1', local).catch(() => {});
+    check('sauvegarde mise en attente avant le second start()', PC._state().sauvegardeEnAttente === true);
+
+    PC.start('uid1', () => true); // second évènement d'authentification, même compte
+    check('la sauvegarde en attente survit au second start() (même uid)',
+      PC._state().sauvegardeEnAttente === true);
+
+    deliverServerConfirmation(server, 'PC');
+    await new Promise((r) => setTimeout(r, 0)); // voir test 16 : rejeu via queued()
+    check('q7 finit par être publiée', server.store.has('rec-documents-q7'));
+    PC.stop();
+  }
+
+  console.log('\n== 21. Une fiche déjà publiée qui grossit au-delà de la limite n\'est PAS supprimée du cloud ==');
+  {
+    // Bug reel trouve en revue : desired.delete(id) retirait la fiche
+    // fautive de `desired`, et la boucle de suppressions prenait alors tout
+    // ce qui est dans shadow et pas dans desired -- y compris cette fiche,
+    // qui etait donc EFFACEE du cloud au lieu d'etre simplement pas mise a
+    // jour. Sur un autre appareil, la fiche disparaissait alors reellement.
+    const server = createFakeServer();
+    const PC = loadSyncModule(server, 'PC');
+    PC.start('uid1', () => true);
+    deliverServerConfirmation(server, 'PC');
+
+    const data = baseData();
+    data.bailRedactions = [{ id: 'br1', contenu: 'texte court' }];
+    await PC.save('uid1', data);
+    check('la fiche est bien publiée en petite taille', server.store.has('rec-bailRedactions-br1'));
+
+    // Elle grossit au-delà de la limite (état des lieux avec beaucoup de photos).
+    data.bailRedactions[0].contenu = 'x'.repeat(1000000);
+    let message = null;
+    try { await PC.save('uid1', data); } catch (e) { message = e.message; }
+
+    check('une erreur est levée', !!message);
+    check('la fiche N\'A PAS été supprimée du cloud (juste pas mise à jour)',
+      server.store.has('rec-bailRedactions-br1'));
+    PC.stop();
+  }
+
+  console.log('\n== 22. Un instantané écarté ne bloque QUE ses propres fiches, pas celles déjà connues ==');
+  {
+    // Bug reel trouve en revue : un drapeau GLOBAL (dernierEtatFusionne)
+    // bloquait TOUTES les suppressions des qu'un seul instantane etait
+    // ecarte, meme pour des fiches parfaitement connues par ailleurs -- une
+    // vraie suppression locale (l'utilisateur supprime une quittance) restait
+    // sans effet, et la fiche "ressuscitait" au prochain instantane applique.
+    const server = createFakeServer();
+    const PC = loadSyncModule(server, 'PC');
+    const local = { sci: {}, documents: [] };
+    let ecarterProchain = false;
+    PC.start('uid1', (remote) => {
+      if (ecarterProchain) { ecarterProchain = false; return false; }
+      if (remote) Object.assign(local, remote);
+      return true;
+    });
+    deliverServerConfirmation(server, 'PC'); // compte vide, appliqué normalement
+
+    // q1 publiée normalement : connue avec certitude par l'app.
+    local.documents.push({ id: 'q1', montant: 500 });
+    await PC.save('uid1', local);
+    check('q1 bien publiée et connue', server.store.has('rec-documents-q1'));
+
+    // Un autre appareil publie q2 PENDANT une saisie en cours ici : cet
+    // instantané est écarté, q2 n'est jamais fusionnée dans `local`.
+    server.store.set('rec-documents-q2', { c: 'documents', i: 1, j: JSON.stringify({ id: 'q2' }) });
+    ecarterProchain = true;
+    deliverServerConfirmation(server, 'PC');
+
+    // Sans avoir jamais fusionné q2, l'utilisateur supprime q1 localement
+    // (une fiche qu'il connaît bien, lui) : ça DOIT partir.
+    local.documents = local.documents.filter((d) => d.id !== 'q1');
+    await PC.save('uid1', local);
+
+    check('q1 (connue) a bien été supprimée malgré l\'instantané écarté entre-temps',
+      !server.store.has('rec-documents-q1'));
+    check('q2 (jamais fusionnée) est toujours protégée, pas supprimée',
+      server.store.has('rec-documents-q2'));
     PC.stop();
   }
 

@@ -48,9 +48,15 @@ const NumberToWords = (function () {
   }
 
   function amountToWords(amount) {
+    // Tout calculé en centimes entiers d'abord : Math.floor(safe) puis
+    // Math.round((safe - euros) * 100) pouvait produire 100 centimes (ex:
+    // 10,999 €), donc "dix euros et cent centimes" alors que les chiffres
+    // affichés (arrondis à 2 décimales) montrent "11,00 €" — discordance sur
+    // un document à valeur probatoire (quittance).
     const safe = Math.max(0, Number(amount) || 0);
-    const euros = Math.floor(safe);
-    const cents = Math.round((safe - euros) * 100);
+    const totalCents = Math.round(safe * 100);
+    const euros = Math.floor(totalCents / 100);
+    const cents = totalCents % 100;
     let str = convertInteger(euros) + ' euro' + (euros > 1 ? 's' : '');
     if (cents > 0) {
       str += ' et ' + convertInteger(cents) + ' centime' + (cents > 1 ? 's' : '');

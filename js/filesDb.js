@@ -74,6 +74,14 @@ const FilesDb = (function () {
     localStorage.setItem(PENDING_KEY, JSON.stringify(list));
   }
 
+  // Appelé par app.js quand le compte connecté change sur cet appareil : la
+  // file d'attente contient des fichiers de l'ANCIEN compte (photos, PDF...).
+  // Sans ce nettoyage, retryPendingUploads() les enverrait vers le stockage
+  // cloud du NOUVEAU compte — fuite de données entre comptes.
+  function resetPendingQueue() {
+    localStorage.removeItem(PENDING_KEY);
+  }
+
   async function saveFile(id, blob) {
     await putLocal(id, blob);
     const uid = currentUid();
@@ -131,5 +139,5 @@ const FilesDb = (function () {
     }
   }
 
-  return { saveFile, getFile, deleteFile, retryPendingUploads };
+  return { saveFile, getFile, deleteFile, retryPendingUploads, resetPendingQueue };
 })();

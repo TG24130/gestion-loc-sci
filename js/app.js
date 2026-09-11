@@ -31,6 +31,32 @@
     return id;
   }
 
+  // Pastille fixe signalant un échec de synchro cloud : sans elle, un rejet
+  // (garde-fou de taille, règles Firestore, quota...) n'était tracé qu'en
+  // console — l'utilisateur continuait de travailler en croyant ses données
+  // répliquées. Décalée à bottom:22px (et non bottom:0 comme le bandeau
+  // "PROJET DE TEST") pour ne pas être recouverte par lui en environnement
+  // de test — justement là où on valide les correctifs.
+  function setSyncErrorBadge(active, detail) {
+    let el = document.getElementById('sync-error-badge');
+    if (active) {
+      if (!el) {
+        el = document.createElement('div');
+        el.id = 'sync-error-badge';
+        el.style.cssText = [
+          'position:fixed', 'z-index:99998', 'left:0', 'right:0', 'bottom:22px',
+          'background:#b91c1c', 'color:#fff', 'font:600 11px system-ui,sans-serif',
+          'text-align:center', 'padding:3px 6px', 'letter-spacing:.02em',
+        ].join(';');
+        document.body.appendChild(el);
+      }
+      el.textContent = 'Synchronisation cloud en échec — vos données restent enregistrées localement'
+        + (detail ? ' (' + detail + ')' : '');
+    } else if (el) {
+      el.remove();
+    }
+  }
+
   function save() {
     data.syncMeta = { updatedAt: new Date().toISOString(), updatedBy: deviceId() };
     const ok = Storage.save(data);
@@ -38,8 +64,11 @@
       alert("⚠️ La sauvegarde a échoué (stockage plein ou indisponible). Vos dernières modifications n'ont probablement PAS été enregistrées.\n\nExportez vos données immédiatement (bouton \"Exporter mes données (.zip)\" dans le menu de gauche) avant de continuer, puis libérez de la place si besoin.");
     }
     if (window.QfSync && window.QfAuth && window.QfAuth.currentUser) {
-      window.QfSync.save(window.QfAuth.currentUser.uid, data).catch((e) => {
+      window.QfSync.save(window.QfAuth.currentUser.uid, data).then(() => {
+        setSyncErrorBadge(false);
+      }).catch((e) => {
         console.error('Échec de la synchronisation cloud (les données restent enregistrées localement)', e);
+        setSyncErrorBadge(true, e && e.message);
       });
     }
     return ok;
@@ -378,9 +407,53 @@
 
     const now = new Date();
     const ym = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
-    const moisTotal = data.documents
+    // Une quittance régularise (annule) les reçus partiels émis pour le même
+    // terme : les compter tous les deux surévaluerait le mois une fois le
+    // solde régularisé. On ne retient les reçus partiels d'un couple
+    // (locataire+lot, période) que si aucune quittance n'existe pour ce
+    // couple. Clé sur le NOM normalisé + l'adresse du bien loué (ctx.
+    // locationAdresse) : le nom seul confondrait deux locataires homonymes
+    // (colocataires, père/fils) ou deux lots distincts loués au même
+    // locataire (appartement + garage) sur la même période.
+    const norm = (s) => String(s || '').trim().toLowerCase();
+    const cleCouple = (d) => [
+      norm(d.locataireNom) || d.locataireId || d.id || '',
+      norm(d.ctx && d.ctx.locationAdresse),
+      d.periode,
+    ].join('|');
+    const parCouple = new Map();
+    data.documents
       .filter((d) => d.periode === ym && (d.type === 'quittance' || d.type === 'recu-partiel'))
-      .reduce((sum, d) => sum + (Number(d.montant) || 0), 0);
+      .forEach((d) => {
+        const cle = cleCouple(d);
+        const groupe = parCouple.get(cle) || { quittances: [], partiels: [] };
+        (d.type === 'quittance' ? groupe.quittances : groupe.partiels).push(d);
+        parCouple.set(cle, groupe);
+      });
+    let moisTotal = 0;
+    parCouple.forEach((groupe) => {
+      if (groupe.quittances.length > 0) {
+        // Une quittance régénérée (correction) peut laisser l'ancienne dans
+        // l'historique : une seule quittance comptée PAR LOCATAIRE RÉEL du
+        // groupe (id, sinon nom), la plus récente — un couple locataire+lot
+        // peut légitimement compter plusieurs vraies quittances distinctes
+        // s'il désigne en fait plusieurs locataires (repli sur nom seul).
+        const parLocataire = new Map();
+        groupe.quittances.forEach((q) => {
+          const k = q.locataireId || norm(q.locataireNom);
+          const prec = parLocataire.get(k);
+          // >= (et non >) : à égalité de createdAt — ou en son absence,
+          // toutes valant 0 — le dernier élément (le plus récemment créé
+          // dans le tableau) doit l'emporter, pas rester bloqué sur le premier.
+          if (!prec || (Number(q.createdAt) || 0) >= (Number(prec.createdAt) || 0)) {
+            parLocataire.set(k, q);
+          }
+        });
+        parLocataire.forEach((q) => { moisTotal += Number(q.montant) || 0; });
+      } else {
+        moisTotal += groupe.partiels.reduce((sum, d) => sum + (Number(d.montant) || 0), 0);
+      }
+    });
     byId('stat-mois').textContent = euros(moisTotal);
     // Documents emis CE MOIS-CI, et non le cumul depuis toujours : le suivi
     // utile est ce qui a ete traite dans le mois. Les fiches anciennes n'ont
@@ -1406,9 +1479,16 @@
   // L'appareil contient-il de vraies données métier ? Sert de garde-fou avant
   // de publier quoi que ce soit vers le cloud.
   function hasLocalContent() {
-    const lists = ['biens', 'locataires', 'documents', 'charges', 'baux', 'etatsDesLieux',
+    // Liste alignée sur QfSync.recordCategories (mêmes catégories que
+    // firestoreSync.js synchronise) : une liste recopiée à la main avait
+    // oublié annonceRedactions/candidatures/visites — un appareil qui ne
+    // contenait QUE ça face à un cloud vide ne publiait rien, en silence.
+    const lists = (window.QfSync && window.QfSync.recordCategories) || [
+      'biens', 'locataires', 'documents', 'charges', 'baux', 'etatsDesLieux',
       'documentsAdmin', 'documentsLocataires', 'credits', 'bailRedactions',
-      'facturesTravaux', 'bienGabarits', 'edlRedactions', 'edlModeles'];
+      'facturesTravaux', 'bienGabarits', 'edlRedactions', 'edlModeles',
+      'annonceRedactions', 'candidatures', 'visites',
+    ];
     if (lists.some((k) => Array.isArray(data[k]) && data[k].length > 0)) return true;
     return !!(data.sci && (data.sci.nom || data.sci.siret));
   }
@@ -1421,7 +1501,15 @@
     return !!(annonceSaveTimer || candidatureSaveTimer || visiteSaveTimer);
   }
 
-  function onRemoteData(remoteData) {
+  // Renvoie explicitement false quand l'instantané distant n'est PAS appliqué
+  // (saisie en cours, écho) : firestoreSync.js s'en sert pour interdire toute
+  // suppression tant que les données locales n'ont pas réellement été
+  // réconciliées avec le vrai état serveur — voir dernierEtatFusionne.
+  function onRemoteData(remoteData, infos) {
+    // Ne PAS effacer la pastille d'échec ici : un instantané distant prouve
+    // que la LECTURE fonctionne, pas que les ÉCRITURES de cet appareil
+    // aboutissent (ex : une fiche dépasse toujours la limite de taille).
+    // Seul un QfSync.save() réussi (dans save(), plus haut) doit l'effacer.
     if (remoteData === null) {
       // Le cloud n'a pas (encore) de données exploitables. On n'y publie la
       // copie locale QUE si elle contient réellement quelque chose : un
@@ -1431,7 +1519,7 @@
       // autres appareils.
       if (hasLocalContent()) save();
       else console.warn('Aucune donnée locale : rien n\'est publié vers le cloud (protection).');
-      return;
+      return true;
     }
     // Deux raisons d'écarter un instantané distant, toutes deux liées au même
     // symptôme : un caractère saisi qui « ressort » du champ.
@@ -1450,22 +1538,52 @@
     const distant = remoteData.syncMeta || {};
     const distantLe = distant.updatedAt || '';
     const localLe = (data.syncMeta && data.syncMeta.updatedAt) || '';
-    if (saisieEnAttenteDeSauvegarde()) return;
-    if (distant.updatedBy === deviceId() && distantLe && localLe && distantLe <= localLe) return;
+    if (saisieEnAttenteDeSauvegarde()) return false;
+    if (distant.updatedBy === deviceId() && distantLe && localLe && distantLe <= localLe) return false;
 
-    Object.assign(data, Storage.mergeWithDefaults(remoteData));
+    const fusionne = Storage.mergeWithDefaults(remoteData);
+    // mergeWithDefaults REMPLACE chaque tableau en bloc par sa version
+    // distante : une fiche créée localement pendant qu'on attendait encore la
+    // toute première confirmation serveur (terrain sans réseau, 4G faible...)
+    // n'existe ni dans l'ancien ni dans le nouvel instantané distant — sans
+    // ce repêchage, elle disparaîtrait ici, silencieusement, avant même que
+    // la sauvegarde en attente n'ait pu la publier. jamaisPublie() est le
+    // seul juge : il compare l'id RÉEL du document Firestore (calculé à
+    // partir de rec.id, ou d'une empreinte du contenu si absent) aux deux
+    // derniers instantanés connus — pas besoin de revérifier ici via un id
+    // brut, ce qui ratait les fiches anciennes/importées sans id.
+    let repeche = false;
+    if (infos && infos.jamaisPublie && window.QfSync && window.QfSync.recordCategories) {
+      window.QfSync.recordCategories.forEach((k) => {
+        const distants = Array.isArray(fusionne[k]) ? fusionne[k] : [];
+        const inedites = (Array.isArray(data[k]) ? data[k] : [])
+          .filter((r) => r && infos.jamaisPublie(k, r));
+        if (inedites.length) { fusionne[k] = distants.concat(inedites); repeche = true; }
+      });
+    }
+    Object.assign(data, fusionne);
     // Les données venues du cloud peuvent encore contenir les anciennes copies
     // de signature : on les allège ici aussi, sinon un appareil déjà nettoyé
     // les récupérerait à chaque synchronisation. Si on a allégé quelque chose,
     // save() renvoie la version épurée vers le cloud pour les autres appareils.
-    if (purgeSignaturesDupliquees(data)) { save(); refreshCurrentView(); return; }
-    // Un changement venu du cloud doit AUSSI être écrit dans le stockage local :
-    // sinon un simple rechargement de page relit l'ancienne copie locale et la
-    // modification faite depuis l'autre appareil disparaît de l'écran.
-    // (On écrit directement via Storage, pas via save(), qui renverrait ces
-    // mêmes données vers le cloud en boucle.)
-    Storage.save(data);
+    if (purgeSignaturesDupliquees(data)) { save(); refreshCurrentView(); return true; }
+    if (repeche) {
+      // Des fiches viennent d'être repêchées : elles n'existent PAS côté
+      // serveur (jamaisPublie). Les publier tout de suite via save() plutôt
+      // que d'attendre la prochaine saisie de l'utilisateur — sinon elles
+      // restent locales indéfiniment tant que rien d'autre n'est modifié,
+      // pendant que l'écran donne l'impression d'une synchro saine.
+      save();
+    } else {
+      // Un changement venu du cloud doit AUSSI être écrit dans le stockage
+      // local : sinon un simple rechargement de page relit l'ancienne copie
+      // locale et la modification faite depuis l'autre appareil disparaît de
+      // l'écran. (On écrit directement via Storage, pas via save(), qui
+      // renverrait ces mêmes données vers le cloud en boucle.)
+      Storage.save(data);
+    }
     refreshCurrentView();
+    return true;
   }
 
   function appliquerEtatAuth(user) {
@@ -1474,11 +1592,34 @@
     // pour ne pas l'afficher une fraction de seconde inutilement.
     document.documentElement.classList.remove('qf-auth-pending');
     if (user) {
+      // Si le compte connecté a changé depuis la dernière session sur cet
+      // appareil (changement de compte, appareil partagé), les données et
+      // fichiers en attente locaux appartiennent à l'ANCIEN compte : les
+      // publier ou les envoyer vers le nouveau compte serait une fuite de
+      // données entre comptes. On repart donc d'un état local vide ; les
+      // vraies données du nouveau compte arrivent ensuite via onRemoteData.
+      const lastUid = localStorage.getItem('qf_last_uid');
+      if (lastUid && lastUid !== user.uid) {
+        Object.keys(data).forEach((k) => { delete data[k]; });
+        Object.assign(data, Storage.mergeWithDefaults({}));
+        // Sans ce Storage.save(), la purge ne touchait que la mémoire :
+        // IndexedDB gardait les données de l'ANCIEN compte, et un simple
+        // rechargement de page les ramenait via Storage.load() au tout
+        // prochain démarrage — exactement la fuite que ce correctif visait.
+        Storage.save(data);
+        localStorage.removeItem('qf_data_v1'); // filet de sécurité hérité de l'ancien compte
+        FilesDb.resetPendingQueue();
+      }
+      localStorage.setItem('qf_last_uid', user.uid);
+
       document.documentElement.classList.remove('qf-locked');
       byId('login-error').hidden = true;
       byId('login-form').reset();
       byId('account-email').textContent = user.email || '—';
-      if (window.QfSync) window.QfSync.start(user.uid, onRemoteData);
+      if (window.QfSync) {
+        window.QfSync.setErrorHandler((e) => setSyncErrorBadge(true, e && e.message));
+        window.QfSync.start(user.uid, onRemoteData);
+      }
       FilesDb.retryPendingUploads().catch((e) => console.error(e));
       applyPinLock();
     } else {
