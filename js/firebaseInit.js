@@ -6,7 +6,7 @@
 // distinctes de ce module (donc 3 appels à initializeApp), ce qui lève une
 // erreur "Firebase App named '[DEFAULT]' already exists". Toujours mettre à
 // jour les 3 imports ensemble.
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js';
+import { initializeApp } from './vendor/firebase/firebase-app.js';
 
 // Ces valeurs ne sont pas secrètes pour une application côté client : la
 // protection réelle des données vient des règles de sécurité Firestore/Storage.

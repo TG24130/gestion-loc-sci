@@ -5,8 +5,14 @@
 // appareils a repartir du reseau. Sans cela, un telephone pouvait continuer a
 // servir une version ancienne indefiniment (constate sur iPhone : le tableau
 // de bord affichait encore 'Derniers documents' apres plusieurs deploiements).
-const CACHE_NAME = 'gls-cache-2026090101';
-const CORE_ASSETS = ['./', './index.html', './manifest.json'];
+const CACHE_NAME = 'gls-cache-2026091101';
+const CORE_ASSETS = [
+  './', './index.html', './manifest.json',
+  './js/vendor/firebase/firebase-app.js',
+  './js/vendor/firebase/firebase-auth.js',
+  './js/vendor/firebase/firebase-firestore.js',
+  './js/vendor/firebase/firebase-storage.js',
+];
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();

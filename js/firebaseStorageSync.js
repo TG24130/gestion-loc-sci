@@ -2,14 +2,14 @@
 // Firebase Storage. IndexedDB (js/filesDb.js) reste le cache local rapide et
 // la source utilisée hors-ligne ; ce module gère seulement l'aller-retour
 // avec le cloud, appelé par filesDb.js. Expose window.QfFileSync.
-import { firebaseApp } from './firebaseInit.js?v=2026090101';
+import { firebaseApp } from './firebaseInit.js?v=2026091101';
 import {
   getStorage,
   ref,
   uploadBytes,
   getBlob,
   deleteObject,
-} from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-storage.js';
+} from './vendor/firebase/firebase-storage.js';
 
 const storage = getStorage(firebaseApp);
 

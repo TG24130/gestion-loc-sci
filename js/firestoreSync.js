@@ -17,7 +17,7 @@
 // pas touché, et aucune fiche seule n'approche la limite de 1 Mo.
 //
 // Expose window.QfSync pour que js/app.js (script classique) puisse s'y brancher.
-import { firebaseApp } from './firebaseInit.js?v=2026090101';
+import { firebaseApp } from './firebaseInit.js?v=2026091101';
 import {
   initializeFirestore,
   persistentLocalCache,
@@ -26,7 +26,7 @@ import {
   doc,
   writeBatch,
   onSnapshot,
-} from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
+} from './vendor/firebase/firebase-firestore.js';
 
 // Cache local persistant (IndexedDB) : les écritures faites hors-ligne sont
 // mises en file d'attente automatiquement par le SDK et envoyées dès que la
