@@ -184,7 +184,23 @@
     clim: 'Entretien clim',
     ordures: 'Ordures ménagères',
     edf: 'EDF communs',
+    phyto: 'Entretien Phyto',
   };
+  // Categories reservees a certains biens seulement. L'entretien de la
+  // station phyto ne concerne que la MAISON 229A : les autres logements
+  // n'apparaissent ni dans le choix du bien ni dans le tableau annuel.
+  // On s'appuie sur le groupe saisi dans la fiche du bien (voir
+  // GROUPES_BIENS) ; le nom ne sert que de repli pour un bien ancien dont le
+  // groupe n'a jamais ete renseigne.
+  const CHARGE_BIENS_AUTORISES = {
+    phyto: (b) => (b.groupe
+      ? b.groupe === 'maison-229a'
+      : /229\s*a(?![a-z0-9])/i.test(String(b.nom || ''))),
+  };
+  function biensPourCharge(cat) {
+    const filtre = CHARGE_BIENS_AUTORISES[cat];
+    return filtre ? data.biens.filter(filtre) : data.biens;
+  }
   const MONTHS_SHORT = ['Janv', 'Févr', 'Mars', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sept', 'Oct', 'Nov', 'Déc'];
   let currentChargeCategory = null;
 
@@ -1940,7 +1956,7 @@
     byId('charges-title').textContent = CHARGE_CATEGORIES[cat] || 'Charges locatives';
     byId('charges-subtitle').textContent = 'Suivi annuel et justificatifs par logement';
 
-    populateChargeBienSelect();
+    populateChargeBienSelect(cat);
     byId('charge-date').value = todayISO();
     byId('charge-montant').value = '';
     byId('charge-libelle').value = '';
@@ -1950,15 +1966,18 @@
     renderChargesTables(cat);
   }
 
-  function populateChargeBienSelect() {
+  function populateChargeBienSelect(cat) {
     const sel = byId('charge-bien');
     const prev = sel.value;
-    if (data.biens.length === 0) {
-      sel.innerHTML = '<option value="">Aucun bien enregistré</option>';
+    const biens = biensPourCharge(cat);
+    if (biens.length === 0) {
+      sel.innerHTML = CHARGE_BIENS_AUTORISES[cat]
+        ? '<option value="">Aucun bien « 229A » trouvé</option>'
+        : '<option value="">Aucun bien enregistré</option>';
       return;
     }
-    sel.innerHTML = data.biens.map((b) => `<option value="${b.id}">${escapeHTML(b.nom)}</option>`).join('');
-    if (prev && bienById(prev)) sel.value = prev;
+    sel.innerHTML = biens.map((b) => `<option value="${b.id}">${escapeHTML(b.nom)}</option>`).join('');
+    if (prev && biens.some((b) => b.id === prev)) sel.value = prev;
   }
 
   function populateChargesYearSelect(cat, preferredYear) {
@@ -1991,18 +2010,19 @@
   function renderChargesAnnualTable(cat, year) {
     const entries = data.charges.filter((c) => c.categorie === cat && c.type === 'facture' && c.date && c.date.slice(0, 4) === String(year));
 
+    const biens = biensPourCharge(cat);
     const matrix = {};
-    data.biens.forEach((b) => { matrix[b.id] = new Array(12).fill(0); });
+    biens.forEach((b) => { matrix[b.id] = new Array(12).fill(0); });
     entries.forEach((c) => {
       const monthIndex = parseInt(c.date.slice(5, 7), 10) - 1;
       if (!matrix[c.bienId]) matrix[c.bienId] = new Array(12).fill(0);
       if (monthIndex >= 0 && monthIndex < 12) matrix[c.bienId][monthIndex] += Number(c.montant) || 0;
     });
 
-    const orphanIds = Object.keys(matrix).filter((id) => !bienById(id));
+    const orphanIds = Object.keys(matrix).filter((id) => !biens.some((b) => b.id === id));
     const rows = [
-      ...data.biens.map((b) => ({ id: b.id, nom: b.nom })),
-      ...orphanIds.map((id) => ({ id, nom: '(bien supprimé)' })),
+      ...biens.map((b) => ({ id: b.id, nom: b.nom })),
+      ...orphanIds.map((id) => ({ id, nom: bienById(id) ? bienById(id).nom : '(bien supprimé)' })),
     ];
 
     const thead = document.querySelector('#charges-annual-table thead');
