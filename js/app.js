@@ -212,6 +212,7 @@
     daact: 'DAACT',
     kbis: 'Kbis',
     bilans: 'Bilans',
+    taxesfoncieres: 'Taxes foncières',
     clims: 'Contrats Clims Bellevue et rue Alfred',
     prm: 'Nums PRM eau et gaz',
     notices: 'Notices',
