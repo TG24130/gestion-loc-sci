@@ -112,14 +112,22 @@ const Documents = (function () {
     `;
   }
 
+  // Le nom saisi porte déjà la civilité (« Mr Chabrier », « Mme Lavoix ») :
+  // les courriers d'impayé s'adressent au locataire par ce nom plutôt que par
+  // « Madame, Monsieur », conservé seulement si le nom manque.
+  function appelLocataire(ctx) {
+    return String(ctx.locataireNom || '').trim() || 'Madame, Monsieur';
+  }
+
   function relance(ctx) {
     const impaye = Number(ctx.montantImpaye) || 0;
+    const appel = escapeHTML(appelLocataire(ctx));
     return `
       <div class="doc">
         ${header(ctx)}
         <h1 class="doc-title">Relance pour impayé</h1>
         <p class="doc-body">
-          Madame, Monsieur,
+          ${appel},
         </p>
         <p class="doc-body">
           Sauf erreur ou omission de notre part, votre compte locataire concernant le logement situé
@@ -132,8 +140,8 @@ const Documents = (function () {
           contrat de bail et la législation en vigueur.
         </p>
         <p class="doc-body">
-          Restant à votre disposition pour tout renseignement complémentaire, nous vous prions d'agréer, Madame,
-          Monsieur, l'expression de nos salutations distinguées.
+          Restant à votre disposition pour tout renseignement complémentaire, nous vous prions d'agréer, ${appel},
+          l'expression de nos salutations distinguées.
         </p>
         ${signatureBlock(ctx, 'Signature du bailleur')}
       </div>
@@ -163,11 +171,12 @@ const Documents = (function () {
     else relances = 'Malgré nos précédentes relances';
     const mois = moisLabel(ctx.periode);
     const jour = Number(ctx.jourExigibilite) || 1;
+    const appel = appelLocataire(ctx);
     return {
       objet: 'MISE EN DEMEURE DE PAYER – Loyers impayés',
       mention: 'Lettre recommandée avec accusé de réception',
       paragraphes: [
-        'Madame, Monsieur,',
+        `${appel},`,
         `${relances}, nous constatons qu'à ce jour, le règlement du loyer correspondant ${mois ? 'au mois de ' + mois : 'à la période due'} ne nous est toujours pas parvenu.`,
         `Pour rappel, conformément aux dispositions de votre contrat de location, le loyer est exigible le ${jour === 1 ? '1er' : jour} de chaque mois.`,
         `À ce jour, et sauf erreur ou omission de notre part, la somme de ${fmtEUR(montant)} euros (${NumberToWords.amountToWords(montant)}) demeure impayée.`,
@@ -176,7 +185,7 @@ const Documents = (function () {
         "À défaut de règlement ou de prise de contact de votre part dans le délai indiqué, nous nous verrons contraints d'envisager les démarches nécessaires au recouvrement des sommes dues, conformément aux dispositions légales applicables.",
         "Nous souhaitons naturellement privilégier une résolution amiable de cette situation et éviter l'engagement de telles démarches.",
         'Si votre règlement est intervenu entre-temps, nous vous remercions de ne pas tenir compte de la présente demande et de bien vouloir nous en informer.',
-        "Dans l'attente d'une régularisation rapide, nous vous prions d'agréer, Madame, Monsieur, l'expression de nos salutations distinguées.",
+        `Dans l'attente d'une régularisation rapide, nous vous prions d'agréer, ${appel}, l'expression de nos salutations distinguées.`,
       ],
     };
   }
@@ -283,5 +292,5 @@ const Documents = (function () {
     }
   }
 
-  return { build, fmtEUR, todayFR, periodLabel, miseEnDemeureTexte };
+  return { build, fmtEUR, todayFR, periodLabel, miseEnDemeureTexte, appelLocataire };
 })();

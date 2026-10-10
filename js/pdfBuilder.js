@@ -138,12 +138,13 @@ const PdfBuilder = (function () {
     const impaye = Number(ctx.montantImpaye) || 0;
     doc.setFont('times', 'normal');
     doc.setFontSize(10.5);
-    y = addWrapped(doc, 'Madame, Monsieur,', MARGIN, y, CONTENT_W, 14.5) + 12;
+    const appel = Documents.appelLocataire(ctx);
+    y = addWrapped(doc, `${appel},`, MARGIN, y, CONTENT_W, 14.5) + 12;
     const p1 = `Sauf erreur ou omission de notre part, votre compte locataire concernant le logement situé ${(ctx.locationAdresse || '').replace(/\n/g, ', ')} fait apparaître à ce jour un solde débiteur de ${fmtEUR(impaye)} € (${NumberToWords.amountToWords(impaye)}).`;
     y = addWrapped(doc, p1, MARGIN, y, CONTENT_W, 14.5) + 14;
     const p2 = "Nous vous remercions de bien vouloir régulariser cette situation dans les meilleurs délais. À défaut de règlement de votre part, nous nous verrions contraints de mettre en œuvre les dispositions prévues par le contrat de bail et la législation en vigueur.";
     y = addWrapped(doc, p2, MARGIN, y, CONTENT_W, 14.5) + 14;
-    const p3 = "Restant à votre disposition pour tout renseignement complémentaire, nous vous prions d'agréer, Madame, Monsieur, l'expression de nos salutations distinguées.";
+    const p3 = `Restant à votre disposition pour tout renseignement complémentaire, nous vous prions d'agréer, ${appel}, l'expression de nos salutations distinguées.`;
     y = addWrapped(doc, p3, MARGIN, y, CONTENT_W, 14.5) + 20;
     drawSignature(doc, ctx, y + 20, 'Signature du bailleur');
   }
