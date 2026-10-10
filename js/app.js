@@ -570,6 +570,26 @@
     return loyerDu(loc, ym) ? 'impaye' : 'nondu';
   }
 
+  // En-tete commun a tous les courriers : coordonnees de la SCI, du locataire
+  // et du logement. Partage entre le formulaire de generation et les relances
+  // creees automatiquement.
+  function contexteDocument(l, bien, periode, periodeLabel, ville) {
+    const bailleurBlock = [data.sci.nom, data.sci.adresse, data.sci.siret ? `SIRET : ${data.sci.siret}` : '']
+      .filter(Boolean).join('\n');
+    const locataireBlock = [l.nom, l.designation, l.adresseDestinataire || bien.adresse].filter(Boolean).join('\n');
+    return {
+      bailleurNom: data.sci.nom || '(Nom du bailleur non renseigné)',
+      bailleurBlock,
+      locataireNom: l.nom,
+      locataireBlock,
+      locationAdresse: bien.adresse,
+      periode,
+      periodeLabel,
+      ville: ville || data.sci.ville || '',
+      dateDuJour: Documents.todayFR(),
+    };
+  }
+
   function renderSuiviPaiements() {
     const ym = moisSuivi();
     byId('suivi-mois-label').textContent = moisLisible(ym);
@@ -594,7 +614,7 @@
       const etat = etatPaiement(l, ym);
       if (etat !== 'nondu' && etat !== 'horssuivi') nbAttendus++;
       if (etat === 'paye') nbPayes++;
-      else if (etat === 'impaye') impayes.push(l.nom);
+      else if (etat === 'impaye') impayes.push(l);
       const bien = bienById(l.bienId);
       const mensuel = (Number(l.loyer) || 0) + (Number(l.charges) || 0);
       // Un loyer trimestriel appelle trois mois de loyer a l'echeance.
@@ -614,7 +634,7 @@
     byId('suivi-resume').textContent = nbAttendus === 0
       ? 'Aucun loyer attendu ce mois-ci (mois antérieur au suivi, ou aucune échéance).'
       : nbPayes + ' payé(s) sur ' + nbAttendus + ' attendu(s)'
-      + (impayes.length ? ' \u2014 en attente : ' + impayes.join(', ') : ' \u2014 tout est à jour.');
+      + (impayes.length ? ' \u2014 en attente : ' + impayes.map((l) => l.nom).join(', ') : ' \u2014 tout est à jour.');
 
     tbody.querySelectorAll('[data-quittance-loc]').forEach((btn) => btn.addEventListener('click', () => {
       showView('generer');
@@ -628,21 +648,78 @@
     alerterImpayes(ym, impayes);
   }
 
+  // Relance creee automatiquement pour un loyer du mois non regle au 10.
+  // Une seule par locataire et par mois : on regarde l'historique (synchronise
+  // entre appareils) plutot qu'un indicateur local, pour qu'un second appareil
+  // ne cree pas de doublon.
+  function relanceDejaCreee(l, ym) {
+    return data.documents.some((d) => d.type === 'relance' && d.periode === ym && d.locataireId === l.id);
+  }
+
+  function creerRelanceAuto(l, ym) {
+    const bien = bienById(l.bienId);
+    if (!bien) return null;
+    const nbMois = (l.periodicite || 'mensuelle') === 'trimestrielle' ? 3 : 1;
+    // Montant du terme charges comprises (trois mois pour un loyer trimestriel).
+    const montant = ((Number(l.loyer) || 0) + (Number(l.charges) || 0)) * nbMois;
+    const periodeLabel = Documents.periodLabel(ym, nbMois);
+    const ctx = contexteDocument(l, bien, ym, periodeLabel, '');
+    ctx.montantImpaye = montant;
+    const now = new Date();
+    const rec = {
+      id: Storage.uid(),
+      createdAt: now.getTime(),
+      dateLabel: now.toLocaleDateString('fr-FR'),
+      type: 'relance',
+      locataireId: l.id,
+      locataireNom: l.nom,
+      periode: ym,
+      periodeLabel,
+      montant,
+      ctx,
+      periodicite: l.periodicite || 'mensuelle',
+      nbMois,
+      auto: true,
+    };
+    data.documents.push(rec);
+    return rec;
+  }
+
+  // Les relances ne sont creees qu'une fois les donnees du cloud recues : une
+  // copie locale perimee pourrait ignorer une quittance etablie entre-temps
+  // sur un autre appareil, et relancer un locataire qui a deja paye.
+  var donneesCloudRecues = false; // var : lue avant cette ligne au démarrage (pas de zone morte)
+
   // Alerte à partir du 10 du mois si des loyers du mois en cours restent sans
   // quittance. Affichée une seule fois par jour et par appareil, pour prévenir
-  // sans harceler à chaque ouverture.
+  // sans harceler à chaque ouverture — sauf si de nouvelles relances viennent
+  // d'être créées, ce qui est toujours signalé.
   const ALERTE_KEY = 'qf_alerte_impayes';
   function alerterImpayes(ym, impayes) {
     const now = new Date();
     const moisCourant = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
     if (ym !== moisCourant || now.getDate() < 10 || impayes.length === 0) return;
+
+    const creees = donneesCloudRecues
+      ? impayes.filter((l) => !relanceDejaCreee(l, ym)).map((l) => creerRelanceAuto(l, ym)).filter(Boolean)
+      : [];
+    if (creees.length) save();
+
     const aujourdHui = todayISO();
-    if (localStorage.getItem(ALERTE_KEY) === aujourdHui) return;
+    if (!creees.length && localStorage.getItem(ALERTE_KEY) === aujourdHui) return;
     localStorage.setItem(ALERTE_KEY, aujourdHui);
+    const nomsCrees = new Set(creees.map((r) => r.locataireId));
     setTimeout(() => {
-      alert('Loyers sans quittance pour ' + (Documents.periodLabel(ym) || ym) + ' :\n\n'
-        + impayes.map((n) => '\u2022 ' + n).join('\n')
-        + '\n\nRetrouvez le détail dans le tableau de bord.');
+      let msg = 'Loyers sans quittance pour ' + (Documents.periodLabel(ym) || ym) + ' :\n\n'
+        + impayes.map((l) => '\u2022 ' + l.nom).join('\n');
+      if (creees.length) {
+        msg += '\n\nLettre de relance générée automatiquement et enregistrée dans l\'historique des documents pour :\n'
+          + impayes.filter((l) => nomsCrees.has(l.id))
+            .map((l) => '\u2022 ' + l.nom + ' (' + euros(creees.find((r) => r.locataireId === l.id).montant) + ')').join('\n');
+      }
+      msg += '\n\nRetrouvez le détail dans le tableau de bord.';
+      alert(msg);
+      if (creees.length && currentView === 'historique') renderHistorique();
     }, 600);
   }
 
@@ -1010,7 +1087,7 @@
     const docs = data.documents.map((d) => ({
       tri: d.createdAt || 0,
       dateLabel: d.dateLabel || '—',
-      type: DOC_LABELS[d.type] || d.type,
+      type: (DOC_LABELS[d.type] || d.type) + (d.auto ? ' (auto)' : ''),
       locataireNom: d.locataireNom || '—',
       periodeLabel: d.periodeLabel || '—',
       montant: d.montant != null ? euros(d.montant) : '—',
@@ -1524,6 +1601,11 @@
   // suppression tant que les données locales n'ont pas réellement été
   // réconciliées avec le vrai état serveur — voir dernierEtatFusionne.
   function onRemoteData(remoteData, infos) {
+    if (!donneesCloudRecues) {
+      donneesCloudRecues = true;
+      // Relance la verification des impayes une fois l'instantane applique.
+      setTimeout(() => { if (currentView === 'dashboard') renderDashboard(); }, 0);
+    }
     // Ne PAS effacer la pastille d'échec ici : un instantané distant prouve
     // que la LECTURE fonctionne, pas que les ÉCRITURES de cet appareil
     // aboutissent (ex : une fiche dépasse toujours la limite de taille).
@@ -1862,21 +1944,7 @@
     const nbMois = periodicite === 'trimestrielle' ? 3 : 1;
     const periodeLabel = type === 'libre' ? '' : Documents.periodLabel(periode, nbMois);
 
-    const bailleurBlock = [data.sci.nom, data.sci.adresse, data.sci.siret ? `SIRET : ${data.sci.siret}` : '']
-      .filter(Boolean).join('\n');
-    const locataireBlock = [l.nom, l.designation, l.adresseDestinataire || bien.adresse].filter(Boolean).join('\n');
-
-    const ctx = {
-      bailleurNom: data.sci.nom || '(Nom du bailleur non renseigné)',
-      bailleurBlock,
-      locataireNom: l.nom,
-      locataireBlock,
-      locationAdresse: bien.adresse,
-      periode,
-      periodeLabel,
-      ville: byId('doc-ville').value.trim() || data.sci.ville || '',
-      dateDuJour: Documents.todayFR(),
-    };
+    const ctx = contexteDocument(l, bien, periode, periodeLabel, byId('doc-ville').value.trim());
 
     let montant = null;
 
