@@ -182,7 +182,7 @@ const Documents = (function () {
         `À ce jour, et sauf erreur ou omission de notre part, la somme de ${fmtEUR(montant)} euros (${NumberToWords.amountToWords(montant)}) demeure impayée.`,
         "En conséquence, nous vous mettons formellement en demeure, conformément à l'article 1344 du Code civil, de procéder au règlement intégral de cette somme dans un délai de huit (8) jours à compter de la première présentation du présent courrier recommandé.",
         'Nous vous remercions de bien vouloir régulariser votre situation dans ce délai, selon les modalités de paiement habituelles.',
-        "À défaut de règlement ou de prise de contact de votre part dans le délai indiqué, nous nous verrons contraints d'envisager les démarches nécessaires au recouvrement des sommes dues, conformément aux dispositions légales applicables.",
+        "À défaut de règlement de votre part dans le délai indiqué, nous nous verrons contraints d'envisager les démarches nécessaires au recouvrement des sommes dues, conformément aux dispositions légales applicables.",
         "Nous souhaitons naturellement privilégier une résolution amiable de cette situation et éviter l'engagement de telles démarches.",
         'Si votre règlement est intervenu entre-temps, nous vous remercions de ne pas tenir compte de la présente demande et de bien vouloir nous en informer.',
         `Dans l'attente d'une régularisation rapide, nous vous prions d'agréer, ${appel}, l'expression de nos salutations distinguées.`,
