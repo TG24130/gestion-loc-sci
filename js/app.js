@@ -167,6 +167,7 @@
     quittance: 'Quittance de loyer',
     'recu-partiel': 'Reçu partiel',
     relance: 'Relance',
+    'mise-en-demeure': 'Mise en demeure',
     avenant: 'Avenant au bail',
     libre: 'Courrier libre',
   };
@@ -1748,6 +1749,7 @@
     byId('fields-quittance').hidden = type !== 'quittance';
     byId('fields-recu-partiel').hidden = type !== 'recu-partiel';
     byId('fields-relance').hidden = type !== 'relance';
+    byId('fields-mise-en-demeure').hidden = type !== 'mise-en-demeure';
     byId('fields-avenant').hidden = type !== 'avenant';
     byId('fields-libre').hidden = type !== 'libre';
     byId('field-periode').hidden = type === 'libre' || type === 'avenant';
@@ -1784,6 +1786,7 @@
     byId('doc-total-du').value = (Number(l.loyer) || 0) + (Number(l.charges) || 0);
     byId('doc-montant-paye').value = '';
     byId('doc-montant-impaye').value = '';
+    byId('med-montant').value = '';
     if (!byId('doc-ville').value) byId('doc-ville').value = data.sci.ville || '';
     appliquerPeriodiciteLocataire();
   }
@@ -1889,6 +1892,12 @@
       montant = ctx.montantPaye;
     } else if (type === 'relance') {
       ctx.montantImpaye = parseFloat(byId('doc-montant-impaye').value) || 0;
+      montant = ctx.montantImpaye;
+    } else if (type === 'mise-en-demeure') {
+      ctx.montantImpaye = parseFloat(byId('med-montant').value) || 0;
+      ctx.relance1 = byId('med-relance1').value;
+      ctx.relance2 = byId('med-relance2').value;
+      ctx.jourExigibilite = parseInt(byId('med-jour').value, 10) || 1;
       montant = ctx.montantImpaye;
     } else if (type === 'avenant') {
       ctx.sciNom = data.sci.nom || '';

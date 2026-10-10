@@ -148,6 +148,24 @@ const PdfBuilder = (function () {
     drawSignature(doc, ctx, y + 20, 'Signature du bailleur');
   }
 
+  function miseEnDemeure(doc, ctx) {
+    const t = Documents.miseEnDemeureTexte(ctx);
+    let y = drawHeader(doc, ctx, 64);
+    doc.setFont('times', 'italic');
+    doc.setFontSize(10);
+    doc.text(t.mention, MARGIN, y - 6);
+    y = drawTitle(doc, 'MISE EN DEMEURE POUR IMPAYÉ', null, y + 18);
+    doc.setFont('times', 'bold');
+    doc.setFontSize(10.5);
+    y = addWrapped(doc, `Objet : ${t.objet}`, MARGIN, y, CONTENT_W, 14.5) + 10;
+    doc.setFont('times', 'normal');
+    // Lettre longue : interligne un peu resserré pour tenir sur une page.
+    t.paragraphes.forEach((para) => {
+      y = addWrapped(doc, para, MARGIN, y, CONTENT_W, 13.5) + 8;
+    });
+    drawSignature(doc, ctx, y + 14, 'Signature du bailleur');
+  }
+
   function avenant(doc, ctx) {
     let y = 60;
     doc.setFont('times', 'bold');
@@ -371,6 +389,7 @@ const PdfBuilder = (function () {
     if (type === 'quittance') quittance(doc, full);
     else if (type === 'recu-partiel') recuPartiel(doc, full);
     else if (type === 'relance') relance(doc, full);
+    else if (type === 'mise-en-demeure') miseEnDemeure(doc, full);
     else if (type === 'avenant') avenant(doc, full);
     else if (type === 'libre') libre(doc, full);
     else if (type === 'fiche-renseignements') ficheRenseignements(doc, full);
@@ -391,7 +410,7 @@ const PdfBuilder = (function () {
       const bien = slug(ctx.bienNom);
       return 'fiche-renseignements' + (bien ? '-' + bien : '') + '.pdf';
     }
-    const typeSlug = { quittance: 'quittance', 'recu-partiel': 'recu-partiel', relance: 'relance', avenant: 'avenant', libre: 'courrier' }[type] || 'document';
+    const typeSlug = { quittance: 'quittance', 'recu-partiel': 'recu-partiel', relance: 'relance', 'mise-en-demeure': 'mise-en-demeure', avenant: 'avenant', libre: 'courrier' }[type] || 'document';
     const per = ctx.periode ? `-${ctx.periode}` : '';
     return `${typeSlug}-${slug(ctx.locataireNom)}${per}.pdf`;
   }

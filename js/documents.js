@@ -1,4 +1,4 @@
-// Génération du HTML des documents (quittance, reçu partiel, relance, courrier libre).
+// Génération du HTML des documents (quittance, reçu partiel, relance, mise en demeure, courrier libre).
 const Documents = (function () {
   const MONTHS_FR = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
 
@@ -140,6 +140,61 @@ const Documents = (function () {
     `;
   }
 
+  // Texte de la mise en demeure, partagé entre l'aperçu HTML et le PDF.
+  function moisLabel(monthValue) {
+    if (!monthValue) return '';
+    const [y, m] = monthValue.split('-').map(Number);
+    return MONTHS_FR[m - 1] + ' ' + y;
+  }
+
+  function dateLabel(isoDate) {
+    if (!isoDate) return '';
+    const d = new Date(`${isoDate}T00:00:00`);
+    return (d.getDate() === 1 ? '1er' : d.getDate()) + ' ' + MONTHS_FR[d.getMonth()] + ' ' + d.getFullYear();
+  }
+
+  function miseEnDemeureTexte(ctx) {
+    const montant = Number(ctx.montantImpaye) || 0;
+    const r1 = dateLabel(ctx.relance1);
+    const r2 = dateLabel(ctx.relance2);
+    let relances;
+    if (r1 && r2) relances = `Malgré nos deux précédentes relances en date des ${r1} et ${r2}`;
+    else if (r1 || r2) relances = `Malgré notre précédente relance en date du ${r1 || r2}`;
+    else relances = 'Malgré nos précédentes relances';
+    const mois = moisLabel(ctx.periode);
+    const jour = Number(ctx.jourExigibilite) || 1;
+    return {
+      objet: 'MISE EN DEMEURE DE PAYER – Loyers impayés',
+      mention: 'Lettre recommandée avec accusé de réception',
+      paragraphes: [
+        'Madame, Monsieur,',
+        `${relances}, nous constatons qu'à ce jour, le règlement du loyer correspondant ${mois ? 'au mois de ' + mois : 'à la période due'} ne nous est toujours pas parvenu.`,
+        `Pour rappel, conformément aux dispositions de votre contrat de location, le loyer est exigible le ${jour === 1 ? '1er' : jour} de chaque mois.`,
+        `À ce jour, et sauf erreur ou omission de notre part, la somme de ${fmtEUR(montant)} euros (${NumberToWords.amountToWords(montant)}) demeure impayée.`,
+        "En conséquence, nous vous mettons formellement en demeure, conformément à l'article 1344 du Code civil, de procéder au règlement intégral de cette somme dans un délai de huit (8) jours à compter de la première présentation du présent courrier recommandé.",
+        'Nous vous remercions de bien vouloir régulariser votre situation dans ce délai, selon les modalités de paiement habituelles.',
+        "À défaut de règlement ou de prise de contact de votre part dans le délai indiqué, nous nous verrons contraints d'envisager les démarches nécessaires au recouvrement des sommes dues, conformément aux dispositions légales applicables.",
+        "Nous souhaitons naturellement privilégier une résolution amiable de cette situation et éviter l'engagement de telles démarches.",
+        'Si votre règlement est intervenu entre-temps, nous vous remercions de ne pas tenir compte de la présente demande et de bien vouloir nous en informer.',
+        "Dans l'attente d'une régularisation rapide, nous vous prions d'agréer, Madame, Monsieur, l'expression de nos salutations distinguées.",
+      ],
+    };
+  }
+
+  function miseEnDemeure(ctx) {
+    const t = miseEnDemeureTexte(ctx);
+    return `
+      <div class="doc">
+        ${header(ctx)}
+        <p class="doc-body"><em>${t.mention}</em></p>
+        <h1 class="doc-title">Mise en demeure pour impayé</h1>
+        <p class="doc-body"><strong>Objet : ${escapeHTML(t.objet)}</strong></p>
+        ${t.paragraphes.map((p) => `<p class="doc-body">${escapeHTML(p)}</p>`).join('')}
+        ${signatureBlock(ctx, 'Signature du bailleur')}
+      </div>
+    `;
+  }
+
   function avenant(ctx) {
     const lignesHtml = (ctx.chargeLines || []).map((l) => {
       const montant = fmtEUR(l.montant) + ' €';
@@ -221,11 +276,12 @@ const Documents = (function () {
       case 'quittance': return quittance(full);
       case 'recu-partiel': return recuPartiel(full);
       case 'relance': return relance(full);
+      case 'mise-en-demeure': return miseEnDemeure(full);
       case 'avenant': return avenant(full);
       case 'libre': return libre(full);
       default: return '';
     }
   }
 
-  return { build, fmtEUR, todayFR, periodLabel };
+  return { build, fmtEUR, todayFR, periodLabel, miseEnDemeureTexte };
 })();
