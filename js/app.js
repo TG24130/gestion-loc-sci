@@ -585,6 +585,30 @@
   // En-tete commun a tous les courriers : coordonnees de la SCI, du locataire
   // et du logement. Partage entre le formulaire de generation et les relances
   // creees automatiquement.
+  // La provision TEOM est suivie à part dans la fiche (provisionTeom) : elle
+  // est mise à jour par le courrier de régularisation. Les charges appelées
+  // chaque mois sont donc les charges de la fiche plus cette provision.
+  //
+  // Le courrier n'applique pas la nouvelle provision tout de suite : il part
+  // en décembre, après le dernier loyer de l'année, et la provision ne change
+  // qu'à partir du mois qu'il indique (janvier). Elle est donc gardée en
+  // attente (provisionTeomSuivante) avec son mois d'effet, pour que les
+  // quittances des mois précédents restent au montant en vigueur.
+  function moisCourantISO() {
+    const d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+  }
+
+  function provisionTeomDuMois(l, ym) {
+    const s = l.provisionTeomSuivante;
+    if (s && s.aPartirDe && (ym || moisCourantISO()) >= s.aPartirDe) return Number(s.montant) || 0;
+    return Number(l.provisionTeom) || 0;
+  }
+
+  function chargesMensuelles(l, ym) {
+    return arrondi((Number(l.charges) || 0) + provisionTeomDuMois(l, ym));
+  }
+
   function contexteDocument(l, bien, periode, periodeLabel, ville) {
     const bailleurBlock = [data.sci.nom, data.sci.adresse, data.sci.siret ? `SIRET : ${data.sci.siret}` : '']
       .filter(Boolean).join('\n');
@@ -628,7 +652,7 @@
       if (etat === 'paye') nbPayes++;
       else if (etat === 'impaye') impayes.push(l);
       const bien = bienById(l.bienId);
-      const mensuel = (Number(l.loyer) || 0) + (Number(l.charges) || 0);
+      const mensuel = (Number(l.loyer) || 0) + chargesMensuelles(l, ym);
       // Un loyer trimestriel appelle trois mois de loyer a l'echeance.
       const attendu = (etat === 'nondu' || etat === 'horssuivi') ? 0
         : mensuel * ((l.periodicite || 'mensuelle') === 'trimestrielle' ? 3 : 1);
@@ -673,7 +697,7 @@
     if (!bien) return null;
     const nbMois = (l.periodicite || 'mensuelle') === 'trimestrielle' ? 3 : 1;
     // Montant du terme charges comprises (trois mois pour un loyer trimestriel).
-    const montant = ((Number(l.loyer) || 0) + (Number(l.charges) || 0)) * nbMois;
+    const montant = ((Number(l.loyer) || 0) + chargesMensuelles(l, ym)) * nbMois;
     const periodeLabel = Documents.periodLabel(ym, nbMois);
     const ctx = contexteDocument(l, bien, ym, periodeLabel, '');
     ctx.montantImpaye = montant;
@@ -908,7 +932,7 @@
         <td>${escapeHTML(l.nom)}${l.designation ? ` <span class="badge badge-inactive">${escapeHTML(l.designation)}</span>` : ''}</td>
         <td>${bien ? escapeHTML(bien.nom) : '<em>Bien supprimé</em>'}</td>
         <td>${euros(l.loyer)}</td>
-        <td>${euros(l.charges)}</td>
+        <td>${euros(chargesMensuelles(l))}${provisionTeomDuMois(l) ? `<br><small>dont TEOM ${euros(provisionTeomDuMois(l))}</small>` : ''}${l.provisionTeomSuivante && l.provisionTeomSuivante.aPartirDe > moisCourantISO() ? `<br><small>TEOM ${euros(l.provisionTeomSuivante.montant)} à partir de ${Documents.periodLabel(l.provisionTeomSuivante.aPartirDe).split(' au ')[0].replace(/^1er /, '')}</small>` : ''}</td>
         <td><span class="badge ${l.actif === false ? 'badge-inactive' : 'badge-active'}">${l.actif === false ? 'Inactif' : 'Actif'}</span></td>
         <td class="actions-cell">
           <button class="btn btn-sm" data-edit-loc="${l.id}">Modifier</button>
@@ -998,7 +1022,8 @@
       <div class="field"><label>Désignation (optionnel)</label><input type="text" id="m-loc-designation" placeholder="MAISON 2"></div>
       <div class="field"><label>Adresse de correspondance (si différente de l'adresse du bien)</label><textarea id="m-loc-adresse" rows="2" placeholder="Laisser vide pour utiliser l'adresse du bien"></textarea></div>
       <div class="field"><label>Loyer mensuel (€)</label><input type="number" step="0.01" id="m-loc-loyer"></div>
-      <div class="field"><label>Charges mensuelles (€)</label><input type="number" step="0.01" id="m-loc-charges"></div>
+      <div class="field"><label>Charges mensuelles hors TEOM (€)</label><input type="number" step="0.01" id="m-loc-charges"></div>
+      <div class="field"><label>Provision TEOM mensuelle (€)</label><input type="number" step="0.01" id="m-loc-teom" placeholder="Mise à jour par le courrier de régularisation"></div>
       <div class="field"><label>Date d'entrée</label><input type="date" id="m-loc-date"></div>
       <div class="field"><label>Périodicité du loyer</label>
         <select id="m-loc-periodicite">
@@ -1024,6 +1049,7 @@
       byId('m-loc-adresse').value = existing.adresseDestinataire || '';
       byId('m-loc-loyer').value = existing.loyer || 0;
       byId('m-loc-charges').value = existing.charges || 0;
+      byId('m-loc-teom').value = provisionTeomDuMois(existing) || '';
       byId('m-loc-date').value = existing.dateEntree || '';
       byId('m-loc-lieu-naissance').value = existing.lieuNaissance || '';
       byId('m-loc-date-naissance').value = existing.dateNaissance || '';
@@ -1066,6 +1092,11 @@
         adresseDestinataire: byId('m-loc-adresse').value.trim(),
         loyer: parseFloat(byId('m-loc-loyer').value) || 0,
         charges: parseFloat(byId('m-loc-charges').value) || 0,
+        provisionTeom: parseFloat(byId('m-loc-teom').value) || 0,
+        // Une provision en attente pas encore en vigueur est conservée ; une
+        // fois en vigueur, c'est la valeur saisie ici qui fait foi.
+        provisionTeomSuivante: isEdit && existing.provisionTeomSuivante
+          && existing.provisionTeomSuivante.aPartirDe > moisCourantISO() ? existing.provisionTeomSuivante : null,
         dateEntree: byId('m-loc-date').value,
         // Périodicité du loyer : un loyer trimestriel n'est dû que tous les
         // trois mois, à partir du mois d'échéance choisi (ex : janvier, avril,
@@ -1878,8 +1909,9 @@
     const l = locataireById(locSelect.value);
     if (!l) return;
     byId('doc-loyer').value = l.loyer;
-    byId('doc-charges').value = l.charges;
-    byId('doc-total-du').value = (Number(l.loyer) || 0) + (Number(l.charges) || 0);
+    const ymDoc = byId('doc-periode').value;
+    byId('doc-charges').value = chargesMensuelles(l, ymDoc);
+    byId('doc-total-du').value = (Number(l.loyer) || 0) + chargesMensuelles(l, ymDoc);
     byId('doc-montant-paye').value = '';
     byId('doc-montant-impaye').value = '';
     byId('med-montant').value = '';
@@ -1908,7 +1940,8 @@
     const derniere = l && data.charges
       .filter((c) => c.categorie === 'teom' && c.type === 'provision' && c.bienId === l.bienId && c.date)
       .sort((a, b) => b.date.localeCompare(a.date))[0];
-    byId('regul-provision-actuelle').value = derniere ? val(Number(derniere.montant) || 0) : '';
+    byId('regul-provision-actuelle').value = l && provisionTeomDuMois(l) ? val(provisionTeomDuMois(l))
+      : (derniere ? val(Number(derniere.montant) || 0) : '');
     // Nouvelle mensualité proposée : la TEOM réelle étalée sur douze mois.
     byId('regul-nouvelle-provision').value = ligne && ligne.due ? val(arrondi(ligne.due / 12)) : '';
     if (!byId('regul-mois').value) {
@@ -2040,6 +2073,8 @@
       ctx.solde = soldeRegulCharges();
       ctx.modalite = byId('regul-modalite').value;
       ctx.moisProchainLoyer = byId('regul-mois').value;
+      ctx.loyer = Number(l.loyer) || 0;
+      ctx.chargesHorsTeom = Number(l.charges) || 0;
       ctx.provisionActuelle = n('regul-provision-actuelle');
       ctx.nouvelleProvision = n('regul-nouvelle-provision');
       if (!ctx.moisProchainLoyer) { alert('Indiquez le mois du prochain loyer.'); return; }
@@ -2099,6 +2134,17 @@
       dateLabel: now.toLocaleDateString('fr-FR'),
       ...lastGenerated,
     });
+    // Le courrier de régularisation fixe la nouvelle provision TEOM : elle
+    // est reportée dans la fiche, pour les quittances et le suivi suivants.
+    if (lastGenerated.type === 'regularisation-charges' && lastGenerated.ctx.nouvelleProvision) {
+      const loc = locataireById(lastGenerated.locataireId);
+      if (loc) {
+        // Une provision précédente déjà en vigueur devient la provision de base.
+        const prec = loc.provisionTeomSuivante;
+        if (prec && prec.aPartirDe <= lastGenerated.ctx.moisProchainLoyer) loc.provisionTeom = Number(prec.montant) || 0;
+        loc.provisionTeomSuivante = { montant: lastGenerated.ctx.nouvelleProvision, aPartirDe: lastGenerated.ctx.moisProchainLoyer };
+      }
+    }
     save();
     renderDashboard();
     doc.save(nomFichier);
@@ -3804,14 +3850,14 @@
   function substitutePlaceholders(html, locataireId) {
     const l = locataireById(locataireId);
     const bien = l ? bienById(l.bienId) : null;
-    const total = l ? (Number(l.loyer) || 0) + (Number(l.charges) || 0) : 0;
+    const total = l ? (Number(l.loyer) || 0) + chargesMensuelles(l) : 0;
     const raw = {
       LOCATAIRE_NOM: l ? l.nom : '',
       LOCATAIRE_ADRESSE: l ? (l.adresseDestinataire || (bien ? bien.adresse : '')) : '',
       BIEN_NOM: bien ? bien.nom : '',
       BIEN_ADRESSE: bien ? bien.adresse : '',
       LOYER: l ? euros(l.loyer) : '',
-      CHARGES: l ? euros(l.charges) : '',
+      CHARGES: l ? euros(chargesMensuelles(l)) : '',
       TOTAL: l ? euros(total) : '',
       SCI_NOM: data.sci.nom || '',
       SCI_ADRESSE: data.sci.adresse || '',

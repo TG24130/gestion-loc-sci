@@ -260,6 +260,20 @@ const Documents = (function () {
       else if (actuelle && nouvelle < actuelle) sens = `, en baisse par rapport à la provision actuelle de ${fmtEUR(actuelle)} euros`;
       else if (actuelle) sens = ', inchangée par rapport à la provision actuelle';
       suite.push(`Afin que vos provisions correspondent au montant réel de la TEOM, votre provision mensuelle au titre de cette taxe est fixée à ${fmtEUR(nouvelle)} euros ${aCompter}${sens}.`);
+
+      const loyer = Number(ctx.loyer) || 0;
+      const charges = Number(ctx.chargesHorsTeom) || 0;
+      const mensuel = Math.round((loyer + charges + nouvelle) * 100) / 100;
+      const detail = `loyer ${fmtEUR(loyer)} € + charges locatives ${fmtEUR(charges)} € + provision TEOM ${fmtEUR(nouvelle)} €`;
+      const [ay, am] = String(ctx.moisProchainLoyer || '').split('-').map(Number);
+      const suivants = am === 1 ? `de février à décembre ${ay}` : 'pour les mois suivants';
+      if (prochain && solde !== 0) {
+        const premier = Math.round((mensuel + solde) * 100) / 100;
+        const regul = solde > 0 ? ` + régularisation ${fmtEUR(abs)} €` : ` − trop-perçu ${fmtEUR(abs)} €`;
+        suite.push(`Votre virement ${mois ? `de ${mois}` : 'du prochain mois'} sera donc exceptionnellement de ${fmtEUR(premier)} euros (${detail}${regul}). ${suivants.charAt(0).toUpperCase() + suivants.slice(1)}, votre virement mensuel sera de ${fmtEUR(mensuel)} euros (${detail}).`);
+      } else {
+        suite.push(`${mois ? `À compter de ${mois}` : 'À compter de votre prochaine échéance'}, votre virement mensuel sera donc de ${fmtEUR(mensuel)} euros (${detail}).`);
+      }
     }
     suite.push(`Les pièces justificatives (avis de taxe foncière ${annee}) sont tenues à votre disposition pendant six mois à compter de l'envoi du présent décompte.`);
     suite.push(`Restant à votre disposition pour toute précision, nous vous prions d'agréer, ${appel}, l'expression de nos salutations distinguées.`);
