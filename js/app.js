@@ -169,6 +169,7 @@
     relance: 'Relance',
     'mise-en-demeure': 'Mise en demeure',
     'regularisation-charges': 'Régularisation de charges',
+    'passage-teom': 'Passage à la TEOM',
     avenant: 'Avenant au bail',
     libre: 'Courrier libre',
   };
@@ -1876,13 +1877,15 @@
     byId('fields-relance').hidden = type !== 'relance';
     byId('fields-mise-en-demeure').hidden = type !== 'mise-en-demeure';
     byId('fields-regularisation-charges').hidden = type !== 'regularisation-charges';
+    byId('fields-passage-teom').hidden = type !== 'passage-teom';
     byId('fields-avenant').hidden = type !== 'avenant';
     byId('fields-libre').hidden = type !== 'libre';
-    byId('field-periode').hidden = type === 'libre' || type === 'avenant' || type === 'regularisation-charges';
+    byId('field-periode').hidden = type === 'libre' || type === 'avenant' || type === 'regularisation-charges' || type === 'passage-teom';
     // La periodicite ne concerne que la quittance de loyer.
     byId('field-periodicite').hidden = type !== 'quittance';
     majNotePeriodicite();
     if (type === 'regularisation-charges') prefillRegulCharges();
+    if (type === 'passage-teom') prefillPassageTeom();
     if (type === 'avenant') {
       byId('avenant-date-effet').value = byId('avenant-date-effet').value || todayISO();
       renderAvenantChargesEditor(AVENANT_DEFAULT_LINES);
@@ -1918,7 +1921,53 @@
     if (!byId('doc-ville').value) byId('doc-ville').value = data.sci.ville || '';
     appliquerPeriodiciteLocataire();
     if (typeSelect.value === 'regularisation-charges') prefillRegulCharges();
+    if (typeSelect.value === 'passage-teom') prefillPassageTeom();
   }
+
+  // Courrier de passage à la TEOM : la provision par défaut dépend du bien
+  // (30 € la maison 229A, 15 € le bureau, 25 € les maisons 1 à 5).
+  function provisionTeomParDefaut(l, bien) {
+    const texte = `${bien ? bien.nom : ''} ${l.designation || ''}`;
+    if (/bureau/i.test(texte)) return 15;
+    if (bien && (bien.groupe ? bien.groupe === 'maison-229a' : /229\s*a(?![a-z0-9])/i.test(String(bien.nom || '')))) return 30;
+    return 25;
+  }
+
+  function nbMoisLocataire(l) {
+    return (l.periodicite || 'mensuelle') === 'trimestrielle' ? 3 : 1;
+  }
+
+  function prefillPassageTeom() {
+    const l = locataireById(locSelect.value);
+    if (!l) return;
+    const bien = bienById(l.bienId);
+    if (!byId('pteom-mois').value) byId('pteom-mois').value = '2027-01';
+    const mois = byId('pteom-mois').value;
+    // Montant actuel : celui du mois précédant la date d'effet.
+    const [y, m] = mois.split('-').map(Number);
+    const avant = new Date(y, m - 2, 1);
+    const ymAvant = avant.getFullYear() + '-' + String(avant.getMonth() + 1).padStart(2, '0');
+    const nb = nbMoisLocataire(l);
+    byId('pteom-provision').value = provisionTeomParDefaut(l, bien);
+    byId('pteom-actuel').value = arrondi(((Number(l.loyer) || 0) + chargesMensuelles(l, ymAvant)) * nb);
+    const periode = nb === 3 ? 'trimestriel' : 'mensuel';
+    byId('pteom-actuel-label').textContent = `Montant actuel du virement ${periode} (€)`;
+    byId('pteom-nouveau-label').textContent = `Nouveau montant du virement ${periode}`;
+    majPassageTeom();
+  }
+
+  function nouveauVirementPassageTeom() {
+    const l = locataireById(locSelect.value);
+    const nb = l ? nbMoisLocataire(l) : 1;
+    return arrondi((parseFloat(byId('pteom-actuel').value) || 0) + (parseFloat(byId('pteom-provision').value) || 0) * nb);
+  }
+
+  function majPassageTeom() {
+    byId('pteom-nouveau').textContent = euros(nouveauVirementPassageTeom());
+  }
+
+  ['pteom-provision', 'pteom-actuel'].forEach((id) => byId(id).addEventListener('input', majPassageTeom));
+  byId('pteom-mois').addEventListener('change', prefillPassageTeom);
 
   // Courrier de régularisation : chiffres repris du tableau « TEOM SMD3 »
   // pour le logement du locataire et l'année choisie (modifiables avant
@@ -2061,6 +2110,16 @@
       ctx.relance2 = byId('med-relance2').value;
       ctx.jourExigibilite = parseInt(byId('med-jour').value, 10) || 1;
       montant = ctx.montantImpaye;
+    } else if (type === 'passage-teom') {
+      ctx.moisEffet = byId('pteom-mois').value;
+      ctx.provisionTeom = parseFloat(byId('pteom-provision').value) || 0;
+      ctx.virementActuel = parseFloat(byId('pteom-actuel').value) || 0;
+      ctx.nouveauVirement = nouveauVirementPassageTeom();
+      ctx.nbMois = nbMoisLocataire(l);
+      if (!ctx.moisEffet || !ctx.provisionTeom) { alert('Indiquez la date d\'effet et la provision TEOM.'); return; }
+      ctx.periode = '';
+      ctx.periodeLabel = '';
+      montant = ctx.nouveauVirement;
     } else if (type === 'regularisation-charges') {
       const n = (id) => parseFloat(byId(id).value) || 0;
       ctx.annee = byId('regul-annee').value;
@@ -2136,6 +2195,12 @@
     });
     // Le courrier de régularisation fixe la nouvelle provision TEOM : elle
     // est reportée dans la fiche, pour les quittances et le suivi suivants.
+    // Le courrier de passage à la TEOM fixe la première provision, en vigueur
+    // à partir de sa date d'effet seulement.
+    if (lastGenerated.type === 'passage-teom') {
+      const loc = locataireById(lastGenerated.locataireId);
+      if (loc) loc.provisionTeomSuivante = { montant: lastGenerated.ctx.provisionTeom, aPartirDe: lastGenerated.ctx.moisEffet };
+    }
     if (lastGenerated.type === 'regularisation-charges' && lastGenerated.ctx.nouvelleProvision) {
       const loc = locataireById(lastGenerated.locataireId);
       if (loc) {

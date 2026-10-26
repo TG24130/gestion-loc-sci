@@ -286,6 +286,59 @@ const Documents = (function () {
     };
   }
 
+  // Courrier annonçant la provision TEOM (redevance incitative du SMD3
+  // remplacée par la TEOM). Même forme que le courrier de régularisation.
+  function passageTeomTexte(ctx) {
+    const appel = appelLocataire(ctx);
+    const mois = moisLabel(ctx.moisEffet);
+    const [y, m] = String(ctx.moisEffet || '').split('-').map(Number);
+    const dateEffet = y ? `1er ${MONTHS_FR[m - 1]} ${y}` : '';
+    const trimestriel = Number(ctx.nbMois) === 3;
+    const periode = trimestriel ? 'trimestriel' : 'mensuel';
+    const provision = Number(ctx.provisionTeom) || 0;
+    const nouveau = Number(ctx.nouveauVirement) || 0;
+    const lignes = [
+      { label: 'Logement concerné', value: String(ctx.locationAdresse || '').replace(/\n/g, ', ') },
+      { label: `Virement ${periode} actuel (loyer et charges)`, value: fmtEUR(ctx.virementActuel) + ' €' },
+      { label: 'Provision TEOM mensuelle', value: fmtEUR(provision) + ' €' + (trimestriel ? ` (soit ${fmtEUR(provision * 3)} € par trimestre)` : '') },
+      { label: `Nouveau virement ${periode} à compter du ${dateEffet}`, value: fmtEUR(nouveau) + ' €', total: true },
+    ];
+    return {
+      titre: 'Ordures ménagères : passage à la TEOM',
+      objet: `Provision pour charges TEOM à compter du ${dateEffet} – nouveau montant de votre virement`,
+      paragraphes: [
+        `${appel},`,
+        `Comme l'ont annoncé le SMD3 et les Finances publiques de la Dordogne, la redevance incitative d'enlèvement des ordures ménagères est remplacée au ${dateEffet} par la taxe d'enlèvement des ordures ménagères (TEOM).`,
+        "À compter de cette date, vous ne recevrez plus de facture du SMD3 pour les déchets. La TEOM est facturée au propriétaire avec son avis de taxe foncière et, conformément au décret n° 87-713 du 26 août 1987, elle fait partie des charges récupérables auprès du locataire.",
+        `Son montant pour ${y || ''} ne sera connu qu'à réception de l'avis de taxe foncière, attendu en août ou septembre ${y || ''}. Dans l'attente, et comme le prévoit l'avenant à votre contrat de location joint au présent courrier, une provision de ${fmtEUR(provision)} euros par mois au titre de la TEOM est ajoutée à vos charges à compter du ${dateEffet}.`,
+      ],
+      lignes,
+      suite: [
+        `À compter de votre loyer de ${mois}, votre virement ${periode} passera donc de ${fmtEUR(ctx.virementActuel)} euros à ${fmtEUR(nouveau)} euros (${NumberToWords.amountToWords(nouveau)}). Nous vous remercions de bien vouloir modifier votre virement en conséquence.`,
+        `Conformément à l'article 23 de la loi n° 89-462 du 6 juillet 1989, ces provisions feront l'objet d'une régularisation annuelle : à réception de l'avis de taxe foncière ${y || ''}, nous vous adresserons le décompte de la TEOM réellement due pour votre logement, avec le solde éventuel à régler ou à vous rembourser.`,
+        "Nous vous remercions de bien vouloir nous retourner l'avenant ci-joint, daté et signé.",
+        `Restant à votre disposition pour toute précision, nous vous prions d'agréer, ${appel}, l'expression de nos salutations distinguées.`,
+      ],
+    };
+  }
+
+  function courrierAvecTableau(t, ctx) {
+    const p = (txt) => `<p class="doc-body">${escapeHTML(txt)}</p>`;
+    return `
+      <div class="doc">
+        ${header(ctx)}
+        <h1 class="doc-title">${escapeHTML(t.titre)}</h1>
+        <p class="doc-body"><strong>Objet : ${escapeHTML(t.objet)}</strong></p>
+        ${t.paragraphes.map(p).join('')}
+        <table class="doc-table">
+          ${t.lignes.map((l) => `<tr${l.total ? ' class="total"' : ''}><td>${escapeHTML(l.label)}</td><td>${escapeHTML(l.value)}</td></tr>`).join('')}
+        </table>
+        ${t.suite.map(p).join('')}
+        ${signatureBlock(ctx, 'Signature du bailleur')}
+      </div>
+    `;
+  }
+
   function regularisationCharges(ctx) {
     const t = regularisationTexte(ctx);
     const p = (txt) => `<p class="doc-body">${escapeHTML(txt)}</p>`;
@@ -387,11 +440,12 @@ const Documents = (function () {
       case 'relance': return relance(full);
       case 'mise-en-demeure': return miseEnDemeure(full);
       case 'regularisation-charges': return regularisationCharges(full);
+      case 'passage-teom': return courrierAvecTableau(passageTeomTexte(full), full);
       case 'avenant': return avenant(full);
       case 'libre': return libre(full);
       default: return '';
     }
   }
 
-  return { build, fmtEUR, todayFR, periodLabel, miseEnDemeureTexte, regularisationTexte, appelLocataire };
+  return { build, fmtEUR, todayFR, periodLabel, miseEnDemeureTexte, regularisationTexte, passageTeomTexte, appelLocataire };
 })();

@@ -10,7 +10,7 @@
      depuis l'ecran d'accueil affiche un bandeau qui jure avec le fond. -->
 <meta name="theme-color" content="#eef4f2" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0a1714" media="(prefers-color-scheme: dark)">
-<link rel="manifest" href="manifest.json?v=2026102604">
+<link rel="manifest" href="manifest.json?v=2026102605">
 <link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -18,10 +18,10 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Gestion Loc SCI">
 <meta name="mobile-web-app-capable" content="yes">
-<link rel="stylesheet" href="css/style.css?v=2026102604">
-<script type="module" src="js/firebaseAuth.js?v=2026102604"></script>
-<script type="module" src="js/firestoreSync.js?v=2026102604"></script>
-<script type="module" src="js/firebaseStorageSync.js?v=2026102604"></script>
+<link rel="stylesheet" href="css/style.css?v=2026102605">
+<script type="module" src="js/firebaseAuth.js?v=2026102605"></script>
+<script type="module" src="js/firestoreSync.js?v=2026102605"></script>
+<script type="module" src="js/firebaseStorageSync.js?v=2026102605"></script>
 </head>
 <body>
 
@@ -262,7 +262,7 @@
     <section id="view-generer" class="view">
       <header class="view-header">
         <h1>Générer un document</h1>
-        <p>Quittance, reçu partiel, relance, mise en demeure, régularisation de charges ou courrier libre</p>
+        <p>Quittance, reçu partiel, relance, mise en demeure, courriers de charges ou courrier libre</p>
       </header>
 
       <!--
@@ -290,6 +290,7 @@
               <option value="relance">Relance pour impayé</option>
               <option value="mise-en-demeure">Mise en demeure pour impayé</option>
               <option value="regularisation-charges">Courrier de régularisation de charges</option>
+              <option value="passage-teom">Courrier de passage à la TEOM</option>
               <option value="avenant">Avenant au bail</option>
               <option value="libre">Courrier libre</option>
             </select>
@@ -412,6 +413,26 @@
               <label>Nouvelle provision mensuelle TEOM (€)</label>
               <input type="number" step="0.01" id="regul-nouvelle-provision">
               <p class="charges-note" style="margin:6px 0 0;">Proposée : TEOM réellement due ÷ 12, à ajuster si besoin.</p>
+            </div>
+          </div>
+
+          <div id="fields-passage-teom" class="doc-fields" hidden>
+            <p class="charges-note" style="margin:0 0 10px;">Annonce aux locataires de la provision TEOM qui remplace la redevance incitative du SMD3. Montants repris de la fiche du locataire, modifiables.</p>
+            <div class="field">
+              <label>Date d'effet (mois)</label>
+              <input type="month" id="pteom-mois">
+            </div>
+            <div class="field">
+              <label>Provision TEOM mensuelle (€)</label>
+              <input type="number" step="0.01" id="pteom-provision">
+            </div>
+            <div class="field">
+              <label id="pteom-actuel-label">Montant actuel du virement (€)</label>
+              <input type="number" step="0.01" id="pteom-actuel">
+            </div>
+            <div class="field">
+              <label id="pteom-nouveau-label">Nouveau montant du virement</label>
+              <div class="avenant-total-display" id="pteom-nouveau">—</div>
             </div>
           </div>
 
@@ -1473,15 +1494,15 @@
 
 <script src="js/vendor/jspdf.umd.min.js"></script>
 <script src="js/vendor/jszip.min.js"></script>
-<script src="js/numberToWords.js?v=2026102604"></script>
-<script src="js/storage.js?v=2026102604"></script>
-<script src="js/filesDb.js?v=2026102604"></script>
-<script src="js/documents.js?v=2026102604"></script>
-<script src="js/pdfBuilder.js?v=2026102604"></script>
-<script src="js/richTextPdf.js?v=2026102604"></script>
-<script src="js/edlPdf.js?v=2026102604"></script>
-<script src="js/annonce.js?v=2026102604"></script>
-<script src="js/candidature.js?v=2026102604"></script>
-<script src="js/app.js?v=2026102604"></script>
+<script src="js/numberToWords.js?v=2026102605"></script>
+<script src="js/storage.js?v=2026102605"></script>
+<script src="js/filesDb.js?v=2026102605"></script>
+<script src="js/documents.js?v=2026102605"></script>
+<script src="js/pdfBuilder.js?v=2026102605"></script>
+<script src="js/richTextPdf.js?v=2026102605"></script>
+<script src="js/edlPdf.js?v=2026102605"></script>
+<script src="js/annonce.js?v=2026102605"></script>
+<script src="js/candidature.js?v=2026102605"></script>
+<script src="js/app.js?v=2026102605"></script>
 </body>
 </html>

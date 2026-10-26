@@ -168,7 +168,10 @@ const PdfBuilder = (function () {
   }
 
   function regularisationCharges(doc, ctx) {
-    const t = Documents.regularisationTexte(ctx);
+    courrierAvecTableau(doc, ctx, Documents.regularisationTexte(ctx));
+  }
+
+  function courrierAvecTableau(doc, ctx, t) {
     let y = drawHeader(doc, ctx, 64);
     y = drawTitle(doc, t.titre.toUpperCase(), null, y);
     doc.setFont('times', 'bold');
@@ -408,6 +411,7 @@ const PdfBuilder = (function () {
     else if (type === 'relance') relance(doc, full);
     else if (type === 'mise-en-demeure') miseEnDemeure(doc, full);
     else if (type === 'regularisation-charges') regularisationCharges(doc, full);
+    else if (type === 'passage-teom') courrierAvecTableau(doc, full, Documents.passageTeomTexte(full));
     else if (type === 'avenant') avenant(doc, full);
     else if (type === 'libre') libre(doc, full);
     else if (type === 'fiche-renseignements') ficheRenseignements(doc, full);
@@ -427,6 +431,9 @@ const PdfBuilder = (function () {
     if (type === 'fiche-renseignements') {
       const bien = slug(ctx.bienNom);
       return 'fiche-renseignements' + (bien ? '-' + bien : '') + '.pdf';
+    }
+    if (type === 'passage-teom') {
+      return `passage-teom-${slug(ctx.locataireNom)}-${ctx.moisEffet || ''}.pdf`;
     }
     if (type === 'regularisation-charges') {
       return `regularisation-charges-${slug(ctx.locataireNom)}-${ctx.annee || ''}.pdf`;
