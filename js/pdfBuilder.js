@@ -167,6 +167,22 @@ const PdfBuilder = (function () {
     drawSignature(doc, ctx, y + 14, 'Signature du bailleur');
   }
 
+  function regularisationCharges(doc, ctx) {
+    const t = Documents.regularisationTexte(ctx);
+    let y = drawHeader(doc, ctx, 64);
+    y = drawTitle(doc, t.titre.toUpperCase(), null, y);
+    doc.setFont('times', 'bold');
+    doc.setFontSize(10.5);
+    y = addWrapped(doc, `Objet : ${t.objet}`, MARGIN, y, CONTENT_W, 14.5) + 10;
+    doc.setFont('times', 'normal');
+    t.paragraphes.forEach((para) => { y = addWrapped(doc, para, MARGIN, y, CONTENT_W, 13.5) + 8; });
+    y = drawTable(doc, t.lignes, y + 4);
+    doc.setFont('times', 'normal');
+    doc.setFontSize(10.5);
+    t.suite.forEach((para) => { y = addWrapped(doc, para, MARGIN, y, CONTENT_W, 13.5) + 8; });
+    drawSignature(doc, ctx, y + 14, 'Signature du bailleur');
+  }
+
   function avenant(doc, ctx) {
     let y = 60;
     doc.setFont('times', 'bold');
@@ -391,6 +407,7 @@ const PdfBuilder = (function () {
     else if (type === 'recu-partiel') recuPartiel(doc, full);
     else if (type === 'relance') relance(doc, full);
     else if (type === 'mise-en-demeure') miseEnDemeure(doc, full);
+    else if (type === 'regularisation-charges') regularisationCharges(doc, full);
     else if (type === 'avenant') avenant(doc, full);
     else if (type === 'libre') libre(doc, full);
     else if (type === 'fiche-renseignements') ficheRenseignements(doc, full);
@@ -410,6 +427,9 @@ const PdfBuilder = (function () {
     if (type === 'fiche-renseignements') {
       const bien = slug(ctx.bienNom);
       return 'fiche-renseignements' + (bien ? '-' + bien : '') + '.pdf';
+    }
+    if (type === 'regularisation-charges') {
+      return `regularisation-charges-${slug(ctx.locataireNom)}-${ctx.annee || ''}.pdf`;
     }
     const typeSlug = { quittance: 'quittance', 'recu-partiel': 'recu-partiel', relance: 'relance', 'mise-en-demeure': 'mise-en-demeure', avenant: 'avenant', libre: 'courrier' }[type] || 'document';
     const per = ctx.periode ? `-${ctx.periode}` : '';

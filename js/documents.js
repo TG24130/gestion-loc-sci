@@ -204,6 +204,92 @@ const Documents = (function () {
     `;
   }
 
+  // Courrier de régularisation annuelle de la TEOM (art. 23 de la loi
+  // n° 89-462 ; décret n° 87-713, annexe, rubrique VIII). Texte partagé entre
+  // l'aperçu HTML et le PDF.
+  function regularisationTexte(ctx) {
+    const appel = appelLocataire(ctx);
+    const annee = ctx.annee || '';
+    const solde = Number(ctx.solde) || 0;
+    const abs = Math.abs(solde);
+    const prochain = ctx.modalite !== 'separe';
+    const mois = moisLabel(ctx.moisProchainLoyer);
+    const loyerDe = mois ? `votre prochain loyer de ${mois}` : 'votre prochain loyer';
+    const surf = (n) => (Number(n) || 0).toLocaleString('fr-FR') + ' m²';
+    const lignes = [
+      { label: 'Logement concerné', value: String(ctx.locationAdresse || '').replace(/\n/g, ', ') },
+      { label: `TEOM ${annee} (avis de taxe foncière, tous logements)`, value: fmtEUR(ctx.totalTeom) + ' €' },
+      { label: 'Surface de votre logement / surface totale', value: `${surf(ctx.surface)} / ${surf(ctx.surfaceTotale)}` },
+      { label: 'TEOM réellement due pour votre logement', value: fmtEUR(ctx.teomDue) + ' €' },
+      { label: `Provisions versées en ${annee}`, value: fmtEUR(ctx.provisions) + ' €' },
+    ];
+    if (Number(ctx.regulDeja)) lignes.push({ label: 'Régularisation déjà effectuée', value: fmtEUR(ctx.regulDeja) + ' €' });
+    lignes.push({
+      label: solde > 0 ? 'Solde restant à votre charge' : solde < 0 ? 'Trop-perçu en votre faveur' : 'Solde',
+      value: fmtEUR(abs) + ' €',
+      total: true,
+    });
+
+    let conclusion;
+    if (solde > 0) {
+      conclusion = `Les provisions versées étant inférieures à la somme réellement due, il reste à votre charge un montant de ${fmtEUR(abs)} euros (${NumberToWords.amountToWords(abs)}). `
+        + (prochain
+          ? `Nous vous remercions de bien vouloir le régler en même temps que ${loyerDe}.`
+          : 'Nous vous remercions de bien vouloir nous le régler, selon les modalités de paiement habituelles, dans un délai d\'un mois à compter de la réception du présent courrier.');
+    } else if (solde < 0) {
+      conclusion = `Les provisions versées étant supérieures à la somme réellement due, vous bénéficiez d'un trop-perçu de ${fmtEUR(abs)} euros (${NumberToWords.amountToWords(abs)}). `
+        + (prochain
+          ? `Ce montant sera déduit de ${loyerDe}.`
+          : 'Ce montant vous sera remboursé par virement dans les meilleurs délais.');
+    } else {
+      conclusion = 'Les provisions versées correspondent exactement à la somme réellement due : aucune somme n\'est due de part ni d\'autre.';
+    }
+
+    const paragraphes = [
+      `${appel},`,
+      `Conformément à l'article 23 de la loi n° 89-462 du 6 juillet 1989, les provisions pour charges que vous versez chaque mois font l'objet d'une régularisation annuelle. Nous vous adressons ci-dessous le décompte de la taxe d'enlèvement des ordures ménagères (TEOM) pour l'année ${annee}, charge récupérable en application du décret n° 87-713 du 26 août 1987.`,
+      `La TEOM portée sur l'avis de taxe foncière ${annee} concerne l'ensemble des logements. Elle est répartie entre eux au prorata de leur surface habitable.`,
+    ];
+    const suite = [conclusion];
+    const nouvelle = Number(ctx.nouvelleProvision) || 0;
+    const actuelle = Number(ctx.provisionActuelle) || 0;
+    if (nouvelle) {
+      const aCompter = mois ? `à compter de votre loyer de ${mois}` : 'à compter de votre prochaine échéance';
+      let sens = '';
+      if (actuelle && nouvelle > actuelle) sens = `, en hausse par rapport à la provision actuelle de ${fmtEUR(actuelle)} euros`;
+      else if (actuelle && nouvelle < actuelle) sens = `, en baisse par rapport à la provision actuelle de ${fmtEUR(actuelle)} euros`;
+      else if (actuelle) sens = ', inchangée par rapport à la provision actuelle';
+      suite.push(`Afin que vos provisions correspondent au montant réel de la TEOM, votre provision mensuelle au titre de cette taxe est fixée à ${fmtEUR(nouvelle)} euros ${aCompter}${sens}.`);
+    }
+    suite.push(`Les pièces justificatives (avis de taxe foncière ${annee}) sont tenues à votre disposition pendant six mois à compter de l'envoi du présent décompte.`);
+    suite.push(`Restant à votre disposition pour toute précision, nous vous prions d'agréer, ${appel}, l'expression de nos salutations distinguées.`);
+    return {
+      titre: 'Régularisation des charges locatives',
+      objet: `Régularisation annuelle des charges – TEOM ${annee}`,
+      paragraphes,
+      lignes,
+      suite,
+    };
+  }
+
+  function regularisationCharges(ctx) {
+    const t = regularisationTexte(ctx);
+    const p = (txt) => `<p class="doc-body">${escapeHTML(txt)}</p>`;
+    return `
+      <div class="doc">
+        ${header(ctx)}
+        <h1 class="doc-title">${t.titre}</h1>
+        <p class="doc-body"><strong>Objet : ${escapeHTML(t.objet)}</strong></p>
+        ${t.paragraphes.map(p).join('')}
+        <table class="doc-table">
+          ${t.lignes.map((l) => `<tr${l.total ? ' class="total"' : ''}><td>${escapeHTML(l.label)}</td><td>${escapeHTML(l.value)}</td></tr>`).join('')}
+        </table>
+        ${t.suite.map(p).join('')}
+        ${signatureBlock(ctx, 'Signature du bailleur')}
+      </div>
+    `;
+  }
+
   function avenant(ctx) {
     const lignesHtml = (ctx.chargeLines || []).map((l) => {
       const montant = fmtEUR(l.montant) + ' €';
@@ -286,11 +372,12 @@ const Documents = (function () {
       case 'recu-partiel': return recuPartiel(full);
       case 'relance': return relance(full);
       case 'mise-en-demeure': return miseEnDemeure(full);
+      case 'regularisation-charges': return regularisationCharges(full);
       case 'avenant': return avenant(full);
       case 'libre': return libre(full);
       default: return '';
     }
   }
 
-  return { build, fmtEUR, todayFR, periodLabel, miseEnDemeureTexte, appelLocataire };
+  return { build, fmtEUR, todayFR, periodLabel, miseEnDemeureTexte, regularisationTexte, appelLocataire };
 })();

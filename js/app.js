@@ -168,6 +168,7 @@
     'recu-partiel': 'Reçu partiel',
     relance: 'Relance',
     'mise-en-demeure': 'Mise en demeure',
+    'regularisation-charges': 'Régularisation de charges',
     avenant: 'Avenant au bail',
     libre: 'Courrier libre',
   };
@@ -1843,12 +1844,14 @@
     byId('fields-recu-partiel').hidden = type !== 'recu-partiel';
     byId('fields-relance').hidden = type !== 'relance';
     byId('fields-mise-en-demeure').hidden = type !== 'mise-en-demeure';
+    byId('fields-regularisation-charges').hidden = type !== 'regularisation-charges';
     byId('fields-avenant').hidden = type !== 'avenant';
     byId('fields-libre').hidden = type !== 'libre';
-    byId('field-periode').hidden = type === 'libre' || type === 'avenant';
+    byId('field-periode').hidden = type === 'libre' || type === 'avenant' || type === 'regularisation-charges';
     // La periodicite ne concerne que la quittance de loyer.
     byId('field-periodicite').hidden = type !== 'quittance';
     majNotePeriodicite();
+    if (type === 'regularisation-charges') prefillRegulCharges();
     if (type === 'avenant') {
       byId('avenant-date-effet').value = byId('avenant-date-effet').value || todayISO();
       renderAvenantChargesEditor(AVENANT_DEFAULT_LINES);
@@ -1882,7 +1885,54 @@
     byId('med-montant').value = '';
     if (!byId('doc-ville').value) byId('doc-ville').value = data.sci.ville || '';
     appliquerPeriodiciteLocataire();
+    if (typeSelect.value === 'regularisation-charges') prefillRegulCharges();
   }
+
+  // Courrier de régularisation : chiffres repris du tableau « TEOM SMD3 »
+  // pour le logement du locataire et l'année choisie (modifiables avant
+  // génération).
+  function prefillRegulCharges() {
+    const anneeChamp = byId('regul-annee');
+    if (!anneeChamp.value) anneeChamp.value = new Date().getFullYear();
+    const l = locataireById(locSelect.value);
+    const calc = calculRegularisation('teom', anneeChamp.value);
+    const ligne = l && calc.lignes[l.bienId];
+    const val = (n) => (n ? String(n) : '');
+    byId('regul-total').value = val(calc.totalGlobal);
+    byId('regul-surface-totale').value = val(calc.surfaceTotale);
+    byId('regul-surface').value = ligne ? val(ligne.surface) : '';
+    byId('regul-due').value = ligne ? val(ligne.due) : '';
+    byId('regul-provisions').value = ligne ? val(ligne.provisions) : '';
+    byId('regul-deja').value = ligne ? val(ligne.regul) : '';
+    // Provision actuelle : la dernière provision saisie pour ce logement.
+    const derniere = l && data.charges
+      .filter((c) => c.categorie === 'teom' && c.type === 'provision' && c.bienId === l.bienId && c.date)
+      .sort((a, b) => b.date.localeCompare(a.date))[0];
+    byId('regul-provision-actuelle').value = derniere ? val(Number(derniere.montant) || 0) : '';
+    // Nouvelle mensualité proposée : la TEOM réelle étalée sur douze mois.
+    byId('regul-nouvelle-provision').value = ligne && ligne.due ? val(arrondi(ligne.due / 12)) : '';
+    if (!byId('regul-mois').value) {
+      const d = new Date();
+      d.setDate(1);
+      d.setMonth(d.getMonth() + 1);
+      byId('regul-mois').value = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0');
+    }
+    majSoldeRegulCharges();
+  }
+
+  function soldeRegulCharges() {
+    const n = (id) => parseFloat(byId(id).value) || 0;
+    return arrondi(n('regul-due') - n('regul-provisions') - n('regul-deja'));
+  }
+
+  function majSoldeRegulCharges() {
+    const s = soldeRegulCharges();
+    byId('regul-solde').textContent = s > 0 ? `${euros(s)} à réclamer au locataire`
+      : s < 0 ? `${euros(-s)} à rembourser au locataire` : 'Soldé (0,00 €)';
+  }
+
+  byId('regul-annee').addEventListener('change', prefillRegulCharges);
+  ['regul-due', 'regul-provisions', 'regul-deja'].forEach((id) => byId(id).addEventListener('input', majSoldeRegulCharges));
 
   function createChargeRowElement(line) {
     const div = document.createElement('div');
@@ -1978,6 +2028,25 @@
       ctx.relance2 = byId('med-relance2').value;
       ctx.jourExigibilite = parseInt(byId('med-jour').value, 10) || 1;
       montant = ctx.montantImpaye;
+    } else if (type === 'regularisation-charges') {
+      const n = (id) => parseFloat(byId(id).value) || 0;
+      ctx.annee = byId('regul-annee').value;
+      ctx.totalTeom = n('regul-total');
+      ctx.surface = n('regul-surface');
+      ctx.surfaceTotale = n('regul-surface-totale');
+      ctx.teomDue = n('regul-due');
+      ctx.provisions = n('regul-provisions');
+      ctx.regulDeja = n('regul-deja');
+      ctx.solde = soldeRegulCharges();
+      ctx.modalite = byId('regul-modalite').value;
+      ctx.moisProchainLoyer = byId('regul-mois').value;
+      ctx.provisionActuelle = n('regul-provision-actuelle');
+      ctx.nouvelleProvision = n('regul-nouvelle-provision');
+      if (!ctx.moisProchainLoyer) { alert('Indiquez le mois du prochain loyer.'); return; }
+      if (!ctx.nouvelleProvision) { alert('Indiquez la nouvelle provision mensuelle.'); return; }
+      ctx.periode = '';
+      ctx.periodeLabel = `Année ${ctx.annee}`;
+      montant = ctx.solde;
     } else if (type === 'avenant') {
       ctx.sciNom = data.sci.nom || '';
       ctx.sciCapital = data.sci.capitalSocial || '';
@@ -2008,7 +2077,7 @@
     preview.innerHTML = html;
     byId('btn-download-pdf').disabled = false;
 
-    lastGenerated = { type, locataireId: l.id, locataireNom: l.nom, periode, periodeLabel, montant, ctx,
+    lastGenerated = { type, locataireId: l.id, locataireNom: l.nom, periode: ctx.periode, periodeLabel: ctx.periodeLabel, montant, ctx,
       // Conservee pour le suivi des paiements : une quittance trimestrielle
       // couvre aussi les deux mois suivants.
       periodicite, nbMois };
@@ -2111,36 +2180,52 @@
   }
 
   // Bilan de l'année par logement : provisions versées face à la facture réelle.
-  function renderChargesRegulTable(cat, year) {
-    byId('charges-regul-title').textContent = 'Régularisation ' + year;
-    const tbody = document.querySelector('#charges-regul-table tbody');
+  function arrondi(n) { return Math.round(n * 100) / 100; }
+  function surfaceBien(b) { return Number(b.surfaceHabitable) || 0; }
+
+  // Bilan d'une catégorie à provisions pour une année, logement par logement.
+  // Partagé par le tableau de régularisation et le courrier de régularisation.
+  function calculRegularisation(cat, year) {
     const entries = data.charges.filter((c) => c.categorie === cat && c.date && c.date.slice(0, 4) === String(year));
     const somme = (bienId, type) => entries
       .filter((c) => c.bienId === bienId && c.type === type)
       .reduce((s, c) => s + (Number(c.montant) || 0), 0);
     const biens = biensPourCharge(cat);
+    const totalGlobal = entries.filter((c) => c.type === 'facture-globale')
+      .reduce((s, c) => s + (Number(c.montant) || 0), 0);
+    const surfaceTotale = biens.reduce((s, b) => s + surfaceBien(b), 0);
+    // Part de chaque maison, en centimes : la dernière maison prise en compte
+    // absorbe l'écart d'arrondi pour que la somme des parts égale la facture.
+    const parts = {};
+    const repartis = biens.filter((b) => surfaceBien(b) > 0);
+    let resteCentimes = Math.round(totalGlobal * 100);
+    repartis.forEach((b, i) => {
+      const c = i === repartis.length - 1 ? resteCentimes
+        : Math.round(totalGlobal * 100 * surfaceBien(b) / surfaceTotale);
+      parts[b.id] = c / 100;
+      resteCentimes -= c;
+    });
+    const lignes = {};
+    biens.forEach((b) => {
+      const provisions = arrondi(somme(b.id, 'provision'));
+      const due = arrondi(somme(b.id, 'facture') + (parts[b.id] || 0));
+      const regul = arrondi(somme(b.id, 'regularisation'));
+      lignes[b.id] = { surface: surfaceBien(b), provisions, due, regul, solde: arrondi(due - provisions - regul) };
+    });
+    return { biens, totalGlobal, surfaceTotale, lignes };
+  }
+
+  function renderChargesRegulTable(cat, year) {
+    byId('charges-regul-title').textContent = 'Régularisation ' + year;
+    const tbody = document.querySelector('#charges-regul-table tbody');
+    const { biens, totalGlobal, surfaceTotale, lignes } = calculRegularisation(cat, year);
+    const surface = surfaceBien;
     const resume = byId('charges-regul-resume');
     if (biens.length === 0) {
       resume.textContent = '';
       tbody.innerHTML = '<tr class="empty-row"><td colspan="8">Ajoutez un bien pour afficher la régularisation.</td></tr>';
       return;
     }
-    const arrondi = (n) => Math.round(n * 100) / 100;
-    const surface = (b) => Number(b.surfaceHabitable) || 0;
-    const totalGlobal = entries.filter((c) => c.type === 'facture-globale')
-      .reduce((s, c) => s + (Number(c.montant) || 0), 0);
-    const surfaceTotale = biens.reduce((s, b) => s + surface(b), 0);
-    // Part de chaque maison, en centimes : la dernière maison prise en compte
-    // absorbe l'écart d'arrondi pour que la somme des parts égale la facture.
-    const parts = {};
-    const repartis = biens.filter((b) => surface(b) > 0);
-    let resteCentimes = Math.round(totalGlobal * 100);
-    repartis.forEach((b, i) => {
-      const c = i === repartis.length - 1 ? resteCentimes
-        : Math.round(totalGlobal * 100 * surface(b) / surfaceTotale);
-      parts[b.id] = c / 100;
-      resteCentimes -= c;
-    });
     if (!totalGlobal) {
       resume.textContent = `Facture TEOM globale ${year} non saisie : ajoutez-la avec le type « Facture TEOM globale », sans tenir compte du logement choisi.`;
     } else if (!surfaceTotale) {
@@ -2149,10 +2234,7 @@
       resume.textContent = `Facture TEOM globale ${year} : ${euros(totalGlobal)}, répartie sur ${surfaceTotale.toLocaleString('fr-FR')} m² (${euros(totalGlobal / surfaceTotale)} par m²).`;
     }
     tbody.innerHTML = biens.map((b) => {
-      const provisions = somme(b.id, 'provision');
-      const facture = arrondi(somme(b.id, 'facture') + (parts[b.id] || 0));
-      const regul = somme(b.id, 'regularisation');
-      const solde = arrondi(facture - provisions - regul);
+      const { provisions, due: facture, regul, solde } = lignes[b.id];
       const locs = locatairesDuBien(b.id).map((l) => escapeHTML(l.nom)).join(', ') || '—';
       let soldeCell;
       let action = '';
