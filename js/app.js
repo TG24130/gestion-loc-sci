@@ -186,6 +186,7 @@
     ordures: 'Ordures ménagères',
     edf: 'EDF communs',
     phyto: 'Entretien Phyto',
+    teom: 'TEOM SMD3',
   };
   // Categories reservees a certains biens seulement. L'entretien de la
   // station phyto ne concerne que la MAISON 229A : les autres logements
@@ -202,6 +203,16 @@
     const filtre = CHARGE_BIENS_AUTORISES[cat];
     return filtre ? data.biens.filter(filtre) : data.biens;
   }
+  // Catégories à provisions : le locataire verse une provision chaque mois,
+  // la facture réelle arrive une fois par an, puis on régularise logement par
+  // logement. Le suivi annuel y affiche les provisions, pas les factures.
+  // La facture TEOM arrive en un seul montant pour toutes les maisons (avec
+  // la taxe foncière) : enregistrée sans logement, elle est répartie au
+  // prorata des surfaces dans le tableau de régularisation.
+  const CHARGE_CATEGORIES_PROVISION = { teom: 'Facture TEOM globale' };
+  const CHARGE_TYPE_LABELS = { facture: 'Facture', 'facture-globale': 'Facture globale', devis: 'Devis', provision: 'Provision', regularisation: 'Régularisation' };
+  function categorieAProvisions(cat) { return !!CHARGE_CATEGORIES_PROVISION[cat]; }
+
   const MONTHS_SHORT = ['Janv', 'Févr', 'Mars', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sept', 'Oct', 'Nov', 'Déc'];
   let currentChargeCategory = null;
 
@@ -2035,6 +2046,15 @@
     byId('charges-subtitle').textContent = 'Suivi annuel et justificatifs par logement';
 
     populateChargeBienSelect(cat);
+    const provisions = categorieAProvisions(cat);
+    const typeSel = byId('charge-type');
+    typeSel.innerHTML = provisions
+      ? `<option value="provision">Provision mensuelle</option><option value="facture-globale">${CHARGE_CATEGORIES_PROVISION[cat]} (taxe foncière)</option><option value="regularisation">Régularisation</option>`
+      : '<option value="facture">Facture</option><option value="devis">Devis</option>';
+    byId('charges-annual-note').textContent = provisions
+      ? 'Le suivi annuel affiche les provisions mensuelles versées par chaque locataire. La facture et les régularisations figurent dans le détail ci-dessous.'
+      : 'Seules les factures sont comptabilisées dans le suivi annuel ; les devis sont indiqués à titre de référence dans le détail ci-dessous.';
+    byId('charges-regul-panel').hidden = !provisions;
     byId('charge-date').value = todayISO();
     byId('charge-montant').value = '';
     byId('charge-libelle').value = '';
@@ -2083,10 +2103,118 @@
     const year = byId('charges-year').value;
     renderChargesAnnualTable(cat, year);
     renderChargesDetailTable(cat, year);
+    if (categorieAProvisions(cat)) renderChargesRegulTable(cat, year);
+  }
+
+  function locatairesDuBien(bienId) {
+    return data.locataires.filter((l) => l.bienId === bienId && l.actif !== false && !l.isTest);
+  }
+
+  // Bilan de l'année par logement : provisions versées face à la facture réelle.
+  function renderChargesRegulTable(cat, year) {
+    byId('charges-regul-title').textContent = 'Régularisation ' + year;
+    const tbody = document.querySelector('#charges-regul-table tbody');
+    const entries = data.charges.filter((c) => c.categorie === cat && c.date && c.date.slice(0, 4) === String(year));
+    const somme = (bienId, type) => entries
+      .filter((c) => c.bienId === bienId && c.type === type)
+      .reduce((s, c) => s + (Number(c.montant) || 0), 0);
+    const biens = biensPourCharge(cat);
+    const resume = byId('charges-regul-resume');
+    if (biens.length === 0) {
+      resume.textContent = '';
+      tbody.innerHTML = '<tr class="empty-row"><td colspan="8">Ajoutez un bien pour afficher la régularisation.</td></tr>';
+      return;
+    }
+    const arrondi = (n) => Math.round(n * 100) / 100;
+    const surface = (b) => Number(b.surfaceHabitable) || 0;
+    const totalGlobal = entries.filter((c) => c.type === 'facture-globale')
+      .reduce((s, c) => s + (Number(c.montant) || 0), 0);
+    const surfaceTotale = biens.reduce((s, b) => s + surface(b), 0);
+    // Part de chaque maison, en centimes : la dernière maison prise en compte
+    // absorbe l'écart d'arrondi pour que la somme des parts égale la facture.
+    const parts = {};
+    const repartis = biens.filter((b) => surface(b) > 0);
+    let resteCentimes = Math.round(totalGlobal * 100);
+    repartis.forEach((b, i) => {
+      const c = i === repartis.length - 1 ? resteCentimes
+        : Math.round(totalGlobal * 100 * surface(b) / surfaceTotale);
+      parts[b.id] = c / 100;
+      resteCentimes -= c;
+    });
+    if (!totalGlobal) {
+      resume.textContent = `Facture TEOM globale ${year} non saisie : ajoutez-la avec le type « Facture TEOM globale », sans tenir compte du logement choisi.`;
+    } else if (!surfaceTotale) {
+      resume.textContent = `Facture TEOM globale ${year} : ${euros(totalGlobal)}. Renseignez la surface de chaque maison pour la répartir.`;
+    } else {
+      resume.textContent = `Facture TEOM globale ${year} : ${euros(totalGlobal)}, répartie sur ${surfaceTotale.toLocaleString('fr-FR')} m² (${euros(totalGlobal / surfaceTotale)} par m²).`;
+    }
+    tbody.innerHTML = biens.map((b) => {
+      const provisions = somme(b.id, 'provision');
+      const facture = arrondi(somme(b.id, 'facture') + (parts[b.id] || 0));
+      const regul = somme(b.id, 'regularisation');
+      const solde = arrondi(facture - provisions - regul);
+      const locs = locatairesDuBien(b.id).map((l) => escapeHTML(l.nom)).join(', ') || '—';
+      let soldeCell;
+      let action = '';
+      if (facture === 0) {
+        soldeCell = `<span class="file-empty">${totalGlobal && !surface(b) ? 'Surface non renseignée' : 'Facture non saisie'}</span>`;
+      } else if (solde === 0) {
+        soldeCell = '<span class="badge paie-ok">✓ Soldé</span>';
+      } else {
+        soldeCell = solde > 0
+          ? `<strong>${euros(solde)}</strong> à réclamer`
+          : `<strong>${euros(-solde)}</strong> à rembourser`;
+        action = `<button type="button" class="btn btn-sm" data-regul-bien="${b.id}" data-regul-montant="${solde}">Enregistrer la régularisation</button>`;
+      }
+      return `<tr>
+        <td data-label="Logement">${escapeHTML(b.nom)}</td>
+        <td data-label="Locataire">${locs}</td>
+        <td data-label="Surface (m²)"><input type="number" min="0" step="0.01" class="regul-surface" data-surface-bien="${b.id}" value="${surface(b) || ''}" style="width:80px"></td>
+        <td data-label="Provisions versées">${euros(provisions)}</td>
+        <td data-label="TEOM réellement due">${facture ? euros(facture) : '—'}</td>
+        <td data-label="Déjà régularisé">${regul ? euros(regul) : '—'}</td>
+        <td data-label="Solde">${soldeCell}</td>
+        <td class="actions-cell">${action}</td>
+      </tr>`;
+    }).join('');
+
+    // La surface est celle de la fiche du bien (la même que pour les annonces).
+    tbody.querySelectorAll('[data-surface-bien]').forEach((inp) => inp.addEventListener('change', () => {
+      const bien = bienById(inp.dataset.surfaceBien);
+      if (!bien) return;
+      const v = parseFloat(inp.value);
+      bien.surfaceHabitable = v > 0 ? v : '';
+      save();
+      renderChargesRegulTable(cat, year);
+    }));
+
+    tbody.querySelectorAll('[data-regul-bien]').forEach((btn) => btn.addEventListener('click', () => {
+      const bien = bienById(btn.dataset.regulBien);
+      const montant = Number(btn.dataset.regulMontant);
+      const sens = montant > 0 ? 'à réclamer au locataire' : 'à rembourser au locataire';
+      if (!confirm(`Enregistrer la régularisation ${year} de ${bien ? bien.nom : 'ce logement'} : ${euros(Math.abs(montant))} ${sens} ?`)) return;
+      // Datée du jour si l'année consultée est l'année en cours, sinon du
+      // 31 décembre : elle reste ainsi rattachée à l'année régularisée.
+      const date = String(new Date().getFullYear()) === String(year) ? todayISO() : `${year}-12-31`;
+      data.charges.push({
+        id: Storage.uid(),
+        categorie: cat,
+        bienId: btn.dataset.regulBien,
+        date,
+        montant,
+        type: 'regularisation',
+        libelle: `Régularisation ${year} (${montant > 0 ? 'à réclamer' : 'à rembourser'})`,
+        fileId: null,
+        fileName: '',
+      });
+      save();
+      renderChargesTables(cat);
+    }));
   }
 
   function renderChargesAnnualTable(cat, year) {
-    const entries = data.charges.filter((c) => c.categorie === cat && c.type === 'facture' && c.date && c.date.slice(0, 4) === String(year));
+    const typeSuivi = categorieAProvisions(cat) ? 'provision' : 'facture';
+    const entries = data.charges.filter((c) => c.categorie === cat && c.type === typeSuivi && c.date && c.date.slice(0, 4) === String(year));
 
     const biens = biensPourCharge(cat);
     const matrix = {};
@@ -2169,15 +2297,16 @@
     tbody.innerHTML = entries.map((c) => {
       const bien = bienById(c.bienId);
       const dateLabel = c.date ? new Date(`${c.date}T00:00:00`).toLocaleDateString('fr-FR') : '—';
-      const isDevis = c.type === 'devis';
+      const typeLabel = (c.type === 'facture-globale' && CHARGE_CATEGORIES_PROVISION[c.categorie]) || CHARGE_TYPE_LABELS[c.type] || 'Facture';
+      const badgeClass = c.type === 'devis' || c.type === 'regularisation' ? 'badge-devis' : 'badge-facture';
       const fileCell = c.fileId
         ? `<button type="button" class="file-link" data-view-file="${c.fileId}">${escapeHTML(c.fileName || 'Voir')}</button>`
         : '<span class="file-empty">—</span>';
       return `<tr>
         <td data-label="Date">${dateLabel}</td>
-        <td data-label="Logement">${bien ? escapeHTML(bien.nom) : '<em>Bien supprimé</em>'}</td>
+        <td data-label="Logement">${bien ? escapeHTML(bien.nom) : (c.type === 'facture-globale' ? 'Toutes les maisons' : '<em>Bien supprimé</em>')}</td>
         <td data-label="Libellé">${escapeHTML(c.libelle || '—')}</td>
-        <td data-label="Type"><span class="badge ${isDevis ? 'badge-devis' : 'badge-facture'}">${isDevis ? 'Devis' : 'Facture'}</span></td>
+        <td data-label="Type"><span class="badge ${badgeClass}">${typeLabel}</span></td>
         <td data-label="Montant">${euros(c.montant)}</td>
         <td data-label="Justificatif">${fileCell}</td>
         <td class="actions-cell"><button type="button" class="btn btn-sm btn-danger" data-del-charge="${c.id}">Supprimer</button></td>
@@ -2255,8 +2384,9 @@
   }
 
   byId('btn-charge-add').addEventListener('click', async () => {
-    const bienId = byId('charge-bien').value;
-    if (!bienId) { alert('Ajoutez d\'abord un bien, puis sélectionnez-le.'); return; }
+    const globale = byId('charge-type').value === 'facture-globale';
+    const bienId = globale ? '' : byId('charge-bien').value;
+    if (!bienId && !globale) { alert('Ajoutez d\'abord un bien, puis sélectionnez-le.'); return; }
     const date = byId('charge-date').value;
     if (!date) { alert('Renseignez une date.'); return; }
     const montant = parseFloat(byId('charge-montant').value) || 0;

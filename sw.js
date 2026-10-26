@@ -8,7 +8,7 @@
 // cela, un telephone pouvait continuer a servir une version ancienne
 // indefiniment (constate sur iPhone : le tableau de bord affichait encore
 // 'Derniers documents' apres plusieurs deploiements).
-const APP_VERSION = '2026101004';
+const APP_VERSION = '2026102601';
 const CACHE_NAME = 'gls-cache-' + APP_VERSION;
 const V = '?v=' + APP_VERSION;
 
